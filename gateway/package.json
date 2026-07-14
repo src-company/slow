@@ -1,0 +1,13 @@
+{
+  "name": "w4eth-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ERC-8244 web gateway: resolves <0xADDRESS>.<domain> to the contract's on-chain html() over one eth_call. Zero dependencies.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
