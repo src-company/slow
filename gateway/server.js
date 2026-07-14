@@ -14,9 +14,29 @@
 
 const http = require('http');
 
-// --- config (Render injects PORT; RPC_URL you set yourself) --------------------
+// --- config --------------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
-const RPC_URL = process.env.RPC_URL;
+
+// Public mainnet RPCs that need NO API key and were verified to return the full
+// html() payload. The gateway round-robins across these and fails over to the
+// next on any transient (network / rate-limit / node) error, so it boots and
+// works with zero configuration.
+const PUBLIC_RPCS = [
+  'https://ethereum-rpc.publicnode.com',
+  'https://eth.drpc.org',
+  'https://mainnet.gateway.tenderly.co',
+];
+
+// Optional override. Set RPC_URL to your own endpoint (e.g. Alchemy/Infura) for
+// higher rate limits; comma-separate to supply several. Your endpoints are tried
+// first, with the public pool kept as automatic fallback.
+const RPCS = [
+  ...(process.env.RPC_URL || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  ...PUBLIC_RPCS,
+];
 
 // Fallback contract for hosts that are NOT an address (e.g. the bare apex, or a
 // vanity host like slow.example). Optional. Defaults to the SLOW deployment.
@@ -24,16 +44,19 @@ const DEFAULT_CONTRACT =
   (process.env.DEFAULT_CONTRACT ||
     '0x000000000000888741b254d37e1b27128afeaabc').toLowerCase();
 
-if (!RPC_URL) {
-  // Fail loudly at boot so a missing env var shows up in the deploy log,
-  // not as a mystery 502 on the first request.
-  console.error('FATAL: RPC_URL environment variable is not set.');
-  process.exit(1);
-}
-
 // bytes4(keccak256("html()")) — verified locally, matches ERC-8244 §Discovery.
 const HTML_SELECTOR = '0x33c34ac3';
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+
+// Round-robin cursor: each request starts at the next endpoint to spread load.
+let rrCursor = 0;
+
+// Error tags: `transient` errors trigger fail-over to the next RPC; everything
+// else is a definitive answer from the chain (revert / no html()) and is not
+// worth retrying against other nodes — they'd all say the same thing.
+function transientErr(msg) {
+  return Object.assign(new Error(msg), { transient: true });
+}
 
 // --- helpers -------------------------------------------------------------------
 
@@ -88,7 +111,10 @@ a{color:#fff}
 </div></body></html>`;
 }
 
-async function fetchHtml(contract) {
+// One eth_call against a single endpoint. Throws a `transient` error for
+// anything worth retrying elsewhere (network, HTTP, rate limit, node hiccup) and
+// a plain error for a definitive on-chain answer (revert / empty → not ERC-8244).
+async function callHtml(url, contract) {
   const body = {
     jsonrpc: '2.0',
     id: 1,
@@ -98,25 +124,60 @@ async function fetchHtml(contract) {
 
   let res;
   try {
-    res = await fetch(RPC_URL, {
+    res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
   } catch (e) {
-    throw new Error('RPC: transport failure — ' + e.message);
+    throw transientErr('transport failure — ' + e.message);
   }
 
-  if (!res.ok) throw new Error('RPC: HTTP ' + res.status);
+  if (!res.ok) throw transientErr('HTTP ' + res.status);
 
-  const json = await res.json();
+  let json;
+  try {
+    json = await res.json();
+  } catch (e) {
+    throw transientErr('malformed JSON response');
+  }
+
   if (json.error) {
-    throw new Error('RPC: ' + (json.error.message || JSON.stringify(json.error)));
+    const msg = (json.error.message || JSON.stringify(json.error)).toLowerCase();
+    // A revert is deterministic across nodes → definitive "not ERC-8244".
+    if (msg.includes('revert')) {
+      throw new Error('contract reverted — no ERC-8244 html()');
+    }
+    // Rate limits / internal node errors are node-specific → try the next one.
+    throw transientErr('node error — ' + (json.error.message || 'unknown'));
   }
+
   if (!json.result || json.result === '0x') {
     throw new Error('contract returned no data — does it implement html()?');
   }
   return decodeString(json.result);
+}
+
+// Round-robin across the RPC pool, failing over to the next endpoint on any
+// transient error. Stops immediately on a definitive on-chain answer.
+async function fetchHtml(contract) {
+  const start = rrCursor;
+  rrCursor = (rrCursor + 1) % RPCS.length;
+
+  let lastTransient;
+  for (let k = 0; k < RPCS.length; k++) {
+    const url = RPCS[(start + k) % RPCS.length];
+    try {
+      return await callHtml(url, contract);
+    } catch (e) {
+      if (!e.transient) throw e; // definitive — every node will agree
+      lastTransient = e;
+    }
+  }
+  // Every endpoint failed transiently → this is a gateway/RPC outage.
+  throw new Error(
+    'RPC: all endpoints failed — ' + (lastTransient && lastTransient.message)
+  );
 }
 
 // --- server --------------------------------------------------------------------
@@ -141,11 +202,11 @@ const server = http.createServer(async (req, res) => {
     res.end(html);
   } catch (err) {
     const msg = String(err.message || err);
-    // A transport failure to the RPC is *our* problem → 502 plaintext so it's
-    // obvious in logs/monitoring. Anything else (revert, no html(), not a
-    // contract) is just "this address isn't an ERC-8244 app" → render a clean
-    // 404 page so the subdomain still resolves to something in a browser.
-    if (msg.startsWith('RPC: transport') || msg.startsWith('RPC: HTTP')) {
+    // Whole RPC pool down is *our* problem → 502 plaintext so it's obvious in
+    // logs/monitoring. Anything else (revert, no html(), not a contract) is just
+    // "this address isn't an ERC-8244 app" → render a clean 404 page so the
+    // subdomain still resolves to something in a browser.
+    if (msg.startsWith('RPC:')) {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(`Gateway error for ${contract}\n${msg}\n`);
     } else {
@@ -157,6 +218,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`w4eth gateway listening on :${PORT}`);
-  console.log(`  RPC_URL set: yes`);
+  console.log(`  rpc pool (${RPCS.length}): ${RPCS.join(', ')}`);
   console.log(`  default contract: ${DEFAULT_CONTRACT}`);
 });
