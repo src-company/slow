@@ -185,16 +185,27 @@ Hooks: `useUnlockedBalance`, `useBalance`, `useSlowPosition`, `useInboundTransfe
 
 ## Agent skill (CLI)
 
-For AI agents, [`skill/`](./skill) is a self-contained [Agent Skill](https://platform.claude.com/docs/en/agents-and-tools/agent-skills): a lean `SKILL.md` (when/how), an on-demand `reference.md` (lifecycle, ids, errors), and `slow.mjs` — a **zero-dependency JSON-in/JSON-out CLI**.
+For AI agents, [`skills/`](./skills/slow) is a self-contained [Agent Skill](https://platform.claude.com/docs/en/agents-and-tools/agent-skills): a lean `SKILL.md` (when/how), an on-demand `reference.md` (lifecycle, ids, errors), and `slow.mjs` — a **zero-dependency JSON-in/JSON-out CLI**.
 
 ```
-node sdk/skill/slow.mjs help
-node sdk/skill/slow.mjs inbox alice.wei                     # reads (RPC only)
-node sdk/skill/slow.mjs send --to alice.wei --amount 0.1 --delay 1d   # prepares an unsigned tx
-node sdk/skill/slow.mjs send --to alice.wei --amount 0.1 --delay 1d --send
+node sdk/skills/slow/slow.mjs help
+node sdk/skills/slow/slow.mjs inbox alice.wei                     # reads (RPC only)
+node sdk/skills/slow/slow.mjs send --to alice.wei --amount 0.1 --delay 1d   # prepares an unsigned tx
+node sdk/skills/slow/slow.mjs send --to alice.wei --amount 0.1 --delay 1d --send
 ```
 
-It's designed to be agent-safe: **writes prepare an unsigned tx and print it — nothing is submitted without `--send`.** SLOW's timelock is the key property here — an agent can send reversibly, and a human can `reverse` a mistake before expiry. Signing uses `SLOW_PRIVATE_KEY` (local, via viem) or an unlocked node (`--from` / `eth_sendTransaction`); for a multisig/human step, take the prepared `tx` to your own signer. Drop the folder into `.claude/skills/slow/` (or any agent's skills dir) to install it.
+It's designed to be agent-safe: **writes prepare an unsigned tx and print it — nothing is submitted without `--send`.** SLOW's timelock is the key property here — an agent can send reversibly, and a human can `reverse` a mistake before expiry. Signing uses `SLOW_PRIVATE_KEY` (local, via viem) or an unlocked node (`--from` / `eth_sendTransaction`); for a multisig/human step, take the prepared `tx` to your own signer.
+
+### Install as a Claude Code plugin
+
+The repo ships a plugin marketplace (`.claude-plugin/marketplace.json` at the repo root; the plugin manifest lives in `sdk/.claude-plugin/plugin.json`). In Claude Code:
+
+```
+/plugin marketplace add z0r0z/slow
+/plugin install slow@slow
+```
+
+The skill then activates automatically when a task matches its description, or invoke it explicitly with `/slow:slow`. To iterate locally without installing, point Claude Code straight at the plugin dir: `claude --plugin-dir ./sdk`. Or just drop [`skills/slow/`](./skills/slow) into any agent's skills directory (e.g. `~/.claude/skills/slow/`) — it's self-contained.
 
 ## API surface
 

@@ -14,7 +14,7 @@ Wrap once, then send, hold, and reverse with safety rails. Any token, any delay,
 - **Contract:** [`0x000000000000888741B254d37e1b27128AfEAaBC`](https://contractscan.xyz/contract/0x000000000000888741B254d37e1b27128AfEAaBC)
 - **Onchain dapp (served by the contract via `html()`):** https://0x000000000000888741b254d37e1b27128afeaabc.w4eth.io/
 - **Hosted dapp:** https://slow.wei.limo/
-- **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skill) (`SKILL.md` + JSON CLI).
+- **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skills/slow) (`SKILL.md` + JSON CLI).
 
 The contract embeds its own frontend in two SSTORE2 chunks; `w4eth.io` resolves the on-chain HTML over the web for convenience, but the dapp can be reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](./erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
 
@@ -41,7 +41,9 @@ Each SLOW token is an ERC-1155 position whose id encodes both the underlying tok
 
 A `depositTo` mints the wrapper to the recipient but parks the credit in a `pendingTransfer` until the timelock expires. After expiry the recipient (or an operator) settles. Before expiry the sender can reverse. Long after expiry, if no one settled, the sender can clawback.
 
-![image](https://github.com/user-attachments/assets/ddaa86f0-a4a0-4cfb-82a4-9cf670fcae47)
+![SLOW token render for a 1-day USDC position, generated on-chain by uri()](./assets/render/slow-usdc-1day.png)
+
+*Every position renders its own SVG via `uri(id)` — above is the exact output for a 1-day USDC lock. See [`assets/render/`](./assets/render) for the source SVG.*
 
 ### Lifecycle
 
@@ -109,7 +111,7 @@ sequenceDiagram
 
 ### 4. Sponsored / gasless delivery
 
-Use `depositToWithTip` to attach an ETH tip alongside the deposit. Any keeper can call `gate.claim(transferId)` after expiry to push the funds; the keeper takes the tip. The recipient never needs gas. If the transfer cleared by a non-gate path (recipient-direct claim, sender reverse, sender clawback), the depositor recovers the tip via `gate.refundTip`.
+Use `depositToWithTip` to attach an ETH tip alongside the deposit. Any keeper can call `gate.claim(transferId)` after expiry to push the funds; the keeper takes the tip. The recipient never needs gas. If the transfer cleared by a non-gate path (recipient `unlock` or direct `claim`, sender `reverse`, sender `clawback`), the depositor recovers the tip via `gate.refundTip`.
 
 ```mermaid
 sequenceDiagram
@@ -136,7 +138,7 @@ If you send to an address that never claims (compromised key, dead wallet), `cla
 
 ### Holding SLOW long-term: fuse vs. vault
 
-A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expires on a self-deposited position, anyone with the key can `unlock` then `withdrawFrom` in two txs. To hold SLOW long-term as a vault, pair the delay with a **guardian** — that's the durable second factor. With a guardian set, even a fully compromised hot wallet cannot extract the wrapped underlying.
+A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expires on a self-deposited position, anyone with the key can extract the underlying — in one tx via `claim`, or `unlock` then `withdrawFrom`. To hold SLOW long-term as a vault, pair the delay with a **guardian** — that's the durable second factor. With a guardian set, even a fully compromised hot wallet cannot extract the wrapped underlying.
 
 ## Functions
 
@@ -144,7 +146,7 @@ A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expir
 
 | Function | Purpose |
 | --- | --- |
-| `depositTo(token, to, amount, delay, data)` | Wrap and create a pending transfer (or unlock immediately if `delay == 0`). |
+| `depositTo(token, to, amount, delay, data)` | Wrap and create a pending transfer (or credit spendable balance immediately if `delay == 0`). |
 | `depositToWithTip(token, to, amount, delay, tip, data)` | Same, plus a relayer tip held by the gate. Requires `delay != 0`, `tip != 0`, `tip <= type(uint96).max`. |
 
 ### Settle / move
@@ -274,10 +276,14 @@ gateway/
 └─ server.js       — self-hostable web gateway (ERC-8244 html() resolver)
 sdk/               — integration SDK (zero-dep core + optional viem/wagmi + React)
 ├─ src/            — codec, abi, client, names (ENS + WNS .wei), wallet, keeper, viem, react
-├─ skill/          — agent skill: SKILL.md + reference.md + slow.mjs (JSON CLI)
+├─ skills/slow/    — agent skill: SKILL.md + reference.md + slow.mjs (JSON CLI)
+├─ .claude-plugin/ — plugin manifest (installable via /plugin)
 ├─ examples/       — buildless browser, wagmi/React, keeper-bot
 └─ test/           — vanilla-Node SDK tests (node sdk/test/sdk.test.mjs)
-assets/audit/      — independent security reviews with inline maintainer responses
+assets/
+├─ audit/          — independent security reviews with inline maintainer responses
+└─ render/         — on-chain uri() render sample (SVG source + PNG)
+.claude-plugin/    — plugin marketplace manifest (installable via /plugin, points at sdk/)
 deploy_artifacts/  — initcode + constructor calldata for the deployment
 docs/              — forge doc output for SLOW / SLOWGate
 lib/
@@ -288,7 +294,7 @@ foundry.toml
 
 ## Disclaimer
 
-*These smart contracts and testing suite are being provided as is. No guarantee, representation or warranty is being made, express or implied, as to the safety or correctness of anything provided herein or through related user interfaces. This repository and related code have not been audited and as such there can be no assurance anything will work as intended, and users may experience delays, failures, errors, omissions, loss of transmitted information or loss of funds. The creators are not liable for any of the foregoing. Users should proceed with caution and use at their own risk.*
+*These smart contracts and testing suite are being provided as is. No guarantee, representation or warranty is being made, express or implied, as to the safety or correctness of anything provided herein or through related user interfaces. The [reviews linked above](#audits) are AI-assisted and do not constitute a formal third-party security audit; as such there can be no assurance anything will work as intended, and users may experience delays, failures, errors, omissions, loss of transmitted information or loss of funds. The creators are not liable for any of the foregoing. Users should proceed with caution and use at their own risk.*
 
 ## License
 

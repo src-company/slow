@@ -1,0 +1,11 @@
+{
+  "name": "slow",
+  "description": "SLOW protocol on Ethereum mainnet — send, hold, and settle ETH/ERC-20 with a reversible timelock and optional guardian cosigner. Ships a JSON CLI (skills/slow) that prepares transactions safely (nothing submitted without --send).",
+  "version": "0.1.0",
+  "author": {
+    "name": "SLOW"
+  },
+  "homepage": "https://github.com/z0r0z/slow",
+  "license": "AGPL-3.0-only",
+  "keywords": ["ethereum", "erc1155", "timelock", "guardian", "wallet", "agent", "onchain"]
+}

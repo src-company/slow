@@ -37,10 +37,10 @@
 // must wait, and you (the sender) can `reverse` before expiry if you erred —
 // this makes SLOW an unusually safe rail for agent-initiated payments.
 
-import { SlowClient } from '../src/client.js';
-import { decodeId, formatUnits } from '../src/codec.js';
-import * as keeper from '../src/keeper.js';
-import { TOKENS, ETH } from '../src/abi.js';
+import { SlowClient } from '../../src/client.js';
+import { decodeId, formatUnits } from '../../src/codec.js';
+import * as keeper from '../../src/keeper.js';
+import { TOKENS, ETH } from '../../src/abi.js';
 
 const RPCS = (process.env.RPC_URL ||
   'https://eth.llamarpc.com,https://rpc.ankr.com/eth,https://cloudflare-eth.com,https://ethereum-rpc.publicnode.com'

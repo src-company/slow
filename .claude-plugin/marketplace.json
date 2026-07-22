@@ -1,0 +1,21 @@
+{
+  "name": "slow",
+  "owner": {
+    "name": "SLOW"
+  },
+  "metadata": {
+    "version": "0.1.0",
+    "description": "SLOW — a timelock + guardian ERC-1155 wrapper for ETH/ERC-20 on Ethereum mainnet. Agent skill + JSON CLI."
+  },
+  "plugins": [
+    {
+      "name": "slow",
+      "source": "./sdk",
+      "version": "0.1.0",
+      "description": "Send, hold, and settle value on mainnet with a reversible timelock and optional guardian cosigner. Reads over public RPC; writes prepare an unsigned tx by default (submit with --send).",
+      "author": {
+        "name": "SLOW"
+      }
+    }
+  ]
+}

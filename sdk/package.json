@@ -16,8 +16,8 @@
     "./viem": "./src/viem.js",
     "./react": "./src/react.jsx"
   },
-  "files": ["src", "skill"],
-  "bin": { "slow": "./skill/slow.mjs" },
+  "files": ["src", "skills"],
+  "bin": { "slow": "./skills/slow/slow.mjs" },
   "keywords": ["ethereum", "erc1155", "timelock", "guardian", "wallet", "dapp", "web3", "viem", "wagmi", "slow"],
   "peerDependencies": {
     "viem": ">=2",

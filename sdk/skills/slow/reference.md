@@ -73,4 +73,9 @@ Attach `--tip <wei>` to a `send` (requires a delay). The tip is escrowed in the 
 
 ## Installing as a plugin/skill
 
-This folder is a self-contained skill: `SKILL.md` (instructions) + `slow.mjs` (executable) + `reference.md`. Drop it into an agent's skills directory (e.g. `.claude/skills/slow/`) or point your agent framework at it. Reads work with no config; set `RPC_URL` for your own endpoints and `SLOW_PRIVATE_KEY` (or an unlocked node + `SLOW_ACCOUNT`) to enable `--send`.
+This folder is a self-contained skill: `SKILL.md` (instructions) + `slow.mjs` (executable) + `reference.md`.
+
+- **Claude Code plugin:** `/plugin marketplace add z0r0z/slow` then `/plugin install slow@slow` (invoke with `/slow:slow`). Local iteration: `claude --plugin-dir ./sdk`.
+- **Any agent framework:** drop this folder into the agent's skills directory (e.g. `~/.claude/skills/slow/`), or run `slow.mjs` directly as a tool.
+
+Reads work with no config; set `RPC_URL` for your own endpoints and `SLOW_PRIVATE_KEY` (or an unlocked node + `SLOW_ACCOUNT`) to enable `--send`. The CLI imports the SDK from `../../src`, so keep it within the `sdk/` tree (the plugin bundles it).

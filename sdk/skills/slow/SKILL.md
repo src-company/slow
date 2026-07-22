@@ -19,7 +19,7 @@ Contract (Ethereum mainnet): `0x000000000000888741B254d37e1b27128AfEAaBC` — no
 Everything is one zero-dependency CLI that speaks **JSON in, JSON out**. Run it with Node ≥18:
 
 ```
-node sdk/skill/slow.mjs help
+node sdk/skills/slow/slow.mjs help
 ```
 
 Reads need only an RPC (a keyless public pool is used if `RPC_URL` is unset). **Writes are safe by default: they PREPARE an unsigned transaction and print it — nothing is submitted unless you add `--send`.**
@@ -28,17 +28,17 @@ Reads need only an RPC (a keyless public pool is used if `RPC_URL` is unset). **
 
 ```
 # 1. Resolve + preview the recipient (echoes the address you're about to pay)
-node sdk/skill/slow.mjs resolve alice.wei
+node sdk/skills/slow/slow.mjs resolve alice.wei
 
 # 2. Prepare a 0.1 ETH send with a 1-day timelock (prints an unsigned tx, sends nothing)
-node sdk/skill/slow.mjs send --to alice.wei --amount 0.1 --token ETH --delay 1d
+node sdk/skills/slow/slow.mjs send --to alice.wei --amount 0.1 --token ETH --delay 1d
 
 # 3. Submit it (see "Signing" below)
-node sdk/skill/slow.mjs send --to alice.wei --amount 0.1 --delay 1d --send
+node sdk/skills/slow/slow.mjs send --to alice.wei --amount 0.1 --delay 1d --send
 
 # If you erred, reverse before the day is up:
-node sdk/skill/slow.mjs outbox <your-address>          # find the transferId
-node sdk/skill/slow.mjs reverse <transferId> --send
+node sdk/skills/slow/slow.mjs outbox <your-address>          # find the transferId
+node sdk/skills/slow/slow.mjs reverse <transferId> --send
 ```
 
 ## What to run, by task
@@ -78,4 +78,4 @@ node sdk/skill/slow.mjs reverse <transferId> --send
 
 ## Deeper details
 
-Read [`reference.md`](./reference.md) for the id encoding, the full lifecycle (pending → reversed / unlocked / claimed / clawed-back), guardian rotation and its veto window, the tip/keeper flow, and error meanings. For programmatic integration (viem/wagmi, React, a keeper bot), use the SDK in [`../`](../README.md) directly.
+Read [`reference.md`](./reference.md) for the id encoding, the full lifecycle (pending → reversed / unlocked / claimed / clawed-back), guardian rotation and its veto window, the tip/keeper flow, and error meanings. For programmatic integration (viem/wagmi, React, a keeper bot), use the SDK in [`../../`](../../README.md) directly.
