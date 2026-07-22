@@ -241,6 +241,7 @@ Independent reviews of `SLOW.sol`. None identified a critical/high fund-loss pat
 | Date | Reviewer | Result | Report |
 | --- | --- | --- | --- |
 | 2026-04-29 | pashov-ai | No findings above the confidence threshold | [report](./assets/audit/slow-pashov-ai-audit-report-20260429-163652.md) |
+| 2026-04-29 | Zellic V12 | 3 Low (unreviewed) — 1 false positive, 1 non-finding, 1 documented | [report](./assets/audit/slow-zellic-v12-audit-report-20260429-181500.md) |
 | 2026-07-22 | GPT-5.6 Pro | 1 High, 2 Medium, rest Low/Info — all accepted or dapp-mitigable | [report](./assets/audit/slow-gpt-5.6-pro-audit-report-20260722-172206.md) |
 | 2026-07-22 | OneDollarAudit | 8 findings, all Low/Info | [report](./assets/audit/slow-onedollaraudit-audit-report-20260722-192400.md) |
 
