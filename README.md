@@ -13,9 +13,12 @@ Wrap once, then send, hold, and reverse with safety rails. Any token, any delay,
 
 - **Contract:** [`0x000000000000888741B254d37e1b27128AfEAaBC`](https://contractscan.xyz/contract/0x000000000000888741B254d37e1b27128AfEAaBC)
 - **Onchain dapp (served by the contract via `html()`):** https://0x000000000000888741b254d37e1b27128afeaabc.w4eth.io/
-- **Hosted dapp:** https://slow.wei.is/
+- **Hosted dapp:** https://slow.wei.limo/
+- **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skill) (`SKILL.md` + JSON CLI).
 
-The contract embeds its own frontend in two SSTORE2 chunks; `w4eth.io` resolves the on-chain HTML over the web for convenience, but the dapp can be reconstructed by anyone calling `html()` directly.
+The contract embeds its own frontend in two SSTORE2 chunks; `w4eth.io` resolves the on-chain HTML over the web for convenience, but the dapp can be reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](./erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
+
+This repo ships its own resolver in [`gateway/`](./gateway) so you can host it yourself. It's a zero-dependency Node server (`node gateway/server.js`) that reads the target contract from the leftmost DNS label of `<0xADDRESS>.<yourdomain>`, makes one `eth_call` to `html()`, and serves the decoded document. It round-robins a pool of keyless public mainnet RPCs and fails over on any transient error, so it boots with no configuration; set `RPC_URL` (comma-separated) to put your own endpoints first. `index.html` is a client-only variant of the same resolver.
 
 ## Why use SLOW?
 
@@ -229,6 +232,16 @@ Approving one will not satisfy the other. Guardians must still verify intent off
 - **Unsupported tokens.** Fee-on-transfer and rebasing tokens (e.g. stETH) break the wrapper's 1:1 accounting. Wrap rebasing assets to their non-rebasing equivalent (e.g. wstETH) before depositing.
 - **Gate cannot redirect funds.** The `claim` path pins payout to `pt.to`; the gate has no path to `safeTransferFrom` or `withdrawFrom`. Keepers can only choose *when* to settle, not *where* funds go.
 
+### Audits
+
+Independent reviews of `SLOW.sol`. None identified a critical/high fund-loss path or an issue forcing a redeploy; each report carries inline maintainer responses recording the disposition of every finding.
+
+| Date | Reviewer | Result | Report |
+| --- | --- | --- | --- |
+| 2026-04-29 | pashov-ai | No findings above the confidence threshold | [report](./assets/audit/slow-pashov-ai-audit-report-20260429-163652.md) |
+| 2026-07-22 | GPT-5.6 Pro | 1 High, 2 Medium, rest Low/Info — all accepted or dapp-mitigable | [report](./assets/audit/slow-gpt-5.6-pro-audit-report-20260722-172206.md) |
+| 2026-07-22 | OneDollarAudit | 8 findings, all Low/Info | [report](./assets/audit/slow-onedollaraudit-audit-report-20260722-192400.md) |
+
 ## Build & test
 
 ```sh
@@ -249,14 +262,27 @@ Dapp tests run on vanilla Node — no NPM:
 ## Layout
 
 ```txt
-SLOW.html       — onchain dapp (served via html())
+SLOW.html          — onchain dapp, minified (this is the artifact served via html())
+SLOW-preview.html  — readable/un-minified source of the same dapp (not deployed)
+index.html         — client-only html() resolver
 src/
-└─ SLOW.sol     — protocol contract (also defines SLOWGate)
+└─ SLOW.sol        — protocol contract (also defines SLOWGate)
 test/
-└─ SLOW.t.sol   — full test suite (mainnet fork)
+├─ SLOW.t.sol      — full test suite (mainnet fork)
+└─ slow_html.*.mjs — dapp unit + e2e tests (vanilla Node)
+gateway/
+└─ server.js       — self-hostable web gateway (ERC-8244 html() resolver)
+sdk/               — integration SDK (zero-dep core + optional viem/wagmi + React)
+├─ src/            — codec, abi, client, names (ENS + WNS .wei), wallet, keeper, viem, react
+├─ skill/          — agent skill: SKILL.md + reference.md + slow.mjs (JSON CLI)
+├─ examples/       — buildless browser, wagmi/React, keeper-bot
+└─ test/           — vanilla-Node SDK tests (node sdk/test/sdk.test.mjs)
+assets/audit/      — independent security reviews with inline maintainer responses
+deploy_artifacts/  — initcode + constructor calldata for the deployment
+docs/              — forge doc output for SLOW / SLOWGate
 lib/
-├─ solady       — https://github.com/vectorized/solady
-└─ forge-std    — https://github.com/foundry-rs/forge-std
+├─ solady          — https://github.com/vectorized/solady
+└─ forge-std       — https://github.com/foundry-rs/forge-std
 foundry.toml
 ```
 

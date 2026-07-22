@@ -1,0 +1,35 @@
+{
+  "name": "@slow/sdk",
+  "version": "0.1.0",
+  "description": "Integrate SLOW (timelock + guardian ERC-1155 wrapper on Ethereum mainnet) into web3 apps, wallets, and dapps. Zero-dependency core with optional viem/wagmi + React layers.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.js",
+    "./codec": "./src/codec.js",
+    "./abi": "./src/abi.js",
+    "./client": "./src/client.js",
+    "./names": "./src/names.js",
+    "./wallet": "./src/wallet.js",
+    "./keeper": "./src/keeper.js",
+    "./viem": "./src/viem.js",
+    "./react": "./src/react.jsx"
+  },
+  "files": ["src", "skill"],
+  "bin": { "slow": "./skill/slow.mjs" },
+  "keywords": ["ethereum", "erc1155", "timelock", "guardian", "wallet", "dapp", "web3", "viem", "wagmi", "slow"],
+  "peerDependencies": {
+    "viem": ">=2",
+    "wagmi": ">=2",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "viem": { "optional": true },
+    "wagmi": { "optional": true },
+    "react": { "optional": true }
+  },
+  "scripts": {
+    "test": "node test/sdk.test.mjs"
+  }
+}

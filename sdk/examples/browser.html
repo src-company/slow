@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SLOW SDK — browser example</title>
+<!--
+  Minimal, buildless dapp integration. Open over http(s) with a wallet
+  (MetaMask/Rabby) injected. Uses the zero-dependency core only — no bundler.
+-->
+<h1>SLOW — send with a timelock</h1>
+<button id="connect">Connect wallet</button>
+<p id="who"></p>
+
+<fieldset>
+  <legend>Send ETH with a 1-day timelock</legend>
+  <input id="to" placeholder="recipient — 0x…, name.eth, or name.wei" size="46">
+  <input id="amt" placeholder="0.01" size="8">
+  <button id="send">Send</button>
+</fieldset>
+
+<fieldset>
+  <legend>My inbound pending transfers</legend>
+  <button id="refresh">Refresh</button>
+  <ul id="inbox"></ul>
+</fieldset>
+
+<pre id="log"></pre>
+
+<script type="module">
+  import { SlowClient, DELAYS } from '../src/index.js';
+
+  const log = (...a) => document.getElementById('log').textContent += a.join(' ') + '\n';
+  const provider = window.ethereum;
+  if (!provider) log('No injected wallet found.');
+
+  const slow = new SlowClient(provider);
+
+  document.getElementById('connect').onclick = async () => {
+    const a = await slow.requestAccounts();
+    document.getElementById('who').textContent = 'Connected: ' + a;
+  };
+
+  document.getElementById('send').onclick = async () => {
+    try {
+      const to = document.getElementById('to').value.trim();
+      const amount = document.getElementById('amt').value.trim();
+      const hash = await slow.deposit({ to, amount, token: 'ETH', delay: DELAYS['1d'] });
+      log('sent tx', hash);
+      await slow.wait(hash);
+      log('confirmed. Recipient must wait 1 day before they can withdraw; you can reverse() until then.');
+    } catch (e) { log('error:', e.message); }
+  };
+
+  document.getElementById('refresh').onclick = async () => {
+    const me = await slow._from();
+    const ids = await slow.getInboundTransfers(me);
+    const ul = document.getElementById('inbox');
+    ul.innerHTML = '';
+    for (const id of ids) {
+      const s = await slow.pendingStatus(id);
+      if (!s) continue;
+      const li = document.createElement('li');
+      li.textContent = `#${id.toString().slice(0, 10)}… from ${s.from.slice(0, 8)} — `
+        + (s.settleable ? 'ready: click to unlock' : `${s.secondsUntilExpiry}s left`);
+      if (s.settleable) {
+        li.style.cursor = 'pointer';
+        li.onclick = async () => { const h = await slow.unlock(id); log('unlock tx', h); };
+      }
+      ul.appendChild(li);
+    }
+  };
+</script>
