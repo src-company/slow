@@ -33,7 +33,7 @@ differs is the code at it, the token set, and the surrounding infrastructure.
 | Multicall3 | canonical | canonical |
 | Permit2 | canonical | canonical |
 | `.eth` / `.wei` / `.gwei` | resolves | **does not** |
-| tokens | ETH, USDC, USDT, BOLD | ETH, USDC, USDT, WETH (BOLD not bridged) |
+| tokens | ETH · USDC · USDe · cbBTC<br>wstETH · WBTC · USDT · BOLD | ETH · USDG · USDe · cbBTC<br>NVDA · SPY · SPCX · GME |
 
 Two consequences are baked into the page:
 
@@ -43,6 +43,11 @@ returns the zero address rather than reverting. A dapp that resolved against the
 active chain would not fail loudly there; it would tell the reader that a valid
 name does not exist. So ENS and WNS reads are pinned to chain 1 unconditionally,
 whichever chain is being spent on.
+
+**The first row means the same thing on either chain.** Slots 1, 3 and 4 are
+literally the same asset — ETH, USDe, cbBTC — at whatever address that chain
+holds them, with the same colour and the same decimals. Slot 2 is each chain's
+own primary stable. The rest is chain-specific.
 
 **Reads never go to a wallet parked elsewhere.** A wallet on mainnet asked to
 `eth_call` chain 4663 answers with mainnet's state, silently and wrongly. The

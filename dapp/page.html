@@ -647,10 +647,14 @@ const CHAINS = {
       'https://gateway.tenderly.co/public/mainnet',
     ],
     tokens:[
-      {symbol:'ETH',  address:'0x0000000000000000000000000000000000000000', decimals:18},
-      {symbol:'USDC', address:'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', decimals:6},
-      {symbol:'BOLD', address:'0x6440f144b7e50d6a8439336510312d2f54beb01d', decimals:18},
-      {symbol:'USDT', address:'0xdac17f958d2ee523a2206206994597c13d831ec7', decimals:6},
+      {symbol:'ETH',   address:'0x0000000000000000000000000000000000000000', decimals:18},
+      {symbol:'USDC',  address:'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', decimals:6},
+      {symbol:'USDe',  address:'0x4c9edd5852cd905f086c759e8383e09bff1e68b3', decimals:18},
+      {symbol:'cbBTC', address:'0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', decimals:8},
+      {symbol:'wstETH',address:'0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0', decimals:18},
+      {symbol:'WBTC',  address:'0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', decimals:8},
+      {symbol:'USDT',  address:'0xdac17f958d2ee523a2206206994597c13d831ec7', decimals:6},
+      {symbol:'BOLD',  address:'0x6440f144b7e50d6a8439336510312d2f54beb01d', decimals:18},
     ],
   },
   4663: {
@@ -665,10 +669,10 @@ const CHAINS = {
     // address at all.
     tokens:[
       {symbol:'ETH',  address:'0x0000000000000000000000000000000000000000', decimals:18},
-      {symbol:'USDe', address:'0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', decimals:18},
       {symbol:'USDG', address:'0x5fc5360d0400a0fd4f2af552add042d716f1d168', decimals:6},
-      {symbol:'NVDA', address:'0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', decimals:18},
+      {symbol:'USDe', address:'0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', decimals:18},
       {symbol:'cbBTC',address:'0xcec185eb182c47d1ba1efc84e6959e18cd620be4', decimals:8},
+      {symbol:'NVDA', address:'0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', decimals:18},
       {symbol:'SPY',  address:'0x117cc2133c37b721f49de2a7a74833232b3b4c0c', decimals:18},
       {symbol:'SPCX', address:'0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea', decimals:18},
       {symbol:'GME',  address:'0x1b0e319c6a659f002271b69db8a7df2f911c153e', decimals:18},
@@ -716,14 +720,19 @@ const SEL = {
 const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9';
 
 // Fixed colours for the symbols the app knows; anything else is hashed.
+/* Eight tiles per chain is where hues start colliding, so the set is solved
+   rather than picked: every pair on a chain differs by more than 25 degrees of
+   hue OR more than 0.25 in luminance, and every tile clears 3:1 with its ink.
+   Shared assets keep one colour on both chains. */
 const TOKEN_COLORS = {
-  ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#745ddf',
-  USDe:'#4d5bd9', USDG:'#ccff00', NVDA:'#4d7c0f',
+  ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#c026d3',
+  USDe:'#6d28d9', USDG:'#ccff00', NVDA:'#4d7c0f',
+  wstETH:'#38bdf8', WBTC:'#a0522d',
   // The four tokenized equities have no brand colour anyone would recognise on
   // a 100px square, so they are assigned for legibility instead — except GME,
   // where the red IS the association. SPY moves off red to make room for it: an
   // index fund reads as institutional teal more naturally than as GameStop.
-  cbBTC:'#f7931a', SPY:'#0f766e', SPCX:'#b9bec7', GME:'#c8102e',
+  cbBTC:'#f7931a', SPY:'#0f766e', SPCX:'#b9bec7', GME:'#dc2626',
 };
 /* USDG carries Robinhood's chartreuse, which is far too light for white text.
    Rather than hand-maintain a second table, the ink is derived: WCAG relative
@@ -759,7 +768,8 @@ const inkOn = hex =>
    three default amounts. */
 const PRESETS = {
   ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'],
-  cbBTC:['0.001','0.01','0.1'],
+  cbBTC:['0.001','0.01','0.1'], WBTC:['0.001','0.01','0.1'],
+  wstETH:['0.01','0.1','1'],
   NVDA:['0.1','1','10'], SPY:['0.1','1','10'], SPCX:['0.1','1','10'], GME:['0.1','1','10'],
   default:['10','100','1000'],
 };

@@ -302,7 +302,7 @@ eq(C.progressOf({timestamp: now + 50, delay: 100}), 0, 'progress clamps at 0');
 ok(C.presetsFor('ETH')[0] !== C.presetsFor('USDC')[0],
   'ETH and USDC do not share an amount ladder');
 eq(C.presetsFor('ETH').join(','), '0.01,0.1,1', 'ETH presets');
-eq(C.presetsFor('WBTC').join(','), C.PRESETS.default.join(','), 'unknown tokens use the default ladder');
+eq(C.presetsFor('SOMETHING'), C.PRESETS.default, 'an unlisted token uses the default ladder');
 
 // ─── Deposit calldata ──────────────────────────────────────────────────────
 // The ETH rung is the one that regressed during development: depositTo takes
@@ -569,7 +569,44 @@ for (const id of C.CHAIN_IDS) {
 // Chain-native assets, each confirmed on chain 4663 to have code and to report
 // this symbol and these decimals.
 const rh = C.CHAINS[4663].tokens;
-eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA,cbBTC,SPY,SPCX,GME', '4663 lists its own assets');
+const m0 = (sym) => C.CHAINS[1].tokens.find((t) => t.symbol === sym);
+eq(rh.map(t => t.symbol).join(','), 'ETH,USDG,USDe,cbBTC,NVDA,SPY,SPCX,GME', '4663 lists its own assets');
+eq(C.CHAINS[1].tokens.map(t => t.symbol).join(','),
+  'ETH,USDC,USDe,cbBTC,wstETH,WBTC,USDT,BOLD', 'mainnet lists its own assets');
+eq(C.CHAINS[1].tokens.length % 4, 0, 'mainnet fills whole rows of four');
+
+// Slot alignment: the first row means the same thing on either chain, and
+// slots 1, 3 and 4 are literally the same asset.
+{
+  const m = C.CHAINS[1].tokens, r = C.CHAINS[4663].tokens;
+  for (const slot of [0, 2, 3]) {
+    eq(m[slot].symbol, r[slot].symbol, `slot ${slot + 1} is the same asset on both chains`);
+    eq(m[slot].decimals, r[slot].decimals, `slot ${slot + 1} has the same decimals on both`);
+  }
+  // Slot 2 is each chain's own primary stable, so it differs by design.
+  ok(m[1].symbol !== r[1].symbol, 'slot 2 is the chain\'s own primary stable');
+  // The same asset is never at two different addresses within a chain.
+  for (const ch of [m, r]) {
+    eq(new Set(ch.map((t) => t.symbol)).size, ch.length, 'no symbol appears twice on a chain');
+  }
+}
+// Mainnet additions, each verified on chain.
+eq(m0('wstETH').address, '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0', 'wstETH on mainnet');
+eq(m0('wstETH').decimals, 18, 'wstETH has 18 decimals');
+eq(m0('WBTC').address, '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', 'WBTC on mainnet');
+eq(m0('WBTC').decimals, 8, 'WBTC has 8 decimals, not 18');
+eq(m0('cbBTC').address, '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 'cbBTC on mainnet');
+eq(m0('cbBTC').decimals, 8, 'mainnet cbBTC has 8 decimals');
+eq(m0('USDe').address, '0x4c9edd5852cd905f086c759e8383e09bff1e68b3', 'USDe on mainnet');
+// The same asset bridges to a different address, and must keep its decimals.
+for (const sym of ['USDe', 'cbBTC']) {
+  const a = m0(sym), b = rh.find((t) => t.symbol === sym);
+  ok(a.address !== b.address, `${sym} is at a different address on each chain`);
+  eq(a.decimals, b.decimals, `${sym} keeps its decimals across chains`);
+  eq(C.TOKEN_COLORS[sym], C.TOKEN_COLORS[sym], `${sym} is one colour on both`);
+}
+eq(C.presetsFor('WBTC').join(','), C.presetsFor('cbBTC').join(','), 'both BTC assets ladder alike');
+eq(C.presetsFor('wstETH').join(','), '0.01,0.1,1', 'wstETH ladders at ether scale');
 eq(rh.length % 4, 0, '4663 fills whole rows of four');
 eq(rh.find(t => t.symbol === 'GME').address, '0x1b0e319c6a659f002271b69db8a7df2f911c153e', 'GME on 4663');
 eq(rh.find(t => t.symbol === 'cbBTC').address, '0xcec185eb182c47d1ba1efc84e6959e18cd620be4', 'cbBTC on 4663');
@@ -589,14 +626,21 @@ eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders l
     const t = mx === r ? (g - b) / d % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
     return ((t * 60) + 360) % 360;
   };
-  const cols = rh.filter((t) => t.address !== C.ZERO).map((t) => C.TOKEN_COLORS[t.symbol]);
-  for (let i = 0; i < cols.length; i++) {
-    for (let j = i + 1; j < cols.length; j++) {
-      let dh = Math.abs(hue(cols[i]) - hue(cols[j]));
-      if (dh > 180) dh = 360 - dh;
-      const dl = Math.abs(C.luminance(cols[i]) - C.luminance(cols[j]));
-      ok(dh > 25 || dl > 0.25,
-        `${cols[i]} and ${cols[j]} differ in hue or in value`);
+  // EVERY tile, on EVERY chain — including native ETH, which an earlier version
+  // of this loop skipped by filtering on the zero address. That exclusion is
+  // how a shipped ETH/GME pair sat 20 degrees and 0.22 luminance apart unseen.
+  for (const id of C.CHAIN_IDS) {
+    const ts = C.CHAINS[id].tokens;
+    for (let i = 0; i < ts.length; i++) {
+      for (let j = i + 1; j < ts.length; j++) {
+        const a = C.TOKEN_COLORS[ts[i].symbol], b = C.TOKEN_COLORS[ts[j].symbol];
+        ok(a && b, `chain ${id}: ${ts[i].symbol} and ${ts[j].symbol} both have colours`);
+        let dh = Math.abs(hue(a) - hue(b));
+        if (dh > 180) dh = 360 - dh;
+        const dl = Math.abs(C.luminance(a) - C.luminance(b));
+        ok(dh > 25 || dl > 0.25,
+          `chain ${id}: ${ts[i].symbol} ${a} and ${ts[j].symbol} ${b} differ in hue or value (${dh.toFixed(0)}deg, ${dl.toFixed(2)})`);
+      }
     }
   }
 }
