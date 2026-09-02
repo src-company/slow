@@ -69,7 +69,7 @@ const EXPORTS = [
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
-  'LOADER', 'LOADER_STILL',
+  'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -371,6 +371,29 @@ eq(C.ready(), false, 'not ready without a timelock');
 C.S.delay = 86400;
 eq(C.ready(), true, 'ready once recipient, asset, amount and timelock are all set');
 Object.assign(C.S, snap);
+
+// ─── Names ─────────────────────────────────────────────────────────────────
+// GNS is an ownerless fork of wei-names, so it answers the same two selectors
+// with the same namehash. Verified against the GWEI_NODE constant in its README.
+eq(C.GNS, '0x9D51D507BC7264d4fE8Ad1cf7Fe191933A0a81d6', 'GNS registry address');
+eq(C.namehash('gwei'), '0xcca9c7f2dbe2808af0de2982fc84314bfa68a82a6a60ad5cd757f91a233d7d7f',
+  'namehash("gwei") matches the GNS constant');
+eq(C.namehash('alice.gwei'),
+  C.keccak256(C.namehash('gwei') + C.keccak256('alice').slice(2)),
+  'a .gwei name hashes under the gwei node');
+ok(C.GNS !== C.WNS && C.GNS !== C.ENS_REG, 'three distinct registries');
+
+// Dispatch is on the TLD, not a suffix test. ".gwei" happens not to end with
+// ".wei" — the characters differ — but reading that off a comparison every time
+// is how the wrong registry eventually gets asked.
+eq(C.tldOf('a.wei'), 'wei', 'tldOf .wei');
+eq(C.tldOf('a.gwei'), 'gwei', 'tldOf .gwei');
+eq(C.tldOf('a.eth'), 'eth', 'tldOf .eth');
+eq(C.tldOf('deep.sub.gwei'), 'gwei', 'tldOf a subdomain');
+eq(C.tldOf('A.GWEI'), 'gwei', 'tldOf is case-insensitive');
+eq(C.tldOf('plain'), '', 'a bare label has no TLD');
+eq(C.tldOf(''), '', 'an empty name has no TLD');
+ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids does not exist');
 
 // ─── Loader ────────────────────────────────────────────────────────────────
 {

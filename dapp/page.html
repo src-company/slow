@@ -400,7 +400,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
     <div class="sendPane">
       <div class="field">
         <span class="flabel">To</span>
-        <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false" aria-describedby="ens">
+        <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, .wei, or .gwei" autocomplete="off" spellcheck="false" aria-describedby="ens">
         <p class="note" id="ens" aria-live="polite"></p>
       </div>
 
@@ -534,7 +534,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
 
 <div class="modal" id="guardModal" role="dialog" aria-modal="true" aria-labelledby="guardTitle"><div class="card">
   <h3 id="guardTitle">Guardian</h3>
-  <input type="text" class="input" id="guardInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false">
+  <input type="text" class="input" id="guardInput" placeholder="Address, .eth, .wei, or .gwei" autocomplete="off" spellcheck="false">
   <p class="note" id="guardNote" aria-live="polite"></p>
   <p class="note" id="guardWarn"></p>
   <button class="btn" id="guardApply">Apply</button>
@@ -597,6 +597,10 @@ const SLOW    = '0x000000000000888741B254d37e1b27128AfEAaBC';
 const ZERO    = '0x0000000000000000000000000000000000000000';
 const ENS_REG = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const WNS     = '0x0000000000696760E15f265e828DB644A0c242EB';
+// Gwei Name Service — an ownerless fork of wei-names, so it answers the same
+// two selectors with the same namehash. Verified: namehash('gwei') matches the
+// GWEI_NODE constant in its own README.
+const GNS     = '0x9D51D507BC7264d4fE8Ad1cf7Fe191933A0a81d6';
 const MC3     = '0xcA11bde05977b3631167028862bE2a173976CA11';
 const MAINNET = 1;
 const GRACE   = 2592000;                 // 30-day clawback window
@@ -1088,45 +1092,99 @@ function namehash(name){
 async function ensResolve(name){
   if(!name) return null;
   const n=namehash(name);
-  const rh=await callOk(ENS_REG, SEL.resolver+n.slice(2));
+  const rh=await mainnetCall(ENS_REG, SEL.resolver+n.slice(2));
   if(!rh) return null;
   const res='0x'+rh.slice(-40);
   if(res===ZERO) return null;
-  const ah=await callOk(res, SEL.addr+n.slice(2));
+  const ah=await mainnetCall(res, SEL.addr+n.slice(2));
   if(!ah) return null;
   const a='0x'+ah.slice(-40);
   return a===ZERO?null:a;
 }
-async function ensReverse(addr){
-  const n=namehash(addr.toLowerCase().slice(2)+'.addr.reverse');
-  const rh=await callOk(ENS_REG, SEL.resolver+n.slice(2));
-  if(!rh) return null;
-  const res='0x'+rh.slice(-40);
-  if(res===ZERO) return null;
-  const nh=await callOk(res, SEL.ensName+n.slice(2));
-  if(!nh) return null;
-  let name; try { [name]=decode(['string'],nh); } catch(e){ return null; }
+/* WNS and GNS share an interface: addr(bytes32) forward, reverseResolve(address)
+   back, ENS namehash for the node. One function serves both. */
+async function flatResolve(registry, name){
   if(!name) return null;
-  const fwd=await ensResolve(name);
-  return fwd&&fwd.toLowerCase()===addr.toLowerCase()?name:null;
-}
-async function wnsResolve(name){
-  if(!name) return null;
-  const ah=await callOk(WNS, SEL.addr+namehash(name).slice(2));
+  const ah=await mainnetCall(registry, SEL.addr+namehash(name).slice(2));
   if(!ah) return null;
   const a='0x'+ah.slice(-40);
   return a===ZERO?null:a;
 }
-async function wnsReverse(addr){
-  const ah=await callOk(WNS, SEL.wnsReverse+word(addr));
-  if(!ah) return null;
-  let name; try { [name]=decode(['string'],ah); } catch(e){ return null; }
-  if(!name) return null;
-  const fwd=await wnsResolve(name);
-  return fwd&&fwd.toLowerCase()===addr.toLowerCase()?name:null;
+const wnsResolve = n => flatResolve(WNS, n);
+const gnsResolve = n => flatResolve(GNS, n);
+
+/* Forward resolution dispatches on the TLD rather than on a suffix test.
+   ".gwei" does not end with ".wei" — the characters differ — but reading that
+   off a comparison every time is how the wrong registry eventually gets asked. */
+function tldOf(name){
+  const p=String(name||'').toLowerCase().split('.');
+  return p.length>1 ? p[p.length-1] : '';
 }
-const resolveName = n => n.toLowerCase().endsWith('.wei') ? wnsResolve(n) : ensResolve(n);
-const reverseAny  = async a => (await wnsReverse(a)) || (await ensReverse(a));
+function resolveName(name){
+  const t=tldOf(name);
+  if(t==='wei')  return wnsResolve(name);
+  if(t==='gwei') return gnsResolve(name);
+  if(t)          return ensResolve(name);
+  return Promise.resolve(null);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Reverse resolution
+   ══════════════════════════════════════════════════════════════════
+   Three registries, and every one of them needs a FORWARD check before
+   its answer can be trusted: a reverse record is set by the address
+   itself and means nothing until the name points back.
+
+   Done one at a time that is up to eight sequential round trips for a
+   single pasted address — WNS reverse, WNS forward, ENS resolver, ENS
+   name, ENS resolver again, ENS addr, and now GNS on top. At a couple
+   of hundred milliseconds each that is a visible stall on every
+   keystroke that completes an address.
+
+   Batched it is two: ask all three registries at once, then verify all
+   three answers at once. Only an ENS hit needs a third and fourth trip,
+   because its forward path is itself two dependent calls.
+   ══════════════════════════════════════════════════════════════════ */
+const decodeStr = hex => { try { return decode(['string'],hex)[0]||''; } catch(e){ return ''; } };
+
+async function reverseAny(addr){
+  const a=addr.toLowerCase();
+  const revNode=namehash(a.slice(2)+'.addr.reverse');
+
+  // Round one: every registry, at the same time.
+  const [wRev,gRev,eRes] = await mc([
+    {to:WNS,     data:SEL.wnsReverse+word(addr)},
+    {to:GNS,     data:SEL.wnsReverse+word(addr)},
+    {to:ENS_REG, data:SEL.resolver+revNode.slice(2)},
+  ], 0, MAINNET);
+
+  const wName = wRev ? decodeStr(wRev) : '';
+  const gName = gRev ? decodeStr(gRev) : '';
+  const eResolver = eRes ? '0x'+eRes.slice(-40) : ZERO;
+
+  // Round two: verify what came back, again at the same time.
+  const checks=[], meta=[];
+  if(wName){ checks.push({to:WNS, data:SEL.addr+namehash(wName).slice(2)}); meta.push(['wei',wName]); }
+  if(gName){ checks.push({to:GNS, data:SEL.addr+namehash(gName).slice(2)}); meta.push(['gwei',gName]); }
+  if(eResolver!==ZERO){ checks.push({to:eResolver, data:SEL.ensName+revNode.slice(2)}); meta.push(['eth',null]); }
+  if(!checks.length) return null;
+  const res = await mc(checks, 0, MAINNET);
+
+  let ensName=null;
+  for(let i=0;i<meta.length;i++){
+    const [kind,name]=meta[i], r=res[i];
+    if(!r) continue;
+    if(kind==='eth'){ ensName=decodeStr(r); continue; }
+    // A flat registry answers addr() directly; the name is good if it points back.
+    if(('0x'+r.slice(-40)).toLowerCase()===a) return name;
+  }
+  // ENS last, and only it needs the extra hop: resolver, then addr.
+  if(ensName){
+    const fwd=await ensResolve(ensName);
+    if(fwd && fwd.toLowerCase()===a) return ensName;
+  }
+  return null;
+}
 
 /* ══════════════════════════════════════════════════════════════════
    State

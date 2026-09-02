@@ -32,7 +32,7 @@ differs is the code at it, the token set, and the surrounding infrastructure.
 | SLOW | deployed, 21,648 B | not deployed yet |
 | Multicall3 | canonical | canonical |
 | Permit2 | canonical | canonical |
-| `.eth` / `.wei` | resolves | **does not** |
+| `.eth` / `.wei` / `.gwei` | resolves | **does not** |
 | tokens | ETH, USDC, USDT, BOLD | ETH, USDC, USDT, WETH (BOLD not bridged) |
 
 Two consequences are baked into the page:
@@ -292,6 +292,7 @@ forge test
 Dapp tests run on vanilla Node — no NPM:
 
 - `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, the chain registry, transfer status, and every selector.
+- `node test/names.live.mjs` — name resolution against mainnet, and what it costs: forward resolution per TLD, reverse across all three registries, and a count of the JSON-RPC round trips each takes. Also asserts that name reads stay on mainnet while another chain is active.
 - `node test/chains.live.mjs` — the chain registry against real nodes: each chain answers with the id it claims, Multicall3 is at the canonical address, every listed token reports the symbol and decimals the registry pins, and `.eth` resolves only on mainnet. Needs network; skips a chain cleanly if its RPCs are unreachable.
 - `node test/slow_html.test.mjs` — the same for the frozen v1 artifact `SLOW.html`.
 - `node test/slow_html.e2e.test.mjs` — end-to-end. Spawns `anvil`, deploys SLOW, drives the dapp's flow functions against the live contract, asserts on-chain state matches dapp state. Requires `anvil` on PATH and a current `forge build`.
