@@ -309,15 +309,31 @@ body.light .modal{background:rgba(0,0,0,.4)}
 .kv dd{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
 .picks{display:flex;flex-direction:column;gap:6px}
 .pick{
-  display:flex;align-items:center;gap:11px;padding:12px 13px;
-  background:transparent;border:1px solid var(--bd);cursor:pointer;text-align:left;width:100%;
-  font-size:13.5px;transition:border-color var(--t),background var(--t);
+  display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:13px;
+  padding:12px 13px;min-height:52px;width:100%;
+  background:transparent;border:1px solid var(--bd);cursor:pointer;text-align:left;
+  font-size:13.5px;color:var(--fg);
+  transition:border-color var(--t),background var(--t);
 }
 .pick:hover{border-color:var(--fg);background:var(--bg2)}
 .pick[aria-current=true]{border-color:var(--fg);background:var(--bg2)}
-.pick svg{width:22px;height:22px;flex:0 0 auto;display:block}
-.pick img{width:18px;height:18px;flex:0 0 auto}
-.pick small{display:block;color:var(--dim);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+/* The icon cell is fixed and its contents are clamped. Wallet icons arrive from
+   the extension as an arbitrary data URI — any size, any aspect — so this is a
+   constraint, not a default. One unbounded PNG otherwise sets the row height. */
+.pick .ico{
+  grid-column:1;width:24px;height:24px;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;font-size:15px;line-height:1;
+}
+.pick .ico > *{max-width:24px;max-height:24px;display:block}
+.pick .ico img{width:24px;height:24px;object-fit:contain}
+.pick .ico svg{width:24px;height:24px}
+.pick .lbl2{grid-column:2;min-width:0}
+.pick .lbl2 b{display:block;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick small{
+  display:block;color:var(--dim);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;margin-top:3px;
+}
+.pick .tick{grid-column:3;color:var(--fg);font-size:13px}
 @media (max-width:520px){
   .modal{align-items:flex-end;padding:0}
   .card{width:100%;margin:0;border-width:2px 0 0;padding-bottom:max(22px,env(safe-area-inset-bottom))}
@@ -1104,7 +1120,10 @@ function hideModal(m){
   m.classList.remove('on');
   if(trapped===m){ trapped=null; if(lastFocus&&lastFocus.isConnected) lastFocus.focus(); }
 }
-function hideAllModals(){ qsa('.modal.on').forEach(m=>m.classList.remove('on')); trapped=null; }
+function hideAllModals(){
+  qsa('.modal.on').forEach(m=>{ if(m.__cancel) m.__cancel(); else m.classList.remove('on'); });
+  trapped=null;
+}
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     if(qs('.modal.on')) hideAllModals();
@@ -1118,7 +1137,9 @@ document.addEventListener('keydown', e=>{
   if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
   else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
 });
-document.addEventListener('click', e=>{ qsa('.modal.on').forEach(m=>{ if(e.target===m) hideModal(m); }); });
+document.addEventListener('click', e=>{
+  qsa('.modal.on').forEach(m=>{ if(e.target!==m) return; if(m.__cancel) m.__cancel(); else hideModal(m); });
+});
 
 /* ══════════════════════════════════════════════════════════════════
    Errors — a rejection is not a crash
@@ -1147,24 +1168,16 @@ function walletChoices(){
   if(window.ethereum) return [{info:{name:'Browser wallet',icon:null,uuid:'injected'},provider:window.ethereum}];
   return [];
 }
-function pickWallet(){
+async function pickWallet(){
   const list=walletChoices();
-  if(!list.length){ toast('No wallet detected — install one to send'); return Promise.resolve(null); }
-  if(list.length===1) return Promise.resolve(list[0]);
-  return new Promise(resolve=>{
-    el.walletList.innerHTML='';
-    for(const w of list){
-      const b=document.createElement('button');
-      b.className='wallet-opt'; b.type='button';
-      if(w.info.icon){ const i=document.createElement('img'); i.src=w.info.icon; i.alt=''; b.appendChild(i); }
-      b.appendChild(document.createTextNode(w.info.name));
-      b.onclick=()=>{ hideModal(el.walletModal); resolve(w); };
-      el.walletList.appendChild(b);
-    }
-    el.walletCancel.onclick=()=>{ hideModal(el.walletModal); resolve(null); };
-    showModal(el.walletModal);
-  });
+  if(!list.length){ toast('No wallet detected — install one to send'); return null; }
+  if(list.length===1) return list[0];
+  const key=await openPicker(el.walletModal, el.walletList,
+    list.map(w=>({key:w.info.uuid, label:w.info.name, img:w.info.icon, sub:w.info.rdns||''})),
+    null);
+  return key===null ? null : list.find(w=>w.info.uuid===key) || null;
 }
+
 function bindProvider(p){
   if(p.__slowBound) return;
   p.__slowBound=true;
@@ -2567,9 +2580,9 @@ async function handleConfirm(){
    Appearance — light, dark, or follow the system
    ══════════════════════════════════════════════════════════════════ */
 const THEMES=[
-  {key:'system', label:'System',    glyph:'◐'},
-  {key:'light',  label:'Light',     glyph:'☀'},
-  {key:'dark',   label:'Dark',      glyph:'☾'},
+  {key:'system', label:'System', sub:'follow the OS', glyph:'\u25d0'},
+  {key:'light',  label:'Light',  sub:'',              glyph:'\u2600'},
+  {key:'dark',   label:'Dark',   sub:'',              glyph:'\u263e'},
 ];
 const sysDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 function applyTheme(){
@@ -2583,23 +2596,44 @@ function setTheme(k){
   try { k==='system' ? localStorage.removeItem('slow.theme') : localStorage.setItem('slow.theme',k); } catch(e){}
   applyTheme();
 }
-function openPicker(modal, list, items, current, choose){
-  list.replaceChildren();
-  for(const it of items){
-    const b=document.createElement('button');
-    b.type='button'; b.className='pick';
-    b.setAttribute('aria-current',String(it.key===current));
-    if(it.icon){ const i=document.createElement('span'); i.innerHTML=it.icon; b.appendChild(i.firstChild); }
-    else if(it.img){ const i=document.createElement('img'); i.src=it.img; i.alt=''; b.appendChild(i); }
-    else if(it.glyph){ const g=document.createElement('span'); g.textContent=it.glyph; b.appendChild(g); }
-    const t=document.createElement('span');
-    t.textContent=it.label;
-    if(it.sub){ const sm=document.createElement('small'); sm.textContent=it.sub; t.appendChild(sm); }
-    b.appendChild(t);
-    b.onclick=()=>{ hideModal(modal); choose(it.key); };
-    list.appendChild(b);
-  }
-  showModal(modal);
+/*
+   One picker for appearance, network and wallet. It resolves rather than
+   calling back, and every route out of it resolves — including the backdrop
+   and Escape, which previously left `connect()` awaiting a promise nothing
+   would ever settle.
+*/
+function openPicker(modal, list, items, current){
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=v=>{ if(done) return; done=true; modal.__cancel=null; hideModal(modal); resolve(v); };
+    list.replaceChildren();
+    for(const it of items){
+      const b=document.createElement('button');
+      b.type='button'; b.className='pick';
+      b.setAttribute('aria-current',String(it.key===current));
+
+      const ico=document.createElement('span'); ico.className='ico';
+      if(it.icon){ const t=document.createElement('span'); t.innerHTML=it.icon; if(t.firstElementChild) ico.appendChild(t.firstElementChild); }
+      else if(it.img){ const i=document.createElement('img'); i.src=it.img; i.alt=''; i.loading='lazy';
+        i.onerror=()=>{ i.remove(); ico.textContent=(it.label||'?').slice(0,1); }; ico.appendChild(i); }
+      else if(it.glyph){ ico.textContent=it.glyph; }
+      b.appendChild(ico);
+
+      const lab=document.createElement('span'); lab.className='lbl2';
+      const nm=document.createElement('b'); nm.textContent=it.label; lab.appendChild(nm);
+      if(it.sub){ const sm=document.createElement('small'); sm.textContent=it.sub; lab.appendChild(sm); }
+      b.appendChild(lab);
+
+      const tick=document.createElement('span'); tick.className='tick';
+      tick.textContent = it.key===current ? '\u2713' : '';
+      b.appendChild(tick);
+
+      b.onclick=()=>finish(it.key);
+      list.appendChild(b);
+    }
+    modal.__cancel=()=>finish(null);
+    showModal(modal);
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2610,17 +2644,22 @@ if(!THEMES.some(t=>t.key===S.theme)) S.theme='system';
 applyTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{ if(S.theme==='system') applyTheme(); });
 
-el.themeBtn.onclick=()=>openPicker(el.themeModal, el.themeList,
-  THEMES.map(t=>({key:t.key,label:t.label,glyph:t.glyph})), S.theme, setTheme);
-el.themeCancel.onclick=()=>hideModal(el.themeModal);
+el.themeBtn.onclick=async()=>{
+  const k=await openPicker(el.themeModal, el.themeList,
+    THEMES.map(t=>({key:t.key,label:t.label,sub:t.sub,glyph:t.glyph})), S.theme);
+  if(k) setTheme(k);
+};
+el.themeCancel.onclick=()=>el.themeModal.__cancel?.();
 
-el.chainBtn.onclick=()=>openPicker(el.chainModal, el.chainList,
-  CHAIN_IDS.map(id=>({key:id,label:CHAINS[id].name,sub:`chain ${id}`,icon:ICONS[id]})),
-  S.chain, id=>switchChain(id));
-el.chainCancel.onclick=()=>hideModal(el.chainModal);
+el.chainBtn.onclick=async()=>{
+  const id=await openPicker(el.chainModal, el.chainList,
+    CHAIN_IDS.map(id=>({key:id,label:CHAINS[id].name,sub:`chain ${id}`,icon:ICONS[id]})), S.chain);
+  if(id) switchChain(id);
+};
+el.chainCancel.onclick=()=>el.chainModal.__cancel?.();
 
 el.walletBtn.onclick=()=>S.account?disconnect():connect(true);
-el.walletCancel.onclick=()=>hideModal(el.walletModal);
+el.walletCancel.onclick=()=>el.walletModal.__cancel?.();
 el.homeBtn.onclick=()=>setView('home');
 el.sendBox.onclick=()=>setView('send');
 el.takeBox.onclick=async()=>{ setView('take'); if(!S.account) await connect(true); };

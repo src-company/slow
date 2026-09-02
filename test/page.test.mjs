@@ -476,10 +476,46 @@ eq(C.cfg(999999).id, 1, 'cfg() falls back to mainnet for an unknown chain');
 eq(C.presetsFor('WETH').join(','), C.presetsFor('ETH').join(','), 'WETH shares the ETH ladder');
 ok(C.TOKEN_COLORS.WETH === C.TOKEN_COLORS.ETH, 'WETH is painted as ether');
 
-// ─── Report ────────────────────────────────────────────────────────────────
+// ─── Every styled class actually has a rule ────────────────────────────────
+// The wallet picker shipped as raw browser buttons with unconstrained images
+// because a stylesheet rewrite dropped `.wallet-opt` while the JS kept setting
+// it. Nothing failed — it just looked broken. This is the check that would
+// have caught it: every class the page assigns must resolve to a rule.
+{
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const script = body;
+  const declared = new Set();
+  for (const m of style.matchAll(/\.([a-zA-Z][\w-]*)/g)) declared.add(m[1]);
+
+  const assigned = new Set();
+  // class="a b" in markup, outside the stylesheet
+  const markup = html.slice(0, html.indexOf('<style>')) + html.slice(html.indexOf('</style>'));
+  for (const m of markup.matchAll(/\bclass="([^"]+)"/g)) {
+    for (const c of m[1].split(/\s+/)) if (c) assigned.add(c);
+  }
+  // className='a b' assigned in script
+  for (const m of script.matchAll(/\.className\s*=\s*'([^']+)'/g)) {
+    for (const c of m[1].split(/\s+/)) if (c && !c.includes('$')) assigned.add(c);
+  }
+  const orphans = [...assigned].filter((c) => !declared.has(c)).sort();
+  eq(orphans.join(','), '', `every assigned class has a CSS rule (orphans: ${orphans.join(', ') || 'none'})`);
+}
+
+// ─── The picker clamps whatever an extension hands it ──────────────────────
+// EIP-6963 wallet icons are data URIs supplied by the extension: any size, any
+// aspect. One unbounded PNG otherwise sets the row height, which is exactly
+// what TronLink's did.
+{
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  ok(/\.pick \.ico img\{[^}]*object-fit:contain/.test(style), 'picker images are object-fit clamped');
+  ok(/\.pick \.ico img\{[^}]*width:24px[^}]*height:24px/.test(style), 'picker images are pinned to 24px');
+  ok(/\.pick \.ico\{[^}]*overflow:hidden/.test(style), 'the icon cell clips anything that escapes');
+  ok(/\.pick\{[^}]*grid-template-columns:24px 1fr auto/.test(style),
+    'the picker row is a grid, so the icon cannot widen the label');
+}
+
 if (failures.length) {
   console.error(`\n${failures.length} failing:\n${failures.join('\n')}\n`);
-  console.error(`${pass} passed, ${failures.length} failed`);
   process.exit(1);
 }
 console.log(`${pass} passed`);
