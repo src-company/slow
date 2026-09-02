@@ -66,7 +66,7 @@ const EXPORTS = [
   'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'tokSym',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
-  'fmtWhen', 'ready',
+  'fmtWhen', 'ready', 'contrast',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -393,13 +393,21 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
 // ─── Tile contrast ─────────────────────────────────────────────────────────
 // Robinhood's chartreuse is far too light for white text; the ink is derived
 // rather than hand-maintained, so a custom token gets the same treatment.
-ok(C.luminance('#ccff00') > 0.42, 'USDG chartreuse reads as a light ground');
-eq(C.inkOn('#ccff00'), '#110e08', 'chartreuse gets dark ink');
-eq(C.inkOn('#2775ca'), '#ffffff', 'USDC blue gets white ink');
-eq(C.inkOn('#ff69b4'), '#ffffff', 'ETH pink gets white ink');
-eq(C.inkOn('#4d7c0f'), '#ffffff', 'NVDA green gets white ink');
-eq(C.inkOn('hsl(210,55%,45%)'), '#ffffff', 'a hashed hsl() colour falls back to white ink');
 ok(C.luminance('#000000') < C.luminance('#ffffff'), 'luminance is ordered');
+eq(C.contrast('#ffffff', '#000000').toFixed(0), '21', 'contrast of black on white is 21:1');
+eq(C.contrast('#777777', '#777777').toFixed(0), '1', 'a colour against itself is 1:1');
+// Every tile the app ships must clear 3:1, the floor for large bold text.
+for (const [sym, hex] of Object.entries(C.TOKEN_COLORS)) {
+  const ratio = C.contrast(hex, C.inkOn(hex));
+  ok(ratio >= 3, `${sym} ${hex} reaches ${ratio.toFixed(1)}:1 with its chosen ink`);
+}
+// The cases a single luminance threshold got wrong.
+eq(C.inkOn('#ccff00'), '#110e08', 'chartreuse gets dark ink');
+eq(C.inkOn('#ff69b4'), '#110e08', 'ETH pink gets dark ink — white on it is 2.6:1');
+eq(C.inkOn('#f7931a'), '#110e08', 'cbBTC orange gets dark ink — white on it is 2.3:1');
+eq(C.inkOn('#2775ca'), '#ffffff', 'USDC blue keeps white ink');
+eq(C.inkOn('#4d7c0f'), '#ffffff', 'NVDA green keeps white ink');
+eq(C.inkOn('hsl(210,55%,45%)'), '#ffffff', 'a hashed hsl() colour falls back to white ink');
 // NVDA and USDG must not read as one colour side by side.
 ok(Math.abs(C.luminance('#4d7c0f') - C.luminance('#ccff00')) > 0.3,
   'NVDA and USDG are separated by value, not just hue');
@@ -444,7 +452,13 @@ for (const id of C.CHAIN_IDS) {
 // Chain-native assets, each confirmed on chain 4663 to have code and to report
 // this symbol and these decimals.
 const rh = C.CHAINS[4663].tokens;
-eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA', '4663 lists its own assets');
+eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA,cbBTC,SPY,SPCX', '4663 lists its own assets');
+eq(rh.find(t => t.symbol === 'cbBTC').address, '0xcec185eb182c47d1ba1efc84e6959e18cd620be4', 'cbBTC on 4663');
+eq(rh.find(t => t.symbol === 'cbBTC').decimals, 8, 'cbBTC has 8 decimals, not 18');
+eq(rh.find(t => t.symbol === 'SPY').address, '0x117cc2133c37b721f49de2a7a74833232b3b4c0c', 'SPY on 4663');
+eq(rh.find(t => t.symbol === 'SPCX').address, '0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea', 'SPCX on 4663');
+eq(C.presetsFor('cbBTC').join(','), '0.001,0.01,0.1', 'cbBTC gets a bitcoin-scale ladder');
+eq(C.presetsFor('SPY').join(','), C.presetsFor('NVDA').join(','), 'SPY ladders like a share');
 eq(rh.find(t => t.symbol === 'USDe').address, '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', 'USDe on 4663');
 eq(rh.find(t => t.symbol === 'USDe').decimals, 18, 'USDe has 18 decimals, not 6');
 eq(rh.find(t => t.symbol === 'USDG').address, '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG on 4663');

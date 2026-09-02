@@ -637,6 +637,9 @@ const CHAINS = {
       {symbol:'USDe', address:'0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', decimals:18},
       {symbol:'USDG', address:'0x5fc5360d0400a0fd4f2af552add042d716f1d168', decimals:6},
       {symbol:'NVDA', address:'0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', decimals:18},
+      {symbol:'cbBTC',address:'0xcec185eb182c47d1ba1efc84e6959e18cd620be4', decimals:8},
+      {symbol:'SPY',  address:'0x117cc2133c37b721f49de2a7a74833232b3b4c0c', decimals:18},
+      {symbol:'SPCX', address:'0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea', decimals:18},
     ],
     // Most wallets have never heard of chain 4663, so a switch has to be
     // able to fall back to adding it.
@@ -683,6 +686,7 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
 const TOKEN_COLORS = {
   ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#745ddf',
   USDe:'#4d5bd9', USDG:'#ccff00', NVDA:'#4d7c0f',
+  cbBTC:'#f7931a', SPY:'#b3202e', SPCX:'#4a5568',
 };
 /* USDG carries Robinhood's chartreuse, which is far too light for white text.
    Rather than hand-maintain a second table, the ink is derived: WCAG relative
@@ -700,11 +704,26 @@ function luminance(hex){
   const lin=x=>{ x/=255; return x<=0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055,2.4); };
   return 0.2126*lin(c[0])+0.7152*lin(c[1])+0.0722*lin(c[2]);
 }
-const inkOn = hex => luminance(hex)>0.42 ? '#110e08' : '#ffffff';
+/* WCAG contrast ratio. A single luminance threshold got this wrong: white on
+   ETH's pink is 2.6:1 and on cbBTC's orange 2.3:1, both under the 3:1 floor for
+   large text, while a threshold set high enough to catch them would flip tiles
+   that were fine. Comparing the two candidate inks is exact and needs no
+   number to tune. */
+function contrast(a,b){
+  const x=luminance(a), y=luminance(b);
+  return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);
+}
+const INK_DARK='#110e08', INK_LIGHT='#ffffff';
+const inkOn = hex =>
+  contrast(hex,INK_DARK) > contrast(hex,INK_LIGHT) ? INK_DARK : INK_LIGHT;
 // Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
+/* Ladders follow the asset's own scale. A tokenized share is not a dollar, and
+   a bitcoin is not either: 10/100/1000 cbBTC would offer eight figures as the
+   three default amounts. */
 const PRESETS = {
   ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'],
-  NVDA:['0.1','1','10'],                       // a tokenized share, not a dollar
+  cbBTC:['0.001','0.01','0.1'],
+  NVDA:['0.1','1','10'], SPY:['0.1','1','10'], SPCX:['0.1','1','10'],
   default:['10','100','1000'],
 };
 
