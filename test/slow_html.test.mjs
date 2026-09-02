@@ -10,6 +10,7 @@
 // in memory: `(()=>{...})()` becomes `(()=>{...; return {...}; })()`.
 
 import fs from 'node:fs/promises';
+import {keccak256 as refKeccak} from '../scripts/lib.mjs';
 import https from 'node:https';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -17,6 +18,8 @@ import {fileURLToPath} from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const htmlPath = path.join(__dirname, '..', 'SLOW.html');
 const html = await fs.readFile(htmlPath, 'utf8');
+const utf8 = (s) => new TextEncoder().encode(s);
+const sigHash = (sig) => refKeccak(utf8(sig));
 
 // ─── Extract the IIFE body ────────────────────────────────────────────────
 const re = /<script>\s*\(\(\)\s*=>\s*\{([\s\S]*?)\}\)\(\);?\s*<\/script>/;
@@ -211,7 +214,7 @@ const sigs = {
   gateAddr: 'gate()',
 };
 for (const [key, sig] of Object.entries(sigs)) {
-  eq(SEL[key], keccak256(sig).slice(0, 10), `SEL.${key} == selector("${sig}")`);
+  eq(SEL[key], sigHash(sig).slice(0, 10), `SEL.${key} == selector("${sig}")`);
 }
 ok(Object.keys(SEL).length === Object.keys(sigs).length,
   `every SEL key has a canonical signature (got ${Object.keys(SEL).length}, want ${Object.keys(sigs).length})`);
@@ -222,14 +225,25 @@ eq(ZERO, '0x0000000000000000000000000000000000000000', 'ZERO sentinel');
 eq(ENS_REG, '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', 'ENS registry mainnet address');
 eq(WNS, '0x0000000000696760E15f265e828DB644A0c242EB', 'WNS (wei.domains) mainnet address');
 
-// keccak256 — vectors crosschecked with `cast keccak`
-eq(keccak256(''), '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470', 'keccak256("")');
-eq(keccak256('abc'), '0x4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45', 'keccak256("abc")');
-eq(keccak256('transfer(address,uint256)').slice(0, 10), '0xa9059cbb', 'transfer(address,uint256) selector');
-eq(keccak256('depositTo(address,address,uint256,uint96,bytes)').slice(0, 10), '0x94eeaec9', 'depositTo selector');
-eq(keccak256('unlock(uint256)').slice(0, 10), '0x6198e339', 'unlock selector');
-eq(keccak256('reverse(uint256)').slice(0, 10), '0x97d15425', 'reverse selector');
-eq(keccak256('claim(uint256)').slice(0, 10), '0x379607f5', 'claim selector');
+// keccak256 — hex vectors, crosschecked with `cast keccak`.
+//
+// KNOWN REGRESSION IN THE DEPLOYED BUILD. Commit c50a3c1 ("optimize") dropped
+// the `input.startsWith('0x')` branch to save ~24 bytes against the 47 that
+// were left in the SSTORE2 budget. This build therefore reads EVERY string as
+// hex: keccak256('') throws, and keccak256('abc') returns a plausible but
+// wrong digest with no error. The dapp itself is unaffected — namehash() is the
+// only caller and it passes bytes or 0x-prefixed hex — but the UTF-8 vectors
+// this suite used to assert cannot run here, and the selector cross-check above
+// goes through scripts/lib.mjs instead.
+//
+// dapp/page.html restores the guard; test/page.test.mjs asserts the vectors.
+eq(keccak256(utf8('')), '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470', 'keccak256(bytes of "")');
+eq(keccak256(utf8('abc')), '0x4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45', 'keccak256(bytes of "abc")');
+eq(keccak256('0x' + Buffer.from('abc').toString('hex')), keccak256(utf8('abc')), 'hex and bytes inputs agree');
+ok(keccak256('0x' + Buffer.from('transfer(address,uint256)').toString('hex')).slice(0, 10) === '0xa9059cbb',
+  'a 0x-prefixed signature still hashes correctly');
+ok(keccak256('transfer(address,uint256)') !== sigHash('transfer(address,uint256)'),
+  'REGRESSION: a bare string is misread as hex (documented above)');
 
 // namehash — vectors from ENSIP-1
 eq(namehash(''), '0x0000000000000000000000000000000000000000000000000000000000000000', 'namehash empty');
@@ -556,7 +570,10 @@ el.amountApply.onclick();
 eq(S.amount, null, 'amountApply rejects negative (S.amount stays null)');
 el.amountInput.value = '1.5';
 el.amountApply.onclick();
-eq(S.amount, 1.5, 'amountApply accepts 1.5');
+// The dapp stores the raw string, not a float — parseUnits reads it exactly.
+// This assertion compared against a number and had never run: the keccak
+// regression above killed the suite before it got here.
+eq(S.amount, '1.5', 'amountApply accepts 1.5 and keeps it as a string');
 el.amountInput.value = 'abc';
 S.amount = null;
 el.amountApply.onclick();

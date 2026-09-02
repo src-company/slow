@@ -1,0 +1,1928 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 100' fill='none' stroke-linecap='square'%3E%3Crect width='120' height='100' fill='%23000'/%3E%3Cpath stroke='%23fff' d='M35 32h30M23 50h42M43 68h22M75 22l32 28-32 28' stroke-width='10'/%3E%3Cpath stroke='%23fff' d='M15 43l-8 7 8 7' stroke-width='6'/%3E%3C/svg%3E">
+<title>SLOW</title>
+<style>
+:root{
+  --bg:#000;--fg:#fff;--bg2:#1a1a1a;--bg3:#333;--bd:#333;
+  --eth:#ff69b4;--usdc:#2775ca;--usdt:#26a17b;--bold:#745DDF;
+  --ok:#4caf50;--warn:#ff9800;--err:#ff6b6b;
+  --t:.3s ease;
+}
+body.light{
+  --bg:#fff;--fg:#000;--bg2:#e6e6e6;--bg3:#ccc;--bd:#ccc;
+  --ok:#2e7d32;--warn:#e65100;--err:#c62828;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  min-height:100dvh;background:var(--bg);color:var(--fg);
+  font-family:Arial,Helvetica,sans-serif;
+  transition:background var(--t),color var(--t);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+
+/* ── chrome ─────────────────────────────────────────────── */
+.bar{
+  flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;
+  gap:10px;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));
+  position:relative;z-index:20;
+}
+.chip{
+  background:var(--bg2);color:var(--fg);border:1px solid var(--bd);
+  padding:9px 14px;border-radius:4px;font-size:14px;cursor:pointer;
+  transition:background var(--t),border-color var(--t);
+  max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.chip:hover{background:var(--bg3)}
+#themeBtn{width:42px;padding:9px 0;text-align:center;flex:0 0 auto}
+.bar-r{display:flex;gap:8px;align-items:center;min-width:0}
+#netDot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+#netDot.off{background:var(--err)}
+#netDot.ro{background:var(--warn)}
+
+/* ── main ───────────────────────────────────────────────── */
+main{
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:0 16px 16px;
+  padding-bottom:max(16px,env(safe-area-inset-bottom));
+}
+
+/* home / send */
+.send-wrap{
+  display:flex;flex-direction:column;align-items:center;gap:18px;
+  width:100%;max-width:340px;margin:auto 0;
+}
+.row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;width:100%}
+.row[hidden]{display:none}
+.opt{
+  font-weight:bold;font-size:17px;color:var(--fg);background:var(--bg2);
+  cursor:pointer;border:1px solid var(--bd);padding:13px 10px;
+  flex:1 1 0;min-width:64px;text-align:center;border-radius:4px;
+  transition:background var(--t),border-color var(--t);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.opt:hover{background:var(--bg3)}
+.opt[aria-pressed=true]{background:var(--bg3);border:2px solid var(--fg);padding:12px 9px}
+
+.stage{position:relative;width:300px;height:300px;max-width:100%;flex:0 0 auto}
+.grid{
+  display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;
+  position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity var(--t);
+}
+.grid.on{opacity:1;pointer-events:auto}
+.grid.dim .crypto{opacity:.35}
+.crypto{
+  display:flex;justify-content:center;align-items:center;font-weight:bold;font-size:22px;
+  color:#fff;cursor:pointer;border:2px solid transparent;border-radius:4px;padding:10px;
+  transition:border-color var(--t),box-shadow var(--t),opacity var(--t);
+  text-shadow:0 1px 3px rgba(0,0,0,.45);overflow:hidden;
+}
+.crypto[aria-pressed=true]{border:4px solid var(--fg);opacity:1!important;box-shadow:0 0 10px rgba(128,128,128,.6)}
+[data-symbol=ETH]{background:var(--eth)}
+[data-symbol=USDC]{background:var(--usdc)}
+[data-symbol=USDT]{background:var(--usdt)}
+[data-symbol=BOLD]{background:var(--bold)}
+
+.frame{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;width:200px;border:2px solid var(--fg);
+  user-select:none;z-index:5;transition:transform var(--t);
+}
+.box{
+  height:100px;display:flex;justify-content:center;align-items:center;
+  font-weight:bold;font-size:24px;cursor:pointer;width:100%;border:none;
+  transition:background var(--t),color var(--t),transform var(--t);
+}
+#sendBox{background:var(--fg);color:var(--bg)}
+#takeBox{background:var(--bg);color:var(--fg)}
+.divider{height:2px;background:var(--fg);flex:0 0 auto}
+body.v-send #sendBox{background:var(--bg);color:var(--fg)}
+body.v-send .frame{transform:translate(-50%,-50%) scale(.86);opacity:.92}
+body.v-send #takeBox{background:var(--bg2);color:var(--fg)}
+
+.link{
+  background:transparent;color:var(--fg);font-size:12px;cursor:pointer;
+  letter-spacing:.5px;border:1px dashed var(--bd);border-radius:4px;padding:7px 14px;
+  opacity:.6;transition:opacity var(--t),background var(--t);
+}
+.link:hover{background:var(--bg2);opacity:1;border-style:solid}
+.link[aria-pressed=true]{opacity:1;color:#fff;border:2px solid var(--fg);font-weight:bold;padding:6px 13px}
+.hint{font-size:12px;color:var(--fg);opacity:.55;min-height:16px;text-align:center}
+
+/* ── take view ──────────────────────────────────────────── */
+.take-wrap{display:none;flex-direction:column;width:100%;max-width:820px;height:100%;min-height:0;gap:14px}
+body.v-take .take-wrap{display:flex}
+body.v-take .send-wrap{display:none}
+.tabs{display:flex;gap:8px;justify-content:center;flex:0 0 auto;flex-wrap:wrap}
+.tab{
+  padding:8px 15px;background:var(--bg2);color:var(--fg);border:1px solid var(--bd);
+  cursor:pointer;border-radius:4px;font-size:14px;transition:background var(--t),border-color var(--t);
+}
+.tab[aria-selected=true]{background:var(--bg3);border-color:var(--fg)}
+.list{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:22px;padding:4px 6px 4px 0;scrollbar-width:thin;scrollbar-color:var(--bg3) transparent}
+.list::-webkit-scrollbar{width:8px}
+.list::-webkit-scrollbar-thumb{background:var(--bg3);border-radius:4px}
+.group{display:flex;flex-direction:column;gap:5px;flex:0 0 auto}
+.label{font-size:13px;font-weight:bold;opacity:.8;display:flex;justify-content:space-between;gap:10px}
+.label .sum{font-weight:normal;opacity:.7;font-variant-numeric:tabular-nums}
+.line-wrap{position:relative;height:38px;flex:0 0 auto}
+.line{
+  height:38px;border-radius:19px;overflow:hidden;position:relative;
+  background:#888;display:flex;align-items:center;
+}
+.line[data-sym=ETH]{background:var(--eth)}
+.line[data-sym=USDC]{background:var(--usdc)}
+.line[data-sym=USDT]{background:var(--usdt)}
+.line[data-sym=BOLD]{background:var(--bold)}
+.fill{position:absolute;left:0;top:0;bottom:0;background:rgba(0,0,0,.28);transition:width .6s linear}
+body.light .fill{background:rgba(255,255,255,.45)}
+.arrow{
+  position:absolute;width:26px;height:26px;padding:0;display:flex;
+  justify-content:center;align-items:center;color:#fff;font-size:17px;line-height:1;
+  cursor:pointer;z-index:3;background:transparent;border:none;border-radius:50%;
+  transition:left .6s linear,transform .15s;
+}
+.arrow:hover,.arrow:focus-visible{transform:scale(1.18);z-index:4}
+.arrow.ready,.arrow.recover{background:var(--bg2);border:1px solid var(--bd)}
+.arrow.ready{color:var(--ok)}
+.arrow.recover{color:var(--warn)}
+.arrow.tipped{box-shadow:0 0 0 2px var(--bold)}
+.empty{text-align:center;padding:40px 10px;opacity:.65;display:flex;flex-direction:column;align-items:center;gap:16px}
+.badge{
+  display:inline-block;min-width:18px;height:18px;line-height:18px;padding:0 5px;
+  border-radius:9px;background:var(--bg2);border:1px solid var(--bd);
+  font-size:11px;font-weight:bold;color:var(--fg);
+  position:absolute;z-index:4;transform:translate(-50%,-50%);pointer-events:none;
+}
+
+/* ── hover tooltip (pointer devices only), in a fixed layer ── */
+#tipLayer{position:fixed;inset:0;pointer-events:none;z-index:30}
+.tip{
+  position:absolute;background:var(--bg2);color:var(--fg);border:1px solid var(--bd);
+  padding:10px 12px;border-radius:6px;font-size:12px;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
+}
+.tt{display:flex;justify-content:space-between;gap:14px;margin:2px 0}
+.tl{font-weight:bold;opacity:.65}
+
+/* ── overlays ───────────────────────────────────────────── */
+.modal{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  justify-content:center;align-items:flex-start;z-index:40;overflow-y:auto;padding:16px;
+}
+body.light .modal{background:rgba(0,0,0,.45)}
+.modal.on{display:flex}
+.card{
+  background:var(--bg);border:2px solid var(--fg);color:var(--fg);padding:26px 24px;
+  width:min(380px,100%);text-align:center;border-radius:6px;margin:auto;
+  overflow-wrap:break-word;display:flex;flex-direction:column;gap:14px;
+}
+.card h3{font-size:18px}
+.summary{font-size:21px;font-weight:bold;line-height:1.35}
+.input{
+  width:100%;background:var(--bg2);color:var(--fg);border:1px solid var(--bd);
+  padding:12px;font-size:16px;border-radius:4px;text-align:center;
+}
+.input:focus{outline:none;border-color:var(--fg)}
+.btn{
+  background:var(--fg);color:var(--bg);border:none;padding:12px 20px;font-size:17px;
+  font-weight:bold;cursor:pointer;border-radius:4px;width:100%;
+  transition:filter var(--t);
+}
+.btn:hover:not(:disabled){filter:brightness(.88)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.alt{background:var(--bg2);color:var(--fg);border:1px solid var(--bd)}
+.btn.danger{background:var(--warn);color:#000}
+.note{font-size:13px;text-align:left;min-height:18px;line-height:1.45}
+.note.ok{color:var(--ok)}
+.note.err{color:var(--err)}
+.note.mute{opacity:.6}
+.tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tgrid div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.tgrid input{width:100%;background:var(--bg2);color:var(--fg);border:1px solid var(--bd);padding:10px 4px;text-align:center;font-size:16px;border-radius:4px}
+.tgrid label{font-size:12px;opacity:.7}
+.check{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;cursor:pointer;user-select:none}
+.check input{width:16px;height:16px;accent-color:var(--bold);cursor:pointer}
+.kv{display:flex;justify-content:space-between;gap:14px;font-size:14px;text-align:left}
+.kv dt{opacity:.6}
+.kv dd{font-variant-numeric:tabular-nums;overflow-wrap:anywhere;text-align:right}
+.rows{display:flex;flex-direction:column;gap:7px}
+.wallets{display:flex;flex-direction:column;gap:8px}
+.wallet-opt{display:flex;align-items:center;gap:10px;padding:11px 13px;background:var(--bg2);border:1px solid var(--bd);border-radius:4px;cursor:pointer;text-align:left;width:100%}
+.wallet-opt:hover{background:var(--bg3)}
+.wallet-opt img{width:22px;height:22px;border-radius:4px;flex:0 0 auto}
+
+/* bottom sheet on narrow screens */
+@media (max-width:560px){
+  .modal{align-items:flex-end;padding:0}
+  .card{width:100%;border-radius:14px 14px 0 0;border-width:2px 0 0;margin:0;padding-bottom:max(26px,env(safe-area-inset-bottom))}
+}
+
+.loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;justify-content:center;align-items:center;flex-direction:column;gap:14px}
+body.light .loading{background:rgba(255,255,255,.7)}
+.loading.on{display:flex}
+.spinner{width:46px;height:46px;border:5px solid rgba(128,128,128,.3);border-radius:50%;border-top-color:var(--fg);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.loading p{font-size:15px;text-align:center;padding:0 20px}
+.steps{font-size:13px;opacity:.7;text-align:center}
+
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:max(20px,env(safe-area-inset-bottom));
+  background:var(--bg2);color:var(--fg);border:1px solid var(--bd);
+  padding:12px 18px;border-radius:4px;font-size:14px;z-index:70;
+  opacity:0;transition:opacity .25s;max-width:min(90vw,460px);text-align:center;
+  pointer-events:none;
+}
+.toast.on{opacity:1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button class="chip" id="themeBtn" aria-label="Switch to light theme">☾</button>
+  <div class="bar-r">
+    <span id="netDot" title="Read connection"></span>
+    <button class="chip" id="walletBtn">Connect</button>
+  </div>
+</div>
+
+<main>
+  <!-- SEND / HOME -->
+  <div class="send-wrap" id="sendWrap">
+    <div class="row" id="amountRow" role="group" aria-label="Amount" hidden>
+      <button class="opt" data-amount="1">1</button>
+      <button class="opt" data-amount="10">10</button>
+      <button class="opt" data-amount="100">100</button>
+      <button class="opt" id="customAmountOpt">???</button>
+    </div>
+
+    <div class="stage">
+      <div class="grid" id="cryptoGrid" role="group" aria-label="Token">
+        <button class="crypto" data-symbol="ETH"  data-token="0x0000000000000000000000000000000000000000">ETH</button>
+        <button class="crypto" data-symbol="USDC" data-token="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48">USDC</button>
+        <button class="crypto" data-symbol="BOLD" data-token="0x6440f144b7e50d6a8439336510312d2f54beb01d">BOLD</button>
+        <button class="crypto" data-symbol="USDT" data-token="0xdac17f958d2ee523a2206206994597c13d831ec7">USDT</button>
+      </div>
+      <div class="frame">
+        <button class="box" id="sendBox">SEND</button>
+        <div class="divider"></div>
+        <button class="box" id="takeBox">TAKE</button>
+      </div>
+    </div>
+
+    <div class="row" id="timeRow" role="group" aria-label="Timelock" hidden>
+      <button class="opt" data-time="600">10 MIN</button>
+      <button class="opt" data-time="3600">1 HOUR</button>
+      <button class="opt" data-time="86400">1 DAY</button>
+      <button class="opt" id="customTimeOpt">???</button>
+    </div>
+
+    <button class="link" id="customTokenOpt" hidden>+ CUSTOM TOKEN</button>
+    <p class="hint" id="balHint"></p>
+  </div>
+
+  <!-- TAKE -->
+  <div class="take-wrap">
+    <div class="tabs" role="tablist" aria-label="Transfers">
+      <button class="tab" id="tabOut" role="tab" aria-selected="true"  data-tab="outbound">Outbound</button>
+      <button class="tab" id="tabIn"  role="tab" aria-selected="false" data-tab="inbound">Inbound</button>
+      <button class="tab" id="backBtn">← Send</button>
+    </div>
+    <div class="list" id="list" role="tabpanel" aria-live="polite"></div>
+  </div>
+</main>
+
+<div id="tipLayer"></div>
+
+<!-- Custom amount -->
+<div class="modal" id="amountModal" role="dialog" aria-modal="true" aria-labelledby="amountTitle"><div class="card">
+  <h3 id="amountTitle">Custom amount</h3>
+  <input type="text" class="input" id="amountInput" inputmode="decimal" placeholder="0" autocomplete="off">
+  <p class="note mute" id="amountNote"></p>
+  <button class="btn" id="amountApply">Apply</button>
+</div></div>
+
+<!-- Custom delay -->
+<div class="modal" id="timeModal" role="dialog" aria-modal="true" aria-labelledby="timeTitle"><div class="card">
+  <h3 id="timeTitle">Custom delay</h3>
+  <div class="tgrid">
+    <div><input type="number" id="dInput" min="0" placeholder="0" inputmode="numeric"><label for="dInput">Days</label></div>
+    <div><input type="number" id="hInput" min="0" placeholder="0" inputmode="numeric"><label for="hInput">Hours</label></div>
+    <div><input type="number" id="mInput" min="0" placeholder="0" inputmode="numeric"><label for="mInput">Minutes</label></div>
+    <div><input type="number" id="sInput" min="0" placeholder="0" inputmode="numeric"><label for="sInput">Seconds</label></div>
+  </div>
+  <button class="btn" id="timeApply">Apply</button>
+</div></div>
+
+<!-- Custom token -->
+<div class="modal" id="tokenModal" role="dialog" aria-modal="true" aria-labelledby="tokenTitle"><div class="card">
+  <h3 id="tokenTitle">Custom token</h3>
+  <input type="text" class="input" id="tokenInput" placeholder="0x… contract address" autocomplete="off" spellcheck="false">
+  <p class="note" id="tokenStatus"></p>
+  <p class="note mute">Fee-on-transfer or rebasing tokens may strand funds.</p>
+  <button class="btn" id="tokenApply">Apply</button>
+</div></div>
+
+<!-- Confirm send -->
+<div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="card">
+  <h3 class="sr" id="confirmTitle">Confirm transfer</h3>
+  <p class="summary" id="summary"></p>
+  <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false" aria-describedby="ens">
+  <p class="note" id="ens" aria-live="polite"></p>
+  <label class="check" for="autoClaimChk"><input type="checkbox" id="autoClaimChk"> 🤖 Pay a keeper to auto-claim</label>
+  <p class="note mute" id="tipPre"></p>
+  <p class="note mute" id="planNote" aria-live="polite"></p>
+  <button class="btn" id="confirmBtn">CONFIRM SEND</button>
+  <button class="btn alt" id="confirmCancel">Cancel</button>
+</div></div>
+
+<!-- Transfer detail sheet -->
+<div class="modal" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="card">
+  <h3 id="detailTitle">Transfer</h3>
+  <dl class="rows" id="detailRows"></dl>
+  <button class="btn" id="detailAction"></button>
+  <button class="btn alt" id="detailClose">Close</button>
+</div></div>
+
+<!-- Wallet picker -->
+<div class="modal" id="walletModal" role="dialog" aria-modal="true" aria-labelledby="walletTitle"><div class="card">
+  <h3 id="walletTitle">Choose a wallet</h3>
+  <div class="wallets" id="walletList"></div>
+  <button class="btn alt" id="walletCancel">Cancel</button>
+</div></div>
+
+<div class="loading" id="loading"><div class="spinner"></div><p id="loadingText">Working…</p><p class="steps" id="loadingStep"></p></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(()=>{
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════════
+   Constants
+   ══════════════════════════════════════════════════════════════════ */
+const SLOW    = '0x000000000000888741B254d37e1b27128AfEAaBC';
+const ZERO    = '0x0000000000000000000000000000000000000000';
+const ENS_REG = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
+const WNS     = '0x0000000000696760E15f265e828DB644A0c242EB';
+const MC3     = '0xcA11bde05977b3631167028862bE2a173976CA11';
+const CHAIN   = 1;
+const GRACE   = 2592000;                 // 30-day clawback window
+const MAX_DELAY = 3155760000;            // 100 years
+
+const SEL = {
+  // SLOW
+  depositTo:'0x94eeaec9', depositToWithTip:'0x75f92e42',
+  depositToWithPermit:'0x2f19167b', depositToWithTipAndPermit:'0x9cdec3f5',
+  reverse:'0x97d15425', claim:'0x379607f5', clawback:'0xfcc36bc9', unlock:'0x6198e339',
+  withdrawFrom:'0xd4fdc309', multicall:'0xac9650d8', pendingTransfers:'0x6577b86a',
+  getOut:'0xd40d4bc6', getIn:'0xe3993ee7',
+  guardians:'0x0633b14a', isWithdrawalApprovalNeeded:'0xabe616b8',
+  gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
+  // ERC-20
+  approve:'0x095ea7b3', allowance:'0xdd62ed3e', decimals:'0x313ce567',
+  symbol:'0x95d89b41', name:'0x06fdde03', balanceOf:'0x70a08231',
+  // EIP-2612
+  permit:'0xd505accf', nonces:'0x7ecebe00',
+  domainSeparator:'0x3644e515', permitTypehash:'0x30adf81f',
+  // names
+  resolver:'0x0178b8bf', addr:'0x3b3b57de', ensName:'0x691f3431', wnsReverse:'0x9af8b7aa',
+  // Multicall3
+  aggregate3:'0x82ad56cb',
+};
+// keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
+const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9';
+
+const RPCS = [
+  'https://ethereum-rpc.publicnode.com',
+  'https://eth.llamarpc.com',
+  'https://1rpc.io/eth',
+  'https://eth-pokt.nodies.app',
+  'https://gateway.tenderly.co/public/mainnet',
+];
+
+const KNOWN = ['ETH','USDC','USDT','BOLD'];
+// Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
+const PRESETS = {ETH:['0.01','0.1','1'], default:['10','100','1000']};
+
+/* ══════════════════════════════════════════════════════════════════
+   keccak256
+   ══════════════════════════════════════════════════════════════════ */
+const M64 = (1n<<64n)-1n;
+const RC = [1n,32898n,9223372036854808714n,9223372039002292224n,32907n,2147483649n,9223372039002292353n,9223372036854808585n,138n,136n,2147516425n,2147483658n,2147516555n,9223372036854775947n,9223372036854808713n,9223372036854808579n,9223372036854808578n,9223372036854775936n,32778n,9223372039002259466n,9223372039002292353n,9223372036854808704n,2147483649n,9223372039002292232n];
+const ROT = [0,1,62,28,27,36,44,6,55,20,3,10,43,25,39,41,45,15,21,8,18,2,61,56,14];
+const rotL = (x,n)=>((x<<n)|(x>>(64n-n)))&M64;
+function kF(s){
+  for(let r=0;r<24;r++){
+    const C=[0n,0n,0n,0n,0n];
+    for(let x=0;x<5;x++) C[x]=s[x]^s[x+5]^s[x+10]^s[x+15]^s[x+20];
+    const D=[0n,0n,0n,0n,0n];
+    for(let x=0;x<5;x++) D[x]=C[(x+4)%5]^rotL(C[(x+1)%5],1n);
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++) s[x+5*y]^=D[x];
+    const B=new Array(25);
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++) B[y+5*((2*x+3*y)%5)]=rotL(s[x+5*y],BigInt(ROT[x+5*y]));
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++) s[x+5*y]=(B[x+5*y]^((~B[((x+1)%5)+5*y])&B[((x+2)%5)+5*y]))&M64;
+    s[0]^=RC[r];
+  }
+}
+// A string input is hex only when it is 0x-prefixed; anything else is UTF-8.
+// Dropping this distinction (as an earlier build did) makes keccak256('abc')
+// return a plausible but wrong digest with no error.
+function keccak256(input){
+  let bytes;
+  if(typeof input==='string'){
+    if(input.startsWith('0x')){
+      const h=input.slice(2);
+      if(h.length%2) throw new Error('keccak256: odd-length hex');
+      bytes=new Uint8Array(h.length/2);
+      for(let i=0;i<bytes.length;i++) bytes[i]=parseInt(h.slice(i*2,i*2+2),16);
+    } else bytes=new TextEncoder().encode(input);
+  } else bytes=input;
+  const R=136, s=new Array(25).fill(0n);
+  let p=0;
+  while(p+R<=bytes.length){
+    for(let i=0;i<R;i++){const l=i>>3; s[l]=(s[l]^(BigInt(bytes[p+i])<<BigInt((i&7)*8)))&M64;}
+    kF(s); p+=R;
+  }
+  const buf=new Uint8Array(R);
+  for(let i=p;i<bytes.length;i++) buf[i-p]=bytes[i];
+  buf[bytes.length-p]=1; buf[R-1]|=0x80;
+  for(let i=0;i<R;i++){const l=i>>3; s[l]=(s[l]^(BigInt(buf[i])<<BigInt((i&7)*8)))&M64;}
+  kF(s);
+  let o='0x';
+  for(let i=0;i<32;i++) o+=Number((s[i>>3]>>BigInt((i&7)*8))&0xffn).toString(16).padStart(2,'0');
+  return o;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ABI codec
+   ══════════════════════════════════════════════════════════════════ */
+const strip = h => h && h.startsWith('0x') ? h.slice(2) : (h||'');
+const padR  = h => { const s=strip(h); return s.padEnd(Math.ceil(s.length/64)*64||64,'0'); };
+const word  = v => {
+  if(typeof v==='boolean') return v?word(1n):word(0n);
+  const b = typeof v==='bigint' ? v : BigInt(v);
+  return (b<0n ? (1n<<256n)+b : b).toString(16).padStart(64,'0');
+};
+const isDyn = t => t==='bytes'||t==='string'||t.endsWith('[]');
+function encBytes(b){const d=strip(b),L=d.length/2; return word(L)+(L?padR(d):'');}
+function encBytesArr(arr){
+  let h='',t='',c=arr.length*32;
+  for(const b of arr){h+=word(c); const e=encBytes(b); t+=e; c+=e.length/2;}
+  return word(arr.length)+h+t;
+}
+const encDyn = (t,v) => t==='bytes[]'?encBytesArr(v):encBytes(v);
+function encode(types,values){
+  const heads=[],tails=[];
+  for(let i=0;i<types.length;i++){
+    if(isDyn(types[i])){heads.push(null); tails.push(encDyn(types[i],values[i]));}
+    else {heads.push(word(values[i])); tails.push('');}
+  }
+  let c=types.length*32;
+  for(let i=0;i<types.length;i++) if(heads[i]===null){heads[i]=word(c); c+=tails[i].length/2;}
+  return heads.join('')+tails.join('');
+}
+const cd = (sel,types,vals) => sel+encode(types,vals);
+const hexToStr = (d,off,len) => {
+  const a=new Uint8Array(len);
+  for(let j=0;j<len;j++) a[j]=parseInt(d.slice(off+j*2,off+j*2+2),16);
+  return new TextDecoder().decode(a);
+};
+function decode(types,hex){
+  const d=strip(hex),out=[];
+  for(let i=0;i<types.length;i++){
+    const t=types[i], w=d.slice(i*64,i*64+64);
+    if(!isDyn(t)){out.push(t==='address'?'0x'+w.slice(24):BigInt('0x'+w)); continue;}
+    const off=parseInt(w,16)*2, len=parseInt(d.slice(off,off+64),16);
+    if(!Number.isFinite(off)||!Number.isFinite(len)) throw new Error('decode: bad offset');
+    if(t==='string'||t==='bytes') out.push(t==='string'?hexToStr(d,off+64,len):'0x'+d.slice(off+64,off+64+len*2));
+    else if(t==='uint256[]'){
+      const v=[];
+      for(let j=0;j<len;j++) v.push(BigInt('0x'+d.slice(off+64+j*64,off+128+j*64)));
+      out.push(v);
+    } else throw new Error('decode: '+t);
+  }
+  return out;
+}
+// ERC-20 `symbol()`/`name()` predate the string ABI; MKR and friends return bytes32.
+function decodeStringLoose(hex){
+  const d=strip(hex);
+  if(!d) return '';
+  if(d.length===64){
+    const raw=d.replace(/(00)+$/,'');
+    if(raw.length%2) return '';
+    const s=hexToStr(raw,0,raw.length/2);
+    return /^[\x20-\x7e]*$/.test(s) ? s : '';
+  }
+  try { return decode(['string'],hex)[0]; } catch(e){ return ''; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Units & formatting — exact, never through a float
+   ══════════════════════════════════════════════════════════════════ */
+function parseUnits(amt,dec){
+  const s=String(amt).trim();
+  if(!/^\d+(\.\d+)?$/.test(s)) throw new Error('Enter a number');
+  const [w,f=''] = s.split('.');
+  if(f.length>dec) throw new Error(`At most ${dec} decimal places`);
+  return BigInt(w)*10n**BigInt(dec)+BigInt(f.padEnd(dec,'0')||'0');
+}
+function formatUnits(v,dec){
+  const big=typeof v==='bigint'?v:BigInt(v);
+  const neg=big<0n, a=neg?-big:big;
+  const div=10n**BigInt(dec), w=a/div, f=a%div;
+  const fs=f.toString().padStart(dec,'0').replace(/0+$/,'');
+  return (neg?'-':'')+w.toString()+(fs?'.'+fs:'');
+}
+const group = s => s.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+// Show 6 decimals, but never round a nonzero balance down to "0.00".
+function fmtAmt(raw,dec){
+  const big=typeof raw==='bigint'?raw:BigInt(raw);
+  if(big===0n) return '0';
+  const s=formatUnits(big,dec);
+  const [w,f=''] = s.split('.');
+  if(!f) return group(w);
+  let keep=6;
+  if(w==='0'){
+    const z=f.search(/[1-9]/);
+    if(z>=0) keep=Math.min(f.length, z+3);
+  }
+  const t=f.slice(0,keep).replace(/0+$/,'');
+  return group(w)+(t?'.'+t:'');
+}
+const isAddr = a => /^0x[a-fA-F0-9]{40}$/.test(a||'');
+const shortAddr = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
+function fmtTime(s){
+  s=Math.max(0,Math.floor(s));
+  if(!s) return '0s';
+  const d=s/86400|0, h=(s%86400)/3600|0, m=(s%3600)/60|0, sec=s%60;
+  const p=[];
+  if(d) p.push(d+'d');
+  if(h||d) p.push(h+'h');
+  if((m||h||d)&&p.length<3) p.push(m+'m');
+  if(!d&&!h&&p.length<3) p.push(sec+'s');
+  return p.join(' ');
+}
+function fmtCustomTime({d,h,m,s}){
+  const D=parseInt(d)||0,H=parseInt(h)||0,M=parseInt(m)||0,S=parseInt(s)||0;
+  const t=D*86400+H*3600+M*60+S;
+  if(t<=0) return {seconds:0,display:'0S'};
+  let o=[];
+  if(D) o.push(D+'D'); if(H) o.push(H+'H'); if(M) o.push(M+'M');
+  if(S||!o.length) o.push(S+'S');
+  return {seconds:t,display:o.join(' ')};
+}
+function decodeId(big){
+  const b=typeof big==='bigint'?big:BigInt(big);
+  return { token:'0x'+(b&((1n<<160n)-1n)).toString(16).padStart(40,'0'), delay:Number(b>>160n) };
+}
+const nw = () => Date.now()/1000|0;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const tokSym = sym => KNOWN.includes(sym) ? sym : 'other';
+const tokenColor = a => `hsl(${parseInt(a.slice(2,8),16)%360},55%,45%)`;
+
+/* ══════════════════════════════════════════════════════════════════
+   Providers — EIP-6963 for wallets, a public pool for reads
+   ══════════════════════════════════════════════════════════════════ */
+const WALLETS = [];
+addEventListener('eip6963:announceProvider', e=>{
+  const d=e.detail;
+  if(!d?.provider||!d?.info) return;
+  if(WALLETS.some(w=>w.info.uuid===d.info.uuid)) return;
+  WALLETS.push(d);
+});
+try { dispatchEvent(new Event('eip6963:requestProvider')); } catch(e){}
+
+let PROV = null;                              // the chosen wallet provider
+const walletProv = () => PROV || window.ethereum || null;
+const SIGN = /^(eth_requestAccounts|eth_sendTransaction|eth_sign|personal_sign|eth_signTypedData|eth_signTypedData_v4|wallet_)/;
+
+let rpcIdx = 0;
+async function nodeRead(method, params){
+  let last;
+  for(let i=0;i<RPCS.length;i++){
+    const url = RPCS[(rpcIdx+i)%RPCS.length];
+    const ac = new AbortController();
+    const kill = setTimeout(()=>ac.abort(), 12000);
+    try {
+      const r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:ac.signal});
+      const j = await r.json();
+      if(j.error) throw new Error(j.error.message||'rpc error');
+      rpcIdx=(rpcIdx+i)%RPCS.length;
+      S.readOk=true; paintNet();
+      return j.result;
+    } catch(e){ last=e; }
+    finally { clearTimeout(kill); }
+  }
+  S.readOk=false; paintNet();
+  throw last||new Error('No RPC reachable');
+}
+// Signing always goes to the wallet. Reads prefer the wallet (it is the user's
+// own node) and fall back to the public pool, so the page is fully readable
+// with no wallet installed at all.
+async function rpc(method, params){
+  const p = walletProv();
+  if(SIGN.test(method)){
+    if(!p) throw Object.assign(new Error('No wallet connected'),{noWallet:true});
+    return p.request({method,params});
+  }
+  if(p && S.account){
+    try { return await p.request({method,params}); } catch(e){ /* fall through */ }
+  }
+  return nodeRead(method,params);
+}
+async function rpcRetry(method,params,tries=3){
+  let last;
+  for(let i=0;i<tries;i++){
+    try { return await rpc(method,params); }
+    catch(e){ last=e; await sleep(250*(i+1)); }
+  }
+  throw last;
+}
+const ethCall = (to,data) => rpc('eth_call',[{to,data},'latest']);
+const callOk  = (to,data) => ethCall(to,data).then(r=>r&&r!=='0x'?r:null).catch(()=>null);
+
+/* ══════════════════════════════════════════════════════════════════
+   Multicall3 — adaptive batching with split-on-failure
+   ══════════════════════════════════════════════════════════════════ */
+function encAggregate3(calls){
+  const n=calls.length;
+  let head='',tail='',off=n*32;
+  for(const c of calls){
+    const d=strip(c.data), len=d.length/2;
+    const body = word(c.to)+word(true)+word(96n)+word(len)+padR(d);
+    head+=word(off); tail+=body; off+=body.length/2;
+  }
+  return SEL.aggregate3+word(32n)+word(n)+head+tail;
+}
+function decAggregate3(hex){
+  const h=strip(hex), at=i=>h.slice(i*64,(i+1)*64);
+  const n=Number(BigInt('0x'+at(1))), out=[];
+  for(let i=0;i<n;i++){
+    const rel=Number(BigInt('0x'+at(2+i)))/32, w=2+rel;
+    const ok=BigInt('0x'+at(w))===1n;
+    const bo=Number(BigInt('0x'+at(w+1)))/32, lw=w+bo;
+    const len=Number(BigInt('0x'+at(lw)));
+    out.push(ok ? '0x'+h.slice((lw+1)*64,(lw+1)*64+len*2) : null);
+  }
+  return out;
+}
+const MC_MAX=24, MC_MIN=2;
+let mcCap = (()=>{ try { const n=Number(localStorage.getItem('slow.mc')); return n>=MC_MIN&&n<=MC_MAX?n:8; } catch(e){ return 8; } })();
+let mcWon = 0;
+const mcSave = () => { try { localStorage.setItem('slow.mc',String(mcCap)); } catch(e){} };
+const chunk = (a,n) => { const o=[]; for(let i=0;i<a.length;i+=n) o.push(a.slice(i,i+n)); return o; };
+
+// Returns one entry per call: hex on success, null on failure. Never rejects for
+// a partial failure, so one bad token or one rate-limited page cannot blank the
+// whole view the way a single Promise.all does.
+async function mc(calls, depth=0){
+  if(!calls.length) return [];
+  const fan = n => Promise.all(chunk(calls,n).map(c=>mc(c,depth+1))).then(r=>r.flat());
+  if(calls.length>mcCap && depth<8) return fan(mcCap);
+  try {
+    const raw = await rpc('eth_call',[{to:MC3,data:encAggregate3(calls)},'latest']);
+    const out = decAggregate3(raw);
+    if(out.length!==calls.length) throw new Error('multicall length mismatch');
+    if(calls.length>=mcCap && mcCap<MC_MAX && out.every(x=>x!=null) && ++mcWon>=2){ mcCap++; mcWon=0; mcSave(); }
+    return out;
+  } catch(e){
+    mcWon=0;
+    if(calls.length<2||depth>=8) return calls.map(()=>null);
+    const h=calls.length>>1;
+    if(h<mcCap && h>=MC_MIN){ mcCap=h; mcSave(); }
+    await sleep(150*(depth+1));
+    return fan(h);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Names — ENS + WNS (.wei)
+   ══════════════════════════════════════════════════════════════════ */
+function namehash(name){
+  let n='0x'+'0'.repeat(64);
+  if(!name) return n;
+  const enc=new TextEncoder();
+  for(const lab of name.toLowerCase().split('.').reverse()){
+    n = keccak256(n + keccak256(enc.encode(lab)).slice(2));
+  }
+  return n;
+}
+async function ensResolve(name){
+  if(!name) return null;
+  const n=namehash(name);
+  const rh=await callOk(ENS_REG, SEL.resolver+n.slice(2));
+  if(!rh) return null;
+  const res='0x'+rh.slice(-40);
+  if(res===ZERO) return null;
+  const ah=await callOk(res, SEL.addr+n.slice(2));
+  if(!ah) return null;
+  const a='0x'+ah.slice(-40);
+  return a===ZERO?null:a;
+}
+async function ensReverse(addr){
+  const n=namehash(addr.toLowerCase().slice(2)+'.addr.reverse');
+  const rh=await callOk(ENS_REG, SEL.resolver+n.slice(2));
+  if(!rh) return null;
+  const res='0x'+rh.slice(-40);
+  if(res===ZERO) return null;
+  const nh=await callOk(res, SEL.ensName+n.slice(2));
+  if(!nh) return null;
+  let name; try { [name]=decode(['string'],nh); } catch(e){ return null; }
+  if(!name) return null;
+  const fwd=await ensResolve(name);
+  return fwd&&fwd.toLowerCase()===addr.toLowerCase()?name:null;
+}
+async function wnsResolve(name){
+  if(!name) return null;
+  const ah=await callOk(WNS, SEL.addr+namehash(name).slice(2));
+  if(!ah) return null;
+  const a='0x'+ah.slice(-40);
+  return a===ZERO?null:a;
+}
+async function wnsReverse(addr){
+  const ah=await callOk(WNS, SEL.wnsReverse+word(addr));
+  if(!ah) return null;
+  let name; try { [name]=decode(['string'],ah); } catch(e){ return null; }
+  if(!name) return null;
+  const fwd=await wnsResolve(name);
+  return fwd&&fwd.toLowerCase()===addr.toLowerCase()?name:null;
+}
+const resolveName = n => n.toLowerCase().endsWith('.wei') ? wnsResolve(n) : ensResolve(n);
+const reverseAny  = async a => (await wnsReverse(a)) || (await ensReverse(a));
+
+/* ══════════════════════════════════════════════════════════════════
+   State
+   ══════════════════════════════════════════════════════════════════ */
+const S = {
+  account:null, ensName:null, walletName:null, chainId:null, readOk:true,
+  token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
+  balance:null,
+  resolved:null, resolvedName:null, resolveSeq:0,
+  autoClaim:false, tip:0n, gate:undefined,
+  view:'home', step:0, tab:'outbound',
+  out:[], inb:[], loading:false, hasGuardian:false,
+  detail:null,
+  ens:{}, meta:{}, permitCache:{},
+  batchCap:null, slowPermit:null,
+  timer:null, lastLoad:0, loadSeq:0,
+};
+const el={}; document.querySelectorAll('[id]').forEach(e=>el[e.id]=e);
+const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
+const tg=(e,c,b)=>e.classList.toggle(c,b);
+
+/* ══════════════════════════════════════════════════════════════════
+   Chrome: toasts, loading, modals, focus management
+   ══════════════════════════════════════════════════════════════════ */
+let toastT;
+function toast(msg, ms=3200){
+  el.toast.textContent=msg; el.toast.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.toast.classList.remove('on'), ms);
+}
+function showLoad(msg,step){ el.loadingText.textContent=msg; el.loadingStep.textContent=step||''; el.loading.classList.add('on'); }
+function setStep(step){ el.loadingStep.textContent=step||''; }
+function hideLoad(){ el.loading.classList.remove('on'); }
+function paintNet(){
+  const dot=el.netDot;
+  dot.classList.toggle('off', !S.readOk);
+  dot.classList.toggle('ro', S.readOk && !S.account);
+  dot.title = !S.readOk ? 'No RPC reachable'
+    : S.account ? 'Connected' : 'Read-only — connect a wallet to send';
+}
+
+let lastFocus=null, trapped=null;
+const FOCUSABLE='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
+function showModal(m){
+  lastFocus=document.activeElement;
+  m.classList.add('on'); trapped=m;
+  const f=m.querySelector(FOCUSABLE); if(f) f.focus();
+}
+function hideModal(m){
+  m.classList.remove('on');
+  if(trapped===m){ trapped=null; if(lastFocus&&lastFocus.isConnected) lastFocus.focus(); }
+}
+function hideAllModals(){ qsa('.modal.on').forEach(m=>m.classList.remove('on')); trapped=null; }
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    if(qs('.modal.on')) hideAllModals();
+    else if(S.view!=='home') setView('home');
+    return;
+  }
+  if(e.key!=='Tab'||!trapped) return;
+  const items=[...trapped.querySelectorAll(FOCUSABLE)].filter(x=>x.offsetParent!==null);
+  if(!items.length) return;
+  const first=items[0], last=items[items.length-1];
+  if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+});
+document.addEventListener('click', e=>{ qsa('.modal.on').forEach(m=>{ if(e.target===m) hideModal(m); }); });
+
+/* ══════════════════════════════════════════════════════════════════
+   Errors — a rejection is not a crash
+   ══════════════════════════════════════════════════════════════════ */
+const isRejection = e =>
+  e?.code===4001 || e?.code==='ACTION_REJECTED' ||
+  /user\s*(rejected|denied|cancell?ed)|rejected the request/i.test(e?.message||'');
+function errText(e){
+  if(!e) return 'Something went wrong';
+  if(isRejection(e)) return 'Cancelled';
+  if(e.noWallet) return 'Connect a wallet to send';
+  const m=String(e.message||e);
+  if(/insufficient funds/i.test(m)) return "Not enough ETH to cover the transaction";
+  if(/gas required exceeds|intrinsic gas/i.test(m)) return 'Gas estimate failed — the transaction would revert';
+  if(/nonce/i.test(m)) return 'Wallet nonce out of sync — reset the account in your wallet';
+  if(/reverted|execution reverted/i.test(m)) return 'The transaction reverted on chain';
+  return m.length>140 ? m.slice(0,137)+'…' : m;
+}
+function fail(e){ if(isRejection(e)) toast('Cancelled'); else toast(errText(e), 5000); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Wallet
+   ══════════════════════════════════════════════════════════════════ */
+function walletChoices(){
+  if(WALLETS.length) return WALLETS.map(w=>({info:w.info,provider:w.provider}));
+  if(window.ethereum) return [{info:{name:'Browser wallet',icon:null,uuid:'injected'},provider:window.ethereum}];
+  return [];
+}
+function pickWallet(){
+  const list=walletChoices();
+  if(!list.length){ toast('No wallet detected — install one to send'); return Promise.resolve(null); }
+  if(list.length===1) return Promise.resolve(list[0]);
+  return new Promise(resolve=>{
+    el.walletList.innerHTML='';
+    for(const w of list){
+      const b=document.createElement('button');
+      b.className='wallet-opt'; b.type='button';
+      if(w.info.icon){ const i=document.createElement('img'); i.src=w.info.icon; i.alt=''; b.appendChild(i); }
+      b.appendChild(document.createTextNode(w.info.name));
+      b.onclick=()=>{ hideModal(el.walletModal); resolve(w); };
+      el.walletList.appendChild(b);
+    }
+    el.walletCancel.onclick=()=>{ hideModal(el.walletModal); resolve(null); };
+    showModal(el.walletModal);
+  });
+}
+function bindProvider(p){
+  if(p.__slowBound) return;
+  p.__slowBound=true;
+  p.on?.('accountsChanged', accs=>{
+    if(!accs?.length){ disconnect(true); return; }
+    setAccount(accs[0]);
+  });
+  p.on?.('chainChanged', id=>{
+    S.chainId=parseInt(id,16);
+    if(S.chainId!==CHAIN) toast('Switched off Ethereum mainnet — switch back to send');
+    else if(S.account&&S.view==='take') loadTransfers(true);
+    render();
+  });
+}
+async function connect(interactive=true){
+  const choice = interactive ? await pickWallet() : null;
+  const p = choice ? choice.provider : walletProv();
+  if(!p) return false;
+  PROV=p; bindProvider(p);
+  try {
+    const accs = interactive
+      ? await p.request({method:'eth_requestAccounts',params:[]})
+      : await p.request({method:'eth_accounts',params:[]});
+    if(!accs?.length) return false;
+    S.walletName = choice?.info?.name || null;
+    try { localStorage.setItem('slow.wallet', S.walletName||''); } catch(e){}
+    S.chainId = parseInt(await p.request({method:'eth_chainId',params:[]}),16);
+    setAccount(accs[0]);
+    if(S.chainId!==CHAIN && interactive) await ensureMainnet();
+    return true;
+  } catch(e){ if(interactive) fail(e); return false; }
+}
+// Silent reconnect: eth_accounts never prompts, so a returning reader is not
+// asked to approve a connection they already approved.
+async function eagerConnect(){
+  const saved = (()=>{ try { return localStorage.getItem('slow.wallet'); } catch(e){ return null; } })();
+  const list = walletChoices();
+  if(!list.length) return;
+  const pick = list.find(w=>w.info.name===saved) || (list.length===1?list[0]:null);
+  if(!pick) return;
+  PROV=pick.provider; bindProvider(pick.provider);
+  try {
+    const accs = await pick.provider.request({method:'eth_accounts',params:[]});
+    if(!accs?.length){ PROV=null; return; }
+    S.walletName=pick.info.name;
+    S.chainId=parseInt(await pick.provider.request({method:'eth_chainId',params:[]}),16);
+    setAccount(accs[0]);
+  } catch(e){ PROV=null; }
+}
+async function ensureMainnet(){
+  if(S.chainId===CHAIN) return true;
+  try {
+    await rpc('wallet_switchEthereumChain',[{chainId:'0x1'}]);
+    S.chainId=CHAIN; render();
+    return true;
+  } catch(e){
+    if(!isRejection(e)) toast('Switch your wallet to Ethereum mainnet');
+    return false;
+  }
+}
+function setAccount(a){
+  const acct=a;
+  S.account=acct; S.ensName=null; S.balance=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  paintWallet(); paintNet();
+  reverseAny(acct).then(n=>{ if(S.account===acct){ S.ensName=n; paintWallet(); } }).catch(()=>{});
+  if(S.view==='take') loadTransfers(true);
+  if(S.token) refreshBalance();
+}
+function disconnect(silent){
+  S.account=S.ensName=S.balance=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  stopTimer(); setView('home'); paintWallet(); paintNet();
+  if(!silent) toast('Disconnected from this page — your wallet is still connected');
+}
+function paintWallet(){
+  el.walletBtn.textContent = S.account ? (S.ensName||shortAddr(S.account)) : 'Connect';
+  el.walletBtn.title = S.account ? `${S.account}${S.walletName?' · '+S.walletName:''} — click to disconnect` : 'Connect a wallet';
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Token metadata & balances
+   ══════════════════════════════════════════════════════════════════ */
+async function tokenMeta(addr){
+  const k=addr.toLowerCase();
+  if(S.meta[k]) return S.meta[k];
+  if(k===ZERO) return S.meta[k]={symbol:'ETH',decimals:18,ok:true};
+  const [sh,dh] = await mc([{to:addr,data:SEL.symbol},{to:addr,data:SEL.decimals}]);
+  const symbol = sh ? decodeStringLoose(sh) : '';
+  let decimals = 18, ok=false;
+  if(dh){ try { decimals=Number(decode(['uint256'],dh)[0]); ok=true; } catch(e){} }
+  if(!(decimals>=0&&decimals<=36)) { decimals=18; ok=false; }
+  // Cache the miss too: a token that answers nothing should not be re-asked on
+  // every render.
+  return S.meta[k]={symbol:symbol||'???', decimals, ok:ok&&!!symbol};
+}
+async function refreshBalance(){
+  if(!S.account||!S.token){ el.balHint.textContent=''; return; }
+  const tok=S.token, acct=S.account;
+  try {
+    let raw;
+    if(tok===ZERO) raw=BigInt(await rpc('eth_getBalance',[acct,'latest']));
+    else {
+      const [h]=await mc([{to:tok,data:cd(SEL.balanceOf,['address'],[acct])}]);
+      raw = h ? decode(['uint256'],h)[0] : 0n;
+    }
+    if(S.token!==tok||S.account!==acct) return;
+    S.balance=raw;
+    paintPresets();
+  } catch(e){ /* balance is a nicety, never a blocker */ }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EIP-5792 — atomic wallet batching
+   ══════════════════════════════════════════════════════════════════ */
+function hasAtomic(caps){
+  if(!caps||typeof caps!=='object') return false;
+  const pick = id => {
+    for(const k of Object.keys(caps)){ try { if(BigInt(k)===id) return caps[k]; } catch(e){} }
+    return undefined;
+  };
+  const c = pick(BigInt(CHAIN)) ?? pick(0n);
+  const st = c?.atomic?.status;
+  return st==='supported'||st==='ready';
+}
+async function canBatch(){
+  if(S.batchCap!==null) return S.batchCap;
+  if(!S.account) return (S.batchCap=false);
+  try {
+    const caps=await rpc('wallet_getCapabilities',[S.account]);
+    return (S.batchCap=hasAtomic(caps));
+  } catch(e){ return (S.batchCap=false); }
+}
+async function sendBatch(calls){
+  const res = await rpc('wallet_sendCalls',[{
+    version:'2.0.0', chainId:'0x1', from:S.account, atomicRequired:true,
+    calls: calls.map(c=>({to:c.to, data:c.data, value:c.value||'0x0'})),
+  }]);
+  const id = typeof res==='string' ? res : res?.id;
+  if(!id) throw new Error('Wallet returned no batch id');
+  const end=Date.now()+600000;
+  let wait=1200;
+  while(Date.now()<end){
+    try {
+      const st=await rpc('wallet_getCallsStatus',[id]);
+      const rs=(st&&st.receipts)||[];
+      if(rs.some(r=>r&&r.status==='0x0')) throw new Error('BATCH: the batch reverted on chain');
+      const last=rs[rs.length-1], h=last&&(last.transactionHash||last.hash);
+      if(h) return h;
+      const q=String(st&&st.status);
+      if(q==='400'||q==='500'||/fail|revert|reject/i.test(q)) throw new Error('BATCH: the wallet reported the batch failed');
+    } catch(e){ if(/^BATCH: /.test(e.message)) throw new Error(e.message.slice(7)); }
+    await sleep(wait); wait=Math.min(wait+400,4000);
+  }
+  throw new Error('Batch not confirmed in time — check your wallet activity before retrying');
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EIP-2612 permit
+   ══════════════════════════════════════════════════════════════════ */
+const EIP712_DOMAIN_TH = keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
+function domainSeparator(name, version, verifying){
+  return keccak256('0x'+strip(EIP712_DOMAIN_TH)
+    + strip(keccak256(name)) + strip(keccak256(version))
+    + word(CHAIN) + word(verifying));
+}
+// A token supports 2612 only if its own DOMAIN_SEPARATOR can be reproduced from
+// a (name, version) pair we know — otherwise the signature would be rejected on
+// chain after the user had already signed it.
+async function permitInfo(token, owner){
+  const k=token.toLowerCase()+':'+owner.toLowerCase();
+  if(k in S.permitCache) return S.permitCache[k];
+  let out=null;
+  try {
+    const [ds,th,nc,nm] = await mc([
+      {to:token,data:SEL.domainSeparator},
+      {to:token,data:SEL.permitTypehash},
+      {to:token,data:cd(SEL.nonces,['address'],[owner])},
+      {to:token,data:SEL.name},
+    ]);
+    if(ds && ds!=='0x' && nc && nm){
+      const typehashOk = !th || strip(th).length<64 || strip(th).slice(0,64).toLowerCase()===TYPEHASH_2612;
+      if(typehashOk){
+        const name=decodeStringLoose(nm);
+        const nonce=decode(['uint256'],nc)[0];
+        if(name){
+          for(const ver of ['1','2','1.0','1.1','V1','']){
+            if(domainSeparator(name,ver,token).toLowerCase()===ds.toLowerCase()){ out={name,version:ver,nonce}; break; }
+          }
+        }
+      }
+    }
+  } catch(e){}
+  S.permitCache[k]=out;
+  return out;
+}
+async function signPermit(token, info, owner, spender, value, deadline){
+  const td = {
+    types:{
+      EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},
+        {name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],
+      Permit:[{name:'owner',type:'address'},{name:'spender',type:'address'},
+        {name:'value',type:'uint256'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}],
+    },
+    primaryType:'Permit',
+    domain:{name:info.name,version:info.version,chainId:CHAIN,verifyingContract:token},
+    message:{owner,spender,value:value.toString(),nonce:info.nonce.toString(),deadline:deadline.toString()},
+  };
+  const sig = strip(await rpc('eth_signTypedData_v4',[owner,JSON.stringify(td)]));
+  if(sig.length!==130) throw new Error('Wallet returned a malformed signature');
+  let v=parseInt(sig.slice(128,130),16); if(v<27) v+=27;
+  return {v:BigInt(v), r:'0x'+sig.slice(0,64), s:'0x'+sig.slice(64,128)};
+}
+// Does the deployed SLOW expose the permit-aware deposit entrypoints?
+//
+// Not probed by eth_call: a permit deposit with dummy arguments reverts on a
+// version that HAS the function just as surely as on one that does not, so the
+// call tells us nothing. Instead the runtime is fetched once and searched for
+// the selector, which Solidity's dispatcher embeds as a PUSH4 constant. A
+// four-byte needle in ~21 KB of code has a false-positive rate around 5e-6.
+async function slowHasPermit(){
+  if(S.slowPermit!==null) return S.slowPermit;
+  try {
+    const code = await rpc('eth_getCode',[SLOW,'latest']);
+    S.slowPermit = typeof code==='string' && code.includes(SEL.depositToWithPermit.slice(2));
+  } catch(e){ S.slowPermit=false; }
+  return S.slowPermit;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Transactions
+   ══════════════════════════════════════════════════════════════════ */
+async function sendTx(tx){
+  if(!await ensureMainnet()) throw new Error('Switch to Ethereum mainnet');
+  return rpc('eth_sendTransaction',[tx]);
+}
+async function waitTx(hash){
+  const end=Date.now()+600000;
+  let wait=1500, misses=0;
+  while(Date.now()<end){
+    try {
+      const r=await rpc('eth_getTransactionReceipt',[hash]);
+      misses=0;
+      if(r){
+        if(r.status!=='0x1') throw new Error('REVERT');
+        return r;
+      }
+      wait=Math.min(wait+500,6000);
+    } catch(e){
+      if(e.message==='REVERT') throw new Error('The transaction reverted on chain');
+      if(++misses>2) wait=Math.min(wait*2,15000);
+    }
+    await sleep(wait);
+  }
+  throw new Error('Not confirmed within 10 minutes — check your wallet before retrying');
+}
+async function slowTx(data, msg, step, value){
+  showLoad(msg, step);
+  const tx={from:S.account,to:SLOW,data};
+  if(value&&value!=='0x0') tx.value=value;
+  const h=await sendTx(tx);
+  setStep('Waiting for confirmation…');
+  await waitTx(h);
+  return h;
+}
+const c1 = (sel,id) => cd(sel,['uint256'],[BigInt(id)]);
+const wfCall = t => cd(SEL.withdrawFrom,['address','address','uint256','uint256'],[t.from,S.account,BigInt(t.tokenId),t.amountRaw]);
+
+/* ══════════════════════════════════════════════════════════════════
+   The deposit waterfall
+   ══════════════════════════════════════════════════════════════════
+   Rungs, best first:
+     0. ETH, or an allowance that already covers it   → 1 transaction
+     1. Wallet supports EIP-5792 atomic batching      → 1 confirmation
+     2. SLOW exposes depositToWithPermit + 2612 token → 1 transaction
+     3. Exact-amount approve, then deposit            → 2 transactions
+
+   Rung 2 has to live inside SLOW itself, not in a helper contract: SLOW records
+   `pendingTransfers[id].from = msg.sender` and `reverse()` requires the caller
+   to be that address. A router that pulled tokens by permit and called
+   depositTo would make *itself* the sender, and the user could never reverse
+   their own transfer. Only SLOW can run the permit and keep msg.sender intact.
+   ══════════════════════════════════════════════════════════════════ */
+function depositCalldata(wei, permitSig, deadline){
+  const isETH = S.token===ZERO;
+  const tokenArg = isETH?ZERO:S.token;
+  const amountArg = isETH?0n:wei;              // depositTo requires amount==0 when paying in ETH
+  if(permitSig){
+    return S.autoClaim
+      ? cd(SEL.depositToWithTipAndPermit,
+          ['address','address','uint256','uint96','uint256','bytes','uint256','uint256','uint256','uint256'],
+          [tokenArg,S.resolved,wei,BigInt(S.delay),S.tip,'0x',deadline,permitSig.v,BigInt(permitSig.r),BigInt(permitSig.s)])
+      : cd(SEL.depositToWithPermit,
+          ['address','address','uint256','uint96','bytes','uint256','uint256','uint256','uint256'],
+          [tokenArg,S.resolved,wei,BigInt(S.delay),'0x',deadline,permitSig.v,BigInt(permitSig.r),BigInt(permitSig.s)]);
+  }
+  return S.autoClaim
+    ? cd(SEL.depositToWithTip,['address','address','uint256','uint96','uint256','bytes'],
+        [tokenArg,S.resolved,wei,BigInt(S.delay),S.tip,'0x'])
+    : cd(SEL.depositTo,['address','address','uint256','uint96','bytes'],
+        [tokenArg,S.resolved,amountArg,BigInt(S.delay),'0x']);
+}
+async function planDeposit(wei){
+  const isETH=S.token===ZERO;
+  if(isETH) return {kind:'direct', calls:1};
+  let allowance=0n;
+  try {
+    const [h]=await mc([{to:S.token,data:cd(SEL.allowance,['address','address'],[S.account,SLOW])}]);
+    if(h) allowance=decode(['uint256'],h)[0];
+  } catch(e){}
+  if(allowance>=wei) return {kind:'direct', calls:1, allowance};
+  if(await canBatch()) return {kind:'batch', calls:allowance>0n?3:2, allowance};
+  if(await slowHasPermit() && await permitInfo(S.token,S.account)) return {kind:'permit', calls:1, allowance};
+  return {kind:'approve', calls:allowance>0n?3:2, allowance};
+}
+function planLabel(p){
+  if(!p) return '';
+  switch(p.kind){
+    case 'direct':  return 'One transaction.';
+    case 'batch':   return 'One confirmation — your wallet batches the approval and the deposit atomically.';
+    case 'permit':  return 'One transaction — you sign the approval instead of paying for it.';
+    case 'approve': return `Two transactions: an exact-amount approval${p.allowance>0n?' (reset first, this token requires it)':''}, then the deposit.`;
+  }
+  return '';
+}
+async function deposit(){
+  const isETH=S.token===ZERO;
+  const meta = isETH?{decimals:18}:await tokenMeta(S.token);
+  const wei = parseUnits(S.amount, meta.decimals);
+  if(S.autoClaim && !S.tip) S.tip = await estimateTip(S.token);
+  const value = isETH ? wei + S.tip : S.tip;
+  const valueHex = value>0n ? '0x'+value.toString(16) : '0x0';
+
+  const plan = await planDeposit(wei);
+
+  if(plan.kind==='direct'){
+    // Carries the ETH being wrapped, plus any keeper tip.
+    await slowTx(depositCalldata(wei),'Creating your time-locked transfer…','Confirm in your wallet',valueHex);
+    return;
+  }
+
+  if(plan.kind==='batch'){
+    showLoad('Creating your time-locked transfer…','Approve the batch in your wallet');
+    const calls=[];
+    // USDT and friends refuse a non-zero-to-non-zero approve.
+    if(plan.allowance>0n) calls.push({to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,0n])});
+    calls.push({to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,wei])});
+    calls.push({to:SLOW,data:depositCalldata(wei),value:valueHex});
+    if(!await ensureMainnet()) throw new Error('Switch to Ethereum mainnet');
+    const h=await sendBatch(calls);
+    setStep('Waiting for confirmation…');
+    await waitTx(h);
+    return;
+  }
+
+  if(plan.kind==='permit'){
+    showLoad('Creating your time-locked transfer…','Sign the approval in your wallet');
+    const info=await permitInfo(S.token,S.account);
+    const deadline=BigInt(nw()+1800);
+    const sig=await signPermit(S.token,info,S.account,SLOW,wei,deadline);
+    setStep('Confirm the transfer in your wallet');
+    const h=await sendTx({from:S.account,to:SLOW,data:depositCalldata(wei,sig,deadline),value:valueHex});
+    setStep('Waiting for confirmation…');
+    await waitTx(h);
+    return;
+  }
+
+  // Sequential fallback: exact amount, never an infinite allowance.
+  const steps = plan.allowance>0n ? [0n,wei] : [wei];
+  for(let i=0;i<steps.length;i++){
+    showLoad(`Approving ${S.symbol}…`, steps.length>1?`Step ${i+1} of ${steps.length+1}`:'Step 1 of 2');
+    const h=await sendTx({from:S.account,to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,steps[i]])});
+    setStep('Waiting for confirmation…');
+    await waitTx(h);
+  }
+  const [fresh]=await mc([{to:S.token,data:cd(SEL.allowance,['address','address'],[S.account,SLOW])}]);
+  if(!fresh||decode(['uint256'],fresh)[0]<wei) throw new Error('The approval did not take effect');
+  showLoad('Creating your time-locked transfer…',`Step ${steps.length+1} of ${steps.length+1}`);
+  const h=await sendTx({from:S.account,to:SLOW,data:depositCalldata(wei),value:valueHex});
+  setStep('Waiting for confirmation…');
+  await waitTx(h);
+}
+async function estimateTip(token){
+  try {
+    const fh=await rpc('eth_feeHistory',['0x5','latest',[50]]);
+    const baseFee=BigInt(fh.baseFeePerGas.at(-1));
+    let priority=BigInt(fh.reward?.at(-1)?.[0]||0);
+    if(priority<1_000_000_000n) priority=1_000_000_000n;
+    const gasUnits = token===ZERO ? 150_000n : 220_000n;
+    return gasUnits*(baseFee*2n+priority)*2n;
+  } catch(e){ return 3_000_000_000_000_000n; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Loading transfers — batched, partial-tolerant
+   ══════════════════════════════════════════════════════════════════ */
+async function getGate(){
+  if(S.gate!==undefined) return S.gate;
+  const [h]=await mc([{to:SLOW,data:SEL.gateAddr}]);
+  S.gate = h ? '0x'+h.slice(-40) : null;
+  if(S.gate===ZERO) S.gate=null;
+  return S.gate;
+}
+const LOAD_COOLDOWN = 12000;
+async function loadTransfers(force){
+  if(!S.account) return;
+  if(!force && Date.now()-S.lastLoad < LOAD_COOLDOWN) return;
+  S.lastLoad=Date.now();
+  const seq=++S.loadSeq, account=S.account;
+  const stale = () => S.loadSeq!==seq || S.account!==account;
+  S.loading=true; renderList();
+  try {
+    const [oh,ih,gh] = await mc([
+      {to:SLOW,data:cd(SEL.getOut,['address'],[account])},
+      {to:SLOW,data:cd(SEL.getIn,['address'],[account])},
+      {to:SLOW,data:cd(SEL.guardians,['address'],[account])},
+    ]);
+    if(stale()) return;
+    const oIds = oh ? decode(['uint256[]'],oh)[0] : [];
+    const iIds = ih ? decode(['uint256[]'],ih)[0] : [];
+    const hasGuardian = !!gh && ('0x'+gh.slice(-40)).toLowerCase()!==ZERO;
+
+    const all=[...new Map([...oIds,...iIds].map(id=>[id.toString(),id])).values()];
+    const pts = await mc(all.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])})));
+    if(stale()) return;
+
+    const map=new Map();
+    all.forEach((id,i)=>{
+      if(!pts[i]) return;
+      try {
+        const [ts,from,to,tid,amt]=decode(['uint256','address','address','uint256','uint256'],pts[i]);
+        if(ts!==0n) map.set(id.toString(),{ts,from,to,tid,amt});
+      } catch(e){}
+    });
+
+    const tokens=[...new Set([...map.values()].map(v=>decodeId(v.tid).token))];
+    await Promise.all(tokens.map(t=>tokenMeta(t).catch(()=>{})));
+    if(stale()) return;
+
+    const build = id => {
+      const k=id.toString(), pt=map.get(k);
+      if(!pt) return null;
+      const {token,delay}=decodeId(pt.tid);
+      const m=S.meta[token.toLowerCase()]||{symbol:'???',decimals:18};
+      const timestamp=Number(pt.ts);
+      return {
+        id:k, from:pt.from, to:pt.to, tokenId:pt.tid.toString(),
+        token, symbol:m.symbol, decimals:m.decimals,
+        amountRaw:pt.amt, amount:fmtAmt(pt.amt,m.decimals),
+        timestamp, delay, unlockTime:timestamp+delay,
+      };
+    };
+    const outArr=oIds.map(build).filter(Boolean).sort((a,b)=>a.unlockTime-b.unlockTime);
+    const inArr =iIds.map(build).filter(Boolean).sort((a,b)=>a.unlockTime-b.unlockTime);
+
+    // Guardian holds + keeper tips, one batch for both.
+    const extra=[];
+    if(hasGuardian) for(const t of outArr) extra.push({kind:'g',t,call:{to:SLOW,
+      data:cd(SEL.isWithdrawalApprovalNeeded,['address','address','uint256','uint256'],
+        [account,account,BigInt(t.tokenId),t.amountRaw])}});
+    const gate=await getGate();
+    if(gate) for(const t of [...inArr,...outArr]) extra.push({kind:'t',t,call:{to:gate,data:c1(SEL.tips,t.id)}});
+    if(extra.length){
+      const res=await mc(extra.map(x=>x.call));
+      if(stale()) return;
+      res.forEach((r,i)=>{
+        if(!r) return;
+        const {kind,t}=extra[i];
+        try {
+          const v=decode(['uint256'],r)[0];
+          if(kind==='g') t.guardianPending = v!==0n;
+          else if(v>0n) t.tipped=true;
+        } catch(e){}
+      });
+    }
+    if(stale()) return;
+    S.out=outArr; S.inb=inArr; S.hasGuardian=hasGuardian;
+  } catch(e){
+    if(!stale()) toast('Could not load transfers — '+errText(e), 5000);
+  } finally {
+    if(!stale()){ S.loading=false; renderList(); }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Actions on a transfer
+   ══════════════════════════════════════════════════════════════════ */
+async function refundTipIfAny(t){
+  if(!t.tipped) return '';
+  const gate=await getGate();
+  if(!gate) return '';
+  try {
+    setStep('Refunding the keeper tip…');
+    await waitTx(await sendTx({from:S.account,to:gate,data:c1(SEL.refundTip,t.id)}));
+    return ' Tip refunded.';
+  } catch(e){
+    return isRejection(e) ? ' Tip left on the gate — refund it later with gate.refundTip.'
+                          : ' Tip is still on the gate; refund it later with gate.refundTip.';
+  }
+}
+async function doClaim(t){
+  if(nw()<t.unlockTime){ toast(`${fmtTime(t.unlockTime-nw())} remaining`); return; }
+  const guardian=S.hasGuardian;
+  try {
+    await slowTx(c1(guardian?SEL.unlock:SEL.claim,t.id),
+      guardian?'Unlocking…':'Claiming…','Confirm in your wallet');
+    toast(guardian ? 'Unlocked. Withdraw through your guardian to receive the underlying.' : 'Claimed.', 6000);
+    loadTransfers(true);
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+async function doReverse(t){
+  if(nw()>=t.unlockTime){ toast("The timelock expired — this can no longer be reversed"); return; }
+  try {
+    const data = S.hasGuardian ? c1(SEL.reverse,t.id)
+      : cd(SEL.multicall,['bytes[]'],[[c1(SEL.reverse,t.id),wfCall(t)]]);
+    await slowTx(data,'Reversing the transfer…','Confirm in your wallet');
+    const tip=await refundTipIfAny(t);
+    toast((S.hasGuardian?'Reversed. Coordinate with your guardian to withdraw.':'Reversed and returned.')+tip,6000);
+    loadTransfers(true);
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+async function doClawback(t){
+  const ready=t.unlockTime+GRACE;
+  if(nw()<ready){ toast(`Recovery available in ${fmtTime(ready-nw())}`); return; }
+  try {
+    const data = S.hasGuardian ? c1(SEL.clawback,t.id)
+      : cd(SEL.multicall,['bytes[]'],[[c1(SEL.clawback,t.id),wfCall(t)]]);
+    await slowTx(data,'Recovering…','Confirm in your wallet');
+    const tip=await refundTipIfAny(t);
+    toast((S.hasGuardian?'Recovered. Coordinate with your guardian to withdraw.':'Recovered.')+tip,6000);
+    loadTransfers(true);
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Rendering
+   ══════════════════════════════════════════════════════════════════ */
+function statusOf(t){
+  const n=nw();
+  const expired = n>=t.unlockTime;
+  const inbound = S.tab==='inbound';
+  if(inbound && expired) return {key:'ready', text:'Ready to claim', glyph:'★'};
+  if(!inbound && n>=t.unlockTime+GRACE) return {key:'recover', text:'Ready to recover', glyph:'↩'};
+  if(!expired) return {key:'pending', text:`${fmtTime(t.unlockTime-n)} remaining`, glyph:'➤'};
+  return {key:'settling', text: inbound?'Ready to claim':'Awaiting the recipient', glyph:'✓'};
+}
+const progressOf = t => t.delay>0 ? Math.max(0,Math.min(100,((nw()-t.timestamp)/t.delay)*100)) : 100;
+
+function renderList(){
+  const list = S.tab==='outbound' ? S.out : S.inb;
+  const c = el.list;
+  c.replaceChildren();
+  if(!S.account){
+    c.appendChild(emptyState('Connect a wallet to see your transfers.', 'Connect', ()=>connect(true)));
+    return;
+  }
+  if(S.loading){
+    const w=document.createElement('div'); w.className='empty';
+    const sp=document.createElement('div'); sp.className='spinner';
+    const p=document.createElement('p'); p.textContent='Loading transfers…';
+    w.append(sp,p); c.appendChild(w);
+    return;
+  }
+  if(!list.length){
+    c.appendChild(S.tab==='outbound'
+      ? emptyState('No outbound transfers.','Send your first',()=>setView('send'))
+      : emptyState('No inbound transfers.'));
+    return;
+  }
+  const groups=new Map();
+  for(const t of list){
+    const k=t.token.toLowerCase();
+    if(!groups.has(k)) groups.set(k,{sym:t.symbol,token:t.token,decimals:t.decimals,items:[]});
+    groups.get(k).items.push(t);
+  }
+  for(const [,g] of groups){
+    const wrap=document.createElement('div'); wrap.className='group';
+
+    const head=document.createElement('div'); head.className='label';
+    const nm=document.createElement('span');
+    nm.textContent=(g.sym==='???'?shortAddr(g.token):g.sym)+' · '+g.items.length+(g.items.length===1?' transfer':' transfers');
+    const sum=document.createElement('span'); sum.className='sum';
+    sum.textContent=fmtAmt(g.items.reduce((a,t)=>a+t.amountRaw,0n),g.decimals)+' total';
+    head.append(nm,sum);
+    wrap.appendChild(head);
+
+    const lw=document.createElement('div'); lw.className='line-wrap';
+    const line=document.createElement('div'); line.className='line';
+    const sym=tokSym(g.sym);
+    line.dataset.sym=sym;
+    if(sym==='other') line.style.background=tokenColor(g.token);
+    lw.appendChild(line);
+
+    const sorted=g.items.map(t=>({t,p:progressOf(t)})).sort((a,b)=>a.p-b.p);
+    // Lane offsets are capped at the lane count. Letting the index grow without
+    // bound walks an arrow clean off its own track.
+    const LANES=3, STEP=13;
+    let idx=0, lastP=-100, clusterStart=0;
+    for(let i=0;i<sorted.length;i++){
+      const {t,p}=sorted[i];
+      if(p-lastP<5) idx++; else { idx=0; clusterStart=i; }
+      lastP=p;
+      if(idx>=LANES*2){
+        // Too dense to draw honestly: collapse the tail into a count badge.
+        const rest=sorted.length-i;
+        const b=document.createElement('span');
+        b.className='badge';
+        b.style.left=Math.min(96,p)+'%'; b.style.top='50%';
+        b.textContent='+'+rest;
+        b.title=`${rest} more transfers at a similar point`;
+        lw.appendChild(b);
+        break;
+      }
+      const fill=document.createElement('div');
+      fill.className='fill'; fill.style.width=Math.min(100,p)+'%';
+      fill.dataset.tid=t.id;
+      line.appendChild(fill);
+      lw.appendChild(makeArrow(t,g,p,idx%LANES,STEP));
+    }
+    wrap.appendChild(lw);
+    c.appendChild(wrap);
+  }
+  startTimer();
+}
+function emptyState(text, cta, fn){
+  const w=document.createElement('div'); w.className='empty';
+  const p=document.createElement('p'); p.textContent=text; w.appendChild(p);
+  if(cta){
+    const b=document.createElement('button'); b.className='btn'; b.style.width='auto';
+    b.textContent=cta; b.onclick=fn; w.appendChild(b);
+  }
+  return w;
+}
+function makeArrow(t,g,p,lane,step){
+  const st=statusOf(t);
+  const b=document.createElement('button');
+  b.type='button';
+  b.className='arrow'+(st.key==='ready'?' ready':st.key==='recover'?' recover':'')+(t.tipped?' tipped':'');
+  b.textContent=st.glyph;
+  b.dataset.tid=t.id;
+  b.style.left=`calc(${Math.min(95,p)}% - ${lane*step}px)`;
+  b.style.top=[6,0,12][lane]+'px';
+  const who=S.tab==='outbound'?`to ${shortAddr(t.to)}`:`from ${shortAddr(t.from)}`;
+  b.setAttribute('aria-label',`${t.amount} ${g.sym} ${who} — ${st.text}. Open details.`);
+  b.onclick=e=>{ e.stopPropagation(); openDetail(t,g.sym); };
+  if(matchMedia('(hover:hover)').matches){
+    b.addEventListener('mouseenter',()=>showTip(b,t,g.sym));
+    b.addEventListener('mouseleave',hideTip);
+    b.addEventListener('focus',()=>showTip(b,t,g.sym));
+    b.addEventListener('blur',hideTip);
+  }
+  return b;
+}
+function detailRows(t,sym){
+  const st=statusOf(t);
+  const rows=[
+    ['Amount', `${t.amount} ${sym==='???'?shortAddr(t.token):sym}`],
+    [S.tab==='outbound'?'To':'From', S.tab==='outbound'?shortAddr(t.to):shortAddr(t.from)],
+    ['Status', st.text],
+    ['Timelock', fmtTime(t.delay)],
+  ];
+  if(t.guardianPending && S.tab==='outbound' && nw()<t.unlockTime) rows.push(['Guardian','Required to reclaim']);
+  if(S.hasGuardian && S.tab==='inbound' && nw()>=t.unlockTime) rows.push(['Guardian','Required to withdraw']);
+  if(t.tipped) rows.push(['Auto-claim', S.tab==='inbound'?'A keeper will settle this':'Keeper tip attached']);
+  if(S.tab==='outbound' && nw()>=t.unlockTime && nw()<t.unlockTime+GRACE)
+    rows.push(['Recoverable in', fmtTime(t.unlockTime+GRACE-nw())]);
+  return rows;
+}
+// One hover tooltip, in a fixed layer, so it can never be clipped by the
+// scrolling list that owns the arrow.
+function showTip(anchor,t,sym){
+  hideTip();
+  const d=document.createElement('div'); d.className='tip';
+  for(const [k,v] of detailRows(t,sym)){
+    const r=document.createElement('div'); r.className='tt';
+    const a=document.createElement('span'); a.className='tl'; a.textContent=k;
+    const b=document.createElement('span'); b.textContent=v;
+    r.append(a,b); d.appendChild(r);
+  }
+  el.tipLayer.appendChild(d);
+  const ar=anchor.getBoundingClientRect(), tr=d.getBoundingClientRect();
+  let top=ar.top-tr.height-10;
+  if(top<8) top=ar.bottom+10;
+  let left=ar.left+ar.width/2-tr.width/2;
+  left=Math.max(8,Math.min(left,innerWidth-tr.width-8));
+  d.style.top=top+'px'; d.style.left=left+'px';
+}
+function hideTip(){ el.tipLayer.replaceChildren(); }
+
+function openDetail(t,sym){
+  S.detail={t,sym};
+  el.detailTitle.textContent = S.tab==='outbound'?'Outbound transfer':'Inbound transfer';
+  el.detailRows.replaceChildren();
+  for(const [k,v] of detailRows(t,sym)){
+    const dt=document.createElement('dt'), dd=document.createElement('dd');
+    dt.textContent=k; dd.textContent=v;
+    const row=document.createElement('div'); row.className='kv';
+    row.append(dt,dd); el.detailRows.appendChild(row);
+  }
+  const st=statusOf(t), btn=el.detailAction;
+  btn.className='btn'; btn.disabled=false;
+  if(S.tab==='inbound'){
+    if(st.key==='ready'||st.key==='settling'){
+      btn.textContent = S.hasGuardian ? `Unlock ${t.amount} ${sym}` : `Claim ${t.amount} ${sym}`;
+      btn.onclick=()=>{ hideModal(el.detailModal); doClaim(t); };
+    } else {
+      btn.textContent=`Locked — ${fmtTime(t.unlockTime-nw())} remaining`;
+      btn.disabled=true; btn.onclick=null;
+    }
+  } else if(st.key==='pending'){
+    btn.textContent=`Reverse and reclaim ${t.amount} ${sym}`;
+    btn.onclick=()=>{ hideModal(el.detailModal); doReverse(t); };
+  } else if(st.key==='recover'){
+    btn.className='btn danger';
+    btn.textContent=`Recover ${t.amount} ${sym}`;
+    btn.onclick=()=>{ hideModal(el.detailModal); doClawback(t); };
+  } else {
+    btn.textContent=`Recoverable in ${fmtTime(t.unlockTime+GRACE-nw())}`;
+    btn.disabled=true; btn.onclick=null;
+  }
+  showModal(el.detailModal);
+}
+
+// The tick moves two numbers per transfer. It does not rebuild the list, so an
+// open tooltip survives it and the bar transitions actually run.
+function tick(){
+  if(S.view!=='take'||document.hidden) return;
+  const list=S.tab==='outbound'?S.out:S.inb;
+  const byId=new Map(list.map(t=>[t.id,t]));
+  let restructure=false;
+  for(const f of qsa('.fill')){
+    const t=byId.get(f.dataset.tid); if(!t) continue;
+    f.style.width=Math.min(100,progressOf(t))+'%';
+  }
+  for(const a of qsa('.arrow')){
+    const t=byId.get(a.dataset.tid); if(!t) continue;
+    const st=statusOf(t);
+    if(a.textContent!==st.glyph) restructure=true;
+    a.textContent=st.glyph;
+    a.classList.toggle('ready',st.key==='ready');
+    a.classList.toggle('recover',st.key==='recover');
+  }
+  if(restructure) renderList();
+}
+function startTimer(){ if(!S.timer) S.timer=setInterval(tick,5000); }
+function stopTimer(){ if(S.timer){ clearInterval(S.timer); S.timer=null; } }
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ stopTimer(); return; }
+  if(S.view==='take'){ startTimer(); tick(); loadTransfers(false); }
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   Send-form rendering
+   ══════════════════════════════════════════════════════════════════ */
+function presetsFor(sym){ return PRESETS[sym]||PRESETS.default; }
+function paintPresets(){
+  const p=presetsFor(S.symbol);
+  const btns=[...el.amountRow.querySelectorAll('[data-amount]')];
+  btns.forEach((b,i)=>{ b.dataset.amount=p[i]; b.textContent=p[i]; });
+  if(S.balance!==null && S.token && S.symbol){
+    const dec=S.decimals;
+    el.balHint.textContent=`Balance: ${fmtAmt(S.balance,dec)} ${S.symbol}`;
+    for(const b of btns){
+      let over=false;
+      try { over = parseUnits(b.dataset.amount,dec) > S.balance; } catch(e){}
+      b.disabled=over; b.style.opacity=over?'.4':'';
+      b.title=over?`More than your ${S.symbol} balance`:'';
+    }
+  } else {
+    el.balHint.textContent = S.token&&!S.account ? 'Connect a wallet to see your balance' : '';
+    for(const b of btns){ b.disabled=false; b.style.opacity=''; b.title=''; }
+  }
+  render();
+}
+function render(){
+  tg(document.body,'v-send',S.view==='send');
+  tg(document.body,'v-take',S.view==='take');
+  el.amountRow.hidden = !(S.view==='send'&&S.step>=1);
+  el.timeRow.hidden   = !(S.view==='send'&&S.step>=2);
+  el.customTokenOpt.hidden = S.view!=='send';
+  el.cryptoGrid.classList.toggle('on',S.view==='send');
+  el.sendBox.setAttribute('aria-expanded',String(S.view==='send'));
+  el.takeBox.setAttribute('aria-expanded',String(S.view==='take'));
+
+  const isCustom = S.token && !qs(`.crypto[data-token="${S.token}" i]`);
+  el.customTokenOpt.setAttribute('aria-pressed',String(!!isCustom));
+  el.customTokenOpt.style.background = isCustom?tokenColor(S.token):'';
+  el.customTokenOpt.style.color = isCustom?'#fff':'';
+  el.customTokenOpt.textContent = isCustom?S.symbol:'+ CUSTOM TOKEN';
+  el.cryptoGrid.classList.toggle('dim',!!isCustom);
+
+  qsa('.crypto').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.token.toLowerCase()===S.token)));
+  const customAmt = S.amount && ![...el.amountRow.querySelectorAll('[data-amount]')].some(b=>b.dataset.amount===S.amount);
+  el.amountRow.querySelectorAll('.opt').forEach(o=>{
+    const on = o===el.customAmountOpt ? !!customAmt : o.dataset.amount===S.amount;
+    o.setAttribute('aria-pressed',String(!!on));
+  });
+  const customDly = S.delay && !qs(`#timeRow [data-time="${S.delay}"]`);
+  el.timeRow.querySelectorAll('.opt').forEach(o=>{
+    const on = o===el.customTimeOpt ? !!customDly : parseInt(o.dataset.time)===S.delay;
+    o.setAttribute('aria-pressed',String(!!on));
+  });
+  el.customAmountOpt.textContent = customAmt?S.amount:'???';
+  el.customTimeOpt.textContent = customDly?S.delayDisplay:'???';
+  el.tabOut.setAttribute('aria-selected',String(S.tab==='outbound'));
+  el.tabIn.setAttribute('aria-selected',String(S.tab==='inbound'));
+}
+function resetForm(){
+  S.token=S.symbol=null; S.decimals=18; S.amount=S.delay=S.delayDisplay=null;
+  S.resolved=S.resolvedName=null; S.step=0; S.autoClaim=false; S.tip=0n; S.balance=null;
+  el.recipientInput.value=''; el.ens.textContent=''; el.ens.className='note';
+  el.amountInput.value=''; el.planNote.textContent='';
+  el.dInput.value=el.hInput.value=el.mInput.value=el.sInput.value='';
+  el.autoClaimChk.checked=false; el.tipPre.textContent=''; el.balHint.textContent='';
+  paintPresets();
+}
+function setView(v){
+  if(S.view===v) v='home';
+  S.view=v;
+  if(v==='home') resetForm();
+  if(v!=='take'){ stopTimer(); hideTip(); }
+  if(v!=='send') hideAllModals();
+  render();
+  if(v==='take'){ renderList(); loadTransfers(true); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Recipient resolution
+   ══════════════════════════════════════════════════════════════════ */
+function setNote(node,text,cls){ node.textContent=text; node.className='note'+(cls?' '+cls:''); }
+async function resolveRecipient(input){
+  const seq=++S.resolveSeq;
+  const stale=()=>S.resolveSeq!==seq;
+  setNote(el.ens,'Resolving…','mute');
+  el.confirmBtn.disabled=true;
+  try {
+    if(isAddr(input)){
+      const key=input.toLowerCase();
+      const name = key in S.ens ? S.ens[key] : await reverseAny(input);
+      if(stale()) return false;
+      S.ens[key]=name||null;
+      S.resolved=input; S.resolvedName=name||null;
+      setNote(el.ens, name?`${name} · ${shortAddr(input)}`:'Valid address','ok');
+      updateSummary();
+      return true;
+    }
+    if(input.includes('.')){
+      const key=input.toLowerCase();
+      const a = key in S.ens ? S.ens[key] : await resolveName(input);
+      if(stale()) return false;
+      S.ens[key]=a||null;
+      if(a&&isAddr(a)){
+        S.resolved=a; S.resolvedName=input;
+        setNote(el.ens,`${input} · ${shortAddr(a)}`,'ok');
+        updateSummary();
+        return true;
+      }
+      setNote(el.ens,`No address is set for ${input}`,'err');
+      return false;
+    }
+    setNote(el.ens,'Enter an address, a .eth name, or a .wei name','err');
+    return false;
+  } catch(e){
+    if(!stale()) setNote(el.ens,'Could not reach a name resolver — try again','err');
+    return false;
+  } finally {
+    if(!stale()) el.confirmBtn.disabled=false;
+  }
+}
+function updateSummary(){
+  if(!S.amount||!S.symbol||!S.delayDisplay) return;
+  let s=`${S.amount} ${S.symbol} · ${S.delayDisplay}`;
+  if(S.resolved) s+=` → ${S.resolvedName||shortAddr(S.resolved)}`;
+  el.summary.textContent=s;
+}
+async function updateTipPreview(){
+  if(!S.autoClaim){ el.tipPre.textContent=''; return; }
+  el.tipPre.textContent='Estimating the keeper tip…';
+  const tip=await estimateTip(S.token);
+  if(!S.autoClaim) return;
+  S.tip=tip;
+  el.tipPre.textContent=`Keeper tip ≈ ${fmtAmt(tip,18)} ETH — refunded if the recipient settles it themselves.`;
+}
+async function previewPlan(){
+  el.planNote.textContent='';
+  if(!S.account||!S.token||!S.amount) return;
+  try {
+    const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
+    const wei = parseUnits(S.amount,meta.decimals);
+    const plan = await planDeposit(wei);
+    el.planNote.textContent = planLabel(plan);
+  } catch(e){}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Confirm
+   ══════════════════════════════════════════════════════════════════ */
+function openConfirmation(){
+  updateSummary();
+  S.autoClaim=false; S.tip=0n;
+  el.autoClaimChk.checked=false; el.tipPre.textContent=''; el.planNote.textContent='';
+  showModal(el.confirmModal);
+  // Do not steal focus into the field on touch — the keyboard would cover the
+  // summary the reader is meant to check.
+  if(matchMedia('(hover:hover)').matches) el.recipientInput.focus();
+  render();
+  previewPlan();
+}
+async function handleConfirm(){
+  if(!S.account && !await connect(true)) return;
+  if(!await ensureMainnet()) return;
+  if(!S.resolved){
+    const v=el.recipientInput.value.trim();
+    if(!v){ setNote(el.ens,'Who is this going to?','err'); el.recipientInput.focus(); return; }
+    if(!await resolveRecipient(v)){ el.recipientInput.focus(); return; }
+  }
+  try {
+    const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
+    if(S.token!==ZERO && !meta.ok) throw new Error('That token did not answer symbol() or decimals()');
+    const wei=parseUnits(S.amount,meta.decimals);
+    if(S.balance!==null && wei>S.balance)
+      throw new Error(`You have ${fmtAmt(S.balance,meta.decimals)} ${S.symbol}`);
+    hideModal(el.confirmModal);
+    await deposit();
+    toast('Sent. The funds are locked in SLOW.',5500);
+    setView('home');
+    loadTransfers(true);
+  } catch(e){
+    fail(e);
+    if(!isRejection(e)) showModal(el.confirmModal);
+  } finally { hideLoad(); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Wiring
+   ══════════════════════════════════════════════════════════════════ */
+function applyTheme(light){
+  document.body.classList.toggle('light',light);
+  el.themeBtn.textContent=light?'☀':'☾';
+  el.themeBtn.setAttribute('aria-label',light?'Switch to dark theme':'Switch to light theme');
+}
+(()=>{
+  let pref=null;
+  try { pref=localStorage.getItem('slow.theme'); } catch(e){}
+  applyTheme(pref ? pref==='light' : matchMedia('(prefers-color-scheme: light)').matches);
+})();
+el.themeBtn.onclick=()=>{
+  const light=!document.body.classList.contains('light');
+  applyTheme(light);
+  try { localStorage.setItem('slow.theme',light?'light':'dark'); } catch(e){}
+};
+
+el.walletBtn.onclick=()=>S.account?disconnect():connect(true);
+el.sendBox.onclick=()=>setView('send');
+el.takeBox.onclick=async()=>{
+  if(S.view==='take'){ setView('home'); return; }
+  setView('take');
+  if(!S.account) await connect(true);
+};
+el.backBtn.onclick=()=>setView('send');
+
+el.cryptoGrid.addEventListener('click',e=>{
+  const b=e.target.closest('.crypto'); if(!b) return;
+  S.token=b.dataset.token.toLowerCase();
+  S.symbol=b.dataset.symbol;
+  S.decimals = S.symbol==='USDC'||S.symbol==='USDT' ? 6 : 18;
+  S.amount=null; S.step=Math.max(S.step,1);
+  tokenMeta(S.token).then(m=>{ if(S.token===b.dataset.token.toLowerCase()){ S.decimals=m.decimals; paintPresets(); } });
+  paintPresets(); refreshBalance();
+});
+el.amountRow.addEventListener('click',e=>{
+  const o=e.target.closest('.opt'); if(!o||o.disabled) return;
+  if(o===el.customAmountOpt){
+    el.amountInput.value=S.amount||'';
+    el.amountNote.textContent = S.balance!==null ? `You have ${fmtAmt(S.balance,S.decimals)} ${S.symbol}` : '';
+    showModal(el.amountModal);
+    return;
+  }
+  S.amount=o.dataset.amount; S.step=Math.max(S.step,2); render();
+});
+el.timeRow.addEventListener('click',e=>{
+  const o=e.target.closest('.opt'); if(!o) return;
+  if(o===el.customTimeOpt){ showModal(el.timeModal); return; }
+  S.delay=parseInt(o.dataset.time); S.delayDisplay=o.textContent;
+  openConfirmation();
+});
+el.amountApply.onclick=()=>{
+  const raw=el.amountInput.value.trim();
+  try {
+    const wei=parseUnits(raw,S.decimals);
+    if(wei<=0n){ el.amountNote.textContent='Enter an amount greater than zero'; return; }
+    if(S.balance!==null&&wei>S.balance){ el.amountNote.textContent=`That is more than your ${fmtAmt(S.balance,S.decimals)} ${S.symbol}`; return; }
+    S.amount=raw; S.step=Math.max(S.step,2);
+    hideModal(el.amountModal); render();
+  } catch(e){ el.amountNote.textContent=e.message; }
+};
+el.customTokenOpt.onclick=()=>{
+  el.tokenInput.value=''; setNote(el.tokenStatus,'');
+  showModal(el.tokenModal);
+};
+el.tokenApply.onclick=async()=>{
+  const addr=el.tokenInput.value.trim();
+  if(!isAddr(addr)){ setNote(el.tokenStatus,'That is not a contract address','err'); return; }
+  setNote(el.tokenStatus,'Reading the token…','mute');
+  const meta=await tokenMeta(addr);
+  if(!meta.ok){ setNote(el.tokenStatus,'That address did not answer symbol() or decimals()','err'); return; }
+  S.token=addr.toLowerCase(); S.symbol=meta.symbol; S.decimals=meta.decimals;
+  S.amount=null; S.step=Math.max(S.step,1);
+  hideModal(el.tokenModal);
+  paintPresets(); refreshBalance();
+};
+el.timeApply.onclick=()=>{
+  const r=fmtCustomTime({d:el.dInput.value,h:el.hInput.value,m:el.mInput.value,s:el.sInput.value});
+  if(!r.seconds){ toast('Enter a delay longer than zero'); return; }
+  if(r.seconds>MAX_DELAY){ toast('The longest delay is 100 years'); return; }
+  S.delay=r.seconds; S.delayDisplay=r.display;
+  hideModal(el.timeModal);
+  openConfirmation();
+};
+el.tokenInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.tokenApply.click(); });
+el.amountInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.amountApply.click(); });
+[el.dInput,el.hInput,el.mInput,el.sInput].forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') el.timeApply.click(); }));
+
+el.autoClaimChk.onchange=()=>{ S.autoClaim=el.autoClaimChk.checked; updateTipPreview(); previewPlan(); };
+let ensTimer;
+el.recipientInput.addEventListener('input',()=>{
+  const v=el.recipientInput.value.trim();
+  S.resolved=null; S.resolvedName=null; S.resolveSeq++;
+  updateSummary();
+  clearTimeout(ensTimer);
+  if(!v){ setNote(el.ens,''); return; }
+  ensTimer=setTimeout(()=>resolveRecipient(v),450);
+});
+el.recipientInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.confirmBtn.click(); });
+el.confirmBtn.onclick=handleConfirm;
+el.confirmCancel.onclick=()=>hideModal(el.confirmModal);
+el.detailClose.onclick=()=>hideModal(el.detailModal);
+
+qsa('.tab[data-tab]').forEach(t=>t.addEventListener('click',()=>{
+  S.tab=t.dataset.tab; render(); renderList();
+}));
+el.list.addEventListener('scroll',hideTip,{passive:true});
+addEventListener('resize',hideTip);
+addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(false); });
+
+paintNet(); render(); paintPresets();
+eagerConnect();
+})();
+</script>
+</body>
+</html>

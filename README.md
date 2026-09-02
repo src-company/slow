@@ -257,22 +257,46 @@ forge test
 
 Dapp tests run on vanilla Node — no NPM:
 
-- `node test/slow_html.test.mjs` — unit tests for the dapp's deterministic helpers (keccak256, namehash, ABI codec, parse/formatUnits, id codec, every selector). Crosschecked against `cast keccak` / `cast sig`.
+- `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, transfer status, and every selector.
+- `node test/slow_html.test.mjs` — the same for the frozen v1 artifact `SLOW.html`.
 - `node test/slow_html.e2e.test.mjs` — end-to-end. Spawns `anvil`, deploys SLOW, drives the dapp's flow functions against the live contract, asserts on-chain state matches dapp state. Requires `anvil` on PATH and a current `forge build`.
 
-`SLOW.html` is read in memory by both runners — never modified.
+Both HTML files are read in memory by their runners — never modified.
+
+### The page pipeline
+
+```sh
+node scripts/serve.mjs          # localhost, real wallet, real transactions
+node scripts/chunk.mjs          # -> out/chunkN.creation.txt
+node scripts/address.mjs <deployer> --mine 0x000000
+node scripts/verify.mjs         # the deployment, against the chain
+```
+
+`manifest.json` pins the page's byte length and SHA-256. Editing `dapp/page.html`
+without editing the manifest fails every command, deliberately: a chunk set built
+from a page nobody pinned is how a deploy stops matching its repo.
+
+See [`deploy/SLOW-PAGE.md`](./deploy/SLOW-PAGE.md) for the CREATE3 deployment.
 
 ## Layout
 
 ```txt
-SLOW.html          — onchain dapp, minified (this is the artifact served via html())
-SLOW-preview.html  — readable/un-minified source of the same dapp (not deployed)
+dapp/page.html     — the dapp (single self-contained file; the current source of truth)
+manifest.json      — release pin: the page's byte length and SHA-256
+SLOW.html          — frozen v1, as deployed inside the protocol contract's html()
+SLOW-preview.html  — un-minified v1 source (has drifted from SLOW.html; not deployed)
 index.html         — client-only html() resolver
 src/
-└─ SLOW.sol        — protocol contract (also defines SLOWGate)
+├─ SLOW.sol        — protocol contract (also defines SLOWGate)
+├─ SlowPage.sol    — ERC-8244 / ERC-5219 page contract, N chunks, CREATE3-deployable
+└─ SlowPermit.sol  — permit deposits for the next protocol version (see deploy doc)
+scripts/           — chunk / serve / verify / CREATE3 address, driven by the manifest
+deploy/
+└─ SLOW-PAGE.md    — CREATE3 deployment plan for the page contract
 test/
 ├─ SLOW.t.sol      — full test suite (mainnet fork)
-└─ slow_html.*.mjs — dapp unit + e2e tests (vanilla Node)
+├─ page.test.mjs   — unit tests for dapp/page.html (vanilla Node)
+└─ slow_html.*.mjs — v1 dapp unit + e2e tests (vanilla Node)
 gateway/
 └─ server.js       — self-hostable web gateway (ERC-8244 html() resolver)
 sdk/               — integration SDK (zero-dep core + optional viem/wagmi + React)

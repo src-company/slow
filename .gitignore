@@ -5,3 +5,6 @@ broadcast
 **/node_modules
 **/dist
 **/.env
+
+# chunk build output
+out/
