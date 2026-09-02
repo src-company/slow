@@ -77,7 +77,7 @@ main{
 .stage{position:relative;width:300px;height:300px;max-width:100%;flex:0 0 auto}
 .grid{
   display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;
-  position:absolute;inset:0;opacity:0;pointer-events:none;transition:opacity var(--t);
+  position:absolute;inset:0;z-index:5;opacity:0;pointer-events:none;transition:opacity var(--t);
 }
 .grid.on{opacity:1;pointer-events:auto}
 .grid.dim .crypto{opacity:.35}
@@ -96,7 +96,7 @@ main{
 .frame{
   position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
   display:flex;flex-direction:column;width:200px;border:2px solid var(--fg);
-  user-select:none;z-index:5;transition:transform var(--t);
+  user-select:none;z-index:1;transition:transform var(--t);
 }
 .box{
   height:100px;display:flex;justify-content:center;align-items:center;
@@ -106,9 +106,16 @@ main{
 #sendBox{background:var(--fg);color:var(--bg)}
 #takeBox{background:var(--bg);color:var(--fg)}
 .divider{height:2px;background:var(--fg);flex:0 0 auto}
-body.v-send #sendBox{background:var(--bg);color:var(--fg)}
-body.v-send .frame{transform:translate(-50%,-50%) scale(.86);opacity:.92}
-body.v-send #takeBox{background:var(--bg2);color:var(--fg)}
+/* SEND is covered by the grid; TAKE slides out from under it as the way back. */
+body.v-send #takeBox{
+  transform:translateY(105px);background:var(--bg2);color:var(--fg);
+  align-items:flex-end;padding-bottom:14px;
+  box-shadow:0 6px 16px rgba(0,0,0,.35);
+}
+body.light.v-send #takeBox{box-shadow:0 6px 16px rgba(0,0,0,.18)}
+body.v-send #takeBox:hover{background:var(--bg3)}
+/* Room for that peek, so it never lands on the timelock row. */
+body.v-send .stage{margin-bottom:46px}
 
 .link{
   background:transparent;color:var(--fg);font-size:12px;cursor:pointer;
