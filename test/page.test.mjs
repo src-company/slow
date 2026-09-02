@@ -54,6 +54,8 @@ globalThis.dispatchEvent = noop;
 globalThis.Event = class { constructor(t) { this.type = t; } };
 globalThis.fetch = () => Promise.reject(new Error('no network in unit tests'));
 globalThis.innerWidth = 1024;
+globalThis.location = {origin: 'https://slow.wei.limo', pathname: '/', hostname: 'slow.wei.limo', hash: ''};
+
 
 const captured = {};
 globalThis.__capture = captured;
@@ -66,7 +68,7 @@ const EXPORTS = [
   'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'tokSym',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
-  'fmtWhen', 'ready', 'contrast',
+  'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -369,6 +371,75 @@ C.S.delay = 86400;
 eq(C.ready(), true, 'ready once recipient, asset, amount and timelock are all set');
 Object.assign(C.S, snap);
 
+// ─── Links ─────────────────────────────────────────────────────────────────
+// Routes live in the fragment because a gateway serves this document from every
+// path on the contract and some rewrite the query; the fragment never reaches
+// them.
+globalThis.location.hash = '#/pay?to=vitalik.eth&asset=ETH&amount=0.1&delay=86400&chain=1';
+let r = C.parseRoute();
+eq(r.kind, 'pay', 'parses a pay route');
+eq(r.q.get('to'), 'vitalik.eth', 'carries the recipient');
+eq(r.q.get('amount'), '0.1', 'carries the amount');
+eq(r.q.get('delay'), '86400', 'carries the delay');
+eq(r.q.get('chain'), '1', 'carries the chain');
+
+globalThis.location.hash = '#/tx/12345?chain=4663';
+r = C.parseRoute();
+eq(r.kind, 'tx', 'parses a transfer route');
+eq(r.arg, '12345', 'carries the transfer id');
+eq(r.q.get('chain'), '4663', 'carries the chain');
+
+globalThis.location.hash = '';
+eq(C.parseRoute(), null, 'no hash is no route');
+globalThis.location.hash = '#/nonsense';
+eq(C.parseRoute(), null, 'an unknown route is not a route');
+globalThis.location.hash = '#/tx/';
+eq(C.parseRoute().arg, '', 'a transfer route with no id parses but carries nothing');
+
+// Round-trip: a link this page builds is a link this page can read.
+{
+  const snap = {...C.S};
+  Object.assign(C.S, {chain: 4663, resolved: '0x000000000000000000000000000000000000dEaD',
+    resolvedName: 'someone.eth', token: C.ZERO, symbol: 'ETH', amount: '0.25', delay: 3600});
+  const link = C.payLink();
+  ok(link.startsWith('https://slow.wei.limo/#/pay?'), 'pay link is built on the fragment');
+  globalThis.location.hash = link.slice(link.indexOf('#'));
+  const back = C.parseRoute();
+  eq(back.kind, 'pay', 'the link it built parses back');
+  eq(back.q.get('to'), 'someone.eth', 'recipient survives the round trip');
+  eq(back.q.get('amount'), '0.25', 'amount survives');
+  eq(back.q.get('delay'), '3600', 'delay survives');
+  eq(back.q.get('chain'), '4663', 'chain survives');
+  eq(back.q.get('asset'), 'ETH', 'native ETH is named, not addressed');
+  const tl = C.txLink('987');
+  eq(tl, 'https://slow.wei.limo/#/tx/987?chain=4663', 'transfer link shape');
+  globalThis.location.hash = tl.slice(tl.indexOf('#'));
+  eq(C.parseRoute().arg, '987', 'transfer link parses back');
+  Object.assign(C.S, snap);
+  globalThis.location.hash = '';
+}
+
+// ─── Keeper tip ────────────────────────────────────────────────────────────
+// The estimator that shipped floored the priority fee at 1 gwei. Measured live,
+// mainnet runs at 0.15 and Robinhood at 0, so with its 2x/2x buffers on top it
+// overpaid by 17x and 7.6x. Gas units are identical on both chains — a bare
+// value transfer is 21,000 on each — so only the price is per-chain.
+eq(C.KEEPER_GAS.eth, 150000n, 'ETH claim gas units');
+eq(C.KEEPER_GAS.erc20, 220000n, 'ERC-20 claim gas units');
+ok(C.KEEPER_GAS.erc20 > C.KEEPER_GAS.eth, 'an ERC-20 claim costs more than an ETH one');
+for (const id of C.CHAIN_IDS) {
+  const c = C.CHAINS[id];
+  ok(typeof c.minGasPrice === 'bigint', `chain ${id} has a gas price floor`);
+  ok(typeof c.minTip === 'bigint', `chain ${id} has a tip floor`);
+  ok(c.fallbackGasPrice > c.minGasPrice, `chain ${id} fallback is above its floor`);
+  // A tip at the floor price must still be worth a keeper's while, and must not
+  // be so large it dwarfs what it is paying for.
+  const atFloor = C.KEEPER_GAS.erc20 * c.minGasPrice * 3n / 2n;
+  const tip = atFloor < c.minTip ? c.minTip : atFloor;
+  ok(tip >= c.minTip, `chain ${id} never tips below its floor`);
+  ok(tip < 10n ** 15n, `chain ${id} floor tip stays under 0.001 ETH`);
+}
+
 // ─── Guardian ──────────────────────────────────────────────────────────────
 eq(C.GUARD_DELAY, 86400, 'the guardian rotation veto window is 1 day');
 const ward = '0x000000000000000000000000000000000000dEaD';
@@ -452,13 +523,37 @@ for (const id of C.CHAIN_IDS) {
 // Chain-native assets, each confirmed on chain 4663 to have code and to report
 // this symbol and these decimals.
 const rh = C.CHAINS[4663].tokens;
-eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA,cbBTC,SPY,SPCX', '4663 lists its own assets');
+eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA,cbBTC,SPY,SPCX,GME', '4663 lists its own assets');
+eq(rh.length % 4, 0, '4663 fills whole rows of four');
+eq(rh.find(t => t.symbol === 'GME').address, '0x1b0e319c6a659f002271b69db8a7df2f911c153e', 'GME on 4663');
 eq(rh.find(t => t.symbol === 'cbBTC').address, '0xcec185eb182c47d1ba1efc84e6959e18cd620be4', 'cbBTC on 4663');
 eq(rh.find(t => t.symbol === 'cbBTC').decimals, 8, 'cbBTC has 8 decimals, not 18');
 eq(rh.find(t => t.symbol === 'SPY').address, '0x117cc2133c37b721f49de2a7a74833232b3b4c0c', 'SPY on 4663');
 eq(rh.find(t => t.symbol === 'SPCX').address, '0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea', 'SPCX on 4663');
 eq(C.presetsFor('cbBTC').join(','), '0.001,0.01,0.1', 'cbBTC gets a bitcoin-scale ladder');
 eq(C.presetsFor('SPY').join(','), C.presetsFor('NVDA').join(','), 'SPY ladders like a share');
+eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders like a share');
+// Eight tiles side by side have to stay tellable apart. Hues are spread, and
+// the one close pair is separated by value instead.
+{
+  const hue = (h) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (!d) return 0;
+    const t = mx === r ? (g - b) / d % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return ((t * 60) + 360) % 360;
+  };
+  const cols = rh.filter((t) => t.address !== C.ZERO).map((t) => C.TOKEN_COLORS[t.symbol]);
+  for (let i = 0; i < cols.length; i++) {
+    for (let j = i + 1; j < cols.length; j++) {
+      let dh = Math.abs(hue(cols[i]) - hue(cols[j]));
+      if (dh > 180) dh = 360 - dh;
+      const dl = Math.abs(C.luminance(cols[i]) - C.luminance(cols[j]));
+      ok(dh > 25 || dl > 0.25,
+        `${cols[i]} and ${cols[j]} differ in hue or in value`);
+    }
+  }
+}
 eq(rh.find(t => t.symbol === 'USDe').address, '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', 'USDe on 4663');
 eq(rh.find(t => t.symbol === 'USDe').decimals, 18, 'USDe has 18 decimals, not 6');
 eq(rh.find(t => t.symbol === 'USDG').address, '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG on 4663');

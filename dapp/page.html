@@ -15,6 +15,7 @@
 :root{
   --bg:#000;--fg:#fff;
   --bg2:#0d0d0d;--bg3:#1c1c1c;--bd:#333;--bd2:#555;--dim:#8b8b8b;
+  --rule:#1e1e1e;
   --rh:#ccff00;--rh-ink:#110e08;
   --ok:#3ddc84;--warn:#ffb020;--err:#ff6b6b;
   --t:120ms linear;
@@ -24,6 +25,7 @@
 body.light{
   --bg:#fff;--fg:#000;
   --bg2:#f2f2f2;--bg3:#e4e4e4;--bd:#b9b9b9;--bd2:#7a7a7a;--dim:#5a5a5a;
+  --rule:#e6e6e6;
   --ok:#0a7f3f;--warn:#9a5b00;--err:#c62828;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -106,6 +108,7 @@ body.v-take .panel{max-width:640px}
   font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--dim);
   transition:background var(--t),color var(--t);
 }
+.seg button + button{border-left:1px solid var(--bd)}
 .seg button:hover{color:var(--fg)}
 .seg button[aria-selected=true]{background:var(--fg);color:var(--bg)}
 
@@ -113,6 +116,9 @@ body.v-take .panel{max-width:640px}
 .sendPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0}
 body.v-send .sendPane{display:flex}
 .field{display:flex;flex-direction:column;gap:8px;transition:opacity var(--t)}
+.sendPane > .field + .field,
+.guardPane > .field + .field{padding-top:20px;border-top:1px solid var(--rule)}
+.tl li:last-child{padding-bottom:0}
 .field.locked{opacity:.4;pointer-events:none}
 .flabel{
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;
@@ -230,6 +236,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
   transition:background var(--t),color var(--t);
 }
+.tab + .tab{border-left:1px solid var(--bd)}
 .tab:hover{color:var(--fg)}
 .tab[aria-selected=true]{background:var(--fg);color:var(--bg)}
 .list{
@@ -432,6 +439,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
         <p class="note" id="tipPre"></p>
         <p class="note" id="planNote" aria-live="polite"></p>
         <button class="btn" id="confirmBtn">Send</button>
+  <button class="btn alt" id="shareBtn">Copy request link</button>
       </div>
     </div>
 
@@ -549,6 +557,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
   <h3 id="detailTitle">Transfer</h3>
   <dl class="rows" id="detailRows"></dl>
   <button class="btn" id="detailAction"></button>
+  <button class="btn alt" id="detailShare">Copy link to this transfer</button>
   <button class="btn alt" id="detailClose">Close</button>
 </div></div>
 
@@ -619,6 +628,9 @@ const CHAINS = {
     // SLOW's deployment block, so a log scan never asks for more history than
     // exists. Found by bisecting eth_getCode.
     deployBlock:24986598,
+    // Keeper-tip pricing. Floors stop a quiet moment producing a dust tip no
+    // keeper would bother with; the fallback is used only if eth_gasPrice fails.
+    minGasPrice:50_000_000n, fallbackGasPrice:2_000_000_000n, minTip:20_000_000_000_000n,
     rpcs:[
       'https://ethereum-rpc.publicnode.com',
       'https://eth.llamarpc.com',
@@ -637,6 +649,7 @@ const CHAINS = {
     id:4663, hex:'0x1237', name:'Robinhood Chain', short:'Robinhood',
     explorer:'https://robinscan.io',
     deployBlock:0,
+    minGasPrice:10_000_000n, fallbackGasPrice:500_000_000n, minTip:5_000_000_000_000n,
     rpcs:['https://rpc.mainnet.chain.robinhood.com'],
     // Each confirmed on chain to have code and to report this symbol and these
     // decimals. All three are native to the chain rather than bridged, which is
@@ -650,6 +663,7 @@ const CHAINS = {
       {symbol:'cbBTC',address:'0xcec185eb182c47d1ba1efc84e6959e18cd620be4', decimals:8},
       {symbol:'SPY',  address:'0x117cc2133c37b721f49de2a7a74833232b3b4c0c', decimals:18},
       {symbol:'SPCX', address:'0x4a0e65a3eccec6dbe60ae065f2e7bb85fae35eea', decimals:18},
+      {symbol:'GME',  address:'0x1b0e319c6a659f002271b69db8a7df2f911c153e', decimals:18},
     ],
     // Most wallets have never heard of chain 4663, so a switch has to be
     // able to fall back to adding it.
@@ -697,7 +711,11 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
 const TOKEN_COLORS = {
   ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#745ddf',
   USDe:'#4d5bd9', USDG:'#ccff00', NVDA:'#4d7c0f',
-  cbBTC:'#f7931a', SPY:'#b3202e', SPCX:'#4a5568',
+  // The four tokenized equities have no brand colour anyone would recognise on
+  // a 100px square, so they are assigned for legibility instead — except GME,
+  // where the red IS the association. SPY moves off red to make room for it: an
+  // index fund reads as institutional teal more naturally than as GameStop.
+  cbBTC:'#f7931a', SPY:'#0f766e', SPCX:'#b9bec7', GME:'#c8102e',
 };
 /* USDG carries Robinhood's chartreuse, which is far too light for white text.
    Rather than hand-maintain a second table, the ink is derived: WCAG relative
@@ -734,7 +752,7 @@ const inkOn = hex =>
 const PRESETS = {
   ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'],
   cbBTC:['0.001','0.01','0.1'],
-  NVDA:['0.1','1','10'], SPY:['0.1','1','10'], SPCX:['0.1','1','10'],
+  NVDA:['0.1','1','10'], SPY:['0.1','1','10'], SPCX:['0.1','1','10'], GME:['0.1','1','10'],
   default:['10','100','1000'],
 };
 
@@ -1642,16 +1660,36 @@ async function deposit(){
   txShow('Sending','Waiting for confirmation',h);
   await waitTx(h);
 }
+/* ══════════════════════════════════════════════════════════════════
+   Keeper tip
+   ══════════════════════════════════════════════════════════════════
+   The previous estimator floored the priority fee at 1 gwei — a number
+   from a different era. Measured live, mainnet's priority fee is
+   0.15 gwei and Robinhood's is 0, and on top of that floor it stacked
+   a 2x base buffer and a 2x overall multiplier. Against real conditions
+   it overpaid by 17x on mainnet and 7.6x on Robinhood.
+
+   `eth_gasPrice` is the right input on both. It is the effective price,
+   and on an Arbitrum-style L2 the L1 posting cost is priced INTO it
+   rather than metered into gas used — a bare value transfer costs
+   exactly 21,000 gas on both chains, so the gas units need no per-chain
+   factor and only the price does. One formula, two chains.
+   ══════════════════════════════════════════════════════════════════ */
+const KEEPER_GAS = {eth:150_000n, erc20:220_000n};
 async function estimateTip(token){
-  try {
-    const fh=await rpc('eth_feeHistory',['0x5','latest',[50]]);
-    const baseFee=BigInt(fh.baseFeePerGas.at(-1));
-    let priority=BigInt(fh.reward?.at(-1)?.[0]||0);
-    if(priority<1_000_000_000n) priority=1_000_000_000n;
-    const gasUnits = token===ZERO ? 150_000n : 220_000n;
-    return gasUnits*(baseFee*2n+priority)*2n;
-  } catch(e){ return 3_000_000_000_000_000n; }
+  const c=cfg();
+  const units = token===ZERO ? KEEPER_GAS.eth : KEEPER_GAS.erc20;
+  let price;
+  try { price = BigInt(await rpc('eth_gasPrice',[],c.id)); }
+  catch(e){ price = c.fallbackGasPrice; }
+  if(!price || price < c.minGasPrice) price = c.minGasPrice;
+  // Half again, so a keeper is still paid if the price drifts between
+  // composing and settling — without paying for a spike that has not happened.
+  let tip = units * price * 3n / 2n;
+  if(tip < c.minTip) tip = c.minTip;
+  return tip;
 }
+
 
 /* ══════════════════════════════════════════════════════════════════
    Loading transfers — batched, partial-tolerant
@@ -2678,6 +2716,121 @@ async function handleConfirm(){
 }
 
 /* ══════════════════════════════════════════════════════════════════
+   Links
+   ══════════════════════════════════════════════════════════════════
+   Two shapes, both in the FRAGMENT rather than the query string. A
+   gateway serves this document from every path on the contract and some
+   rewrite or drop the query; the fragment never reaches them at all, so
+   it is the only part of a URL that survives w4eth.io, w3link.io and
+   wei.limo alike.
+
+     #/pay?to=…&asset=…&amount=…&delay=…&chain=…
+       Fills the send form in. A request for payment.
+
+     #/tx/<transferId>?chain=…
+       Opens one transfer. Anyone can follow it — the entry is read
+       straight from `pendingTransfers`, not from anybody's list — and
+       what you can DO with it depends on who you are connected as: the
+       sender sees reverse or recover, the recipient sees claim. That
+       makes it a way to keep hold of a specific transfer: a bookmark
+       that still works months later, on either chain.
+   ══════════════════════════════════════════════════════════════════ */
+function linkBase(){ return location.origin + location.pathname; }
+function payLink(){
+  const q=new URLSearchParams();
+  if(S.resolvedName||S.resolved) q.set('to', S.resolvedName||S.resolved);
+  if(S.symbol) q.set('asset', S.token===ZERO?'ETH':S.token);
+  if(S.amount) q.set('amount', S.amount);
+  if(S.delay) q.set('delay', String(S.delay));
+  q.set('chain', String(S.chain));
+  return `${linkBase()}#/pay?${q}`;
+}
+const txLink = id => `${linkBase()}#/tx/${id}?chain=${S.chain}`;
+
+async function copyLink(url, label){
+  try {
+    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+    else {
+      const t=document.createElement('textarea');
+      t.value=url; t.style.position='fixed'; t.style.opacity='0';
+      document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+    }
+    toast(`${label} copied`);
+  } catch(e){ toast(url, 9000); }
+}
+
+function parseRoute(){
+  const h=location.hash||'';
+  const m=/^#\/(pay|tx)(?:\/([^?]*))?(?:\?(.*))?$/.exec(h);
+  if(!m) return null;
+  return {kind:m[1], arg:m[2]||'', q:new URLSearchParams(m[3]||'')};
+}
+async function applyRoute(){
+  const r=parseRoute();
+  if(!r) return false;
+  const want=Number(r.q.get('chain'));
+  if(want && CHAINS[want] && want!==S.chain) switchChain(want);
+
+  if(r.kind==='pay'){
+    setView('send');
+    const asset=(r.q.get('asset')||'').trim();
+    if(asset){
+      const known=cfg().tokens.find(t=>
+        t.symbol.toLowerCase()===asset.toLowerCase() || t.address.toLowerCase()===asset.toLowerCase());
+      if(known){
+        S.token=known.address.toLowerCase(); S.symbol=known.symbol; S.decimals=known.decimals;
+        S.step=Math.max(S.step,1);
+      } else if(isAddr(asset)){
+        const m=await tokenMeta(asset);
+        if(m.ok){ S.token=asset.toLowerCase(); S.symbol=m.symbol; S.decimals=m.decimals; S.step=Math.max(S.step,1); }
+      }
+    }
+    const delay=parseInt(r.q.get('delay')||'',10);
+    if(delay>0 && delay<=MAX_DELAY){
+      S.delay=delay;
+      const preset=qs(`#timeRow [data-time="${delay}"]`);
+      S.delayDisplay = preset ? preset.textContent : fmtTime(delay).toUpperCase();
+    }
+    const amount=(r.q.get('amount')||'').trim();
+    if(amount){ el.amountInput.value=amount; }
+    const to=(r.q.get('to')||'').trim();
+    if(to){ el.recipientInput.value=to; }
+    paintPresets(); refreshBalance();
+    if(amount) validateAmount();
+    if(to) await resolveRecipient(to);
+    render(); renderReview();
+    return true;
+  }
+
+  if(r.kind==='tx' && /^\d+$/.test(r.arg)){
+    await openTransferById(r.arg);
+    return true;
+  }
+  return false;
+}
+/* One transfer, read straight from the contract, so a link works for
+   somebody who has never opened this page before. */
+async function openTransferById(id){
+  try {
+    const [ph]=await mc([{to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[BigInt(id)])}]);
+    if(!ph) throw new Error('Could not read that transfer');
+    const [ts,from,to,tid,amt]=decode(['uint256','address','address','uint256','uint256'],ph);
+    if(ts===0n){ toast('That transfer has already been settled, reversed or recovered.',6000); setView('take'); return; }
+    const {token,delay}=decodeId(tid);
+    await tokenMeta(token).catch(()=>{});
+    const m=S.meta[token.toLowerCase()]||{symbol:'???',decimals:18};
+    const t={id:String(id), from, to, tokenId:tid.toString(), token,
+      symbol:m.symbol, decimals:m.decimals, amountRaw:amt, amount:fmtAmt(amt,m.decimals),
+      timestamp:Number(ts), delay, unlockTime:Number(ts)+delay};
+    // Which side of it you are on decides what the sheet offers.
+    const me=(S.account||'').toLowerCase();
+    S.tab = me===to.toLowerCase() ? 'inbound' : 'outbound';
+    setView('take');
+    openDetail(t, m.symbol==='???'?shortAddr(token):m.symbol);
+  } catch(e){ fail(e); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
    Appearance — light, dark, or follow the system
    ══════════════════════════════════════════════════════════════════ */
 const THEMES=[
@@ -2854,6 +3007,8 @@ el.recipientInput.addEventListener('keydown',e=>{
 });
 el.confirmBtn.onclick=handleConfirm;
 el.detailClose.onclick=()=>hideModal(el.detailModal);
+el.detailShare.onclick=()=>{ if(S.detail) copyLink(txLink(S.detail.t.id),'Link'); };
+el.shareBtn.onclick=()=>copyLink(payLink(),'Request link');
 el.txDismiss.onclick=txHide;
 el.helpBtn.onclick=()=>showModal(el.helpModal);
 el.helpClose.onclick=()=>hideModal(el.helpModal);
@@ -2873,7 +3028,8 @@ addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(fals
 buildTokenGrid(); paintChain(); paintNet(); paintWallet();
 setView('home');
 checkDeployed();
-eagerConnect();
+addEventListener('hashchange', applyRoute);
+eagerConnect().then(applyRoute);
 })();
 </script>
 </body>
