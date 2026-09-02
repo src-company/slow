@@ -3,7 +3,16 @@ pragma solidity ^0.8.30;
 
 /// @title SLOW permit extension
 /// @notice Signature-authorised deposits: one transaction instead of two, for
-///         tokens that support EIP-2612, the DAI-style permit, or Permit2.
+///         tokens that support EIP-2612.
+///
+/// @dev SCOPE. This carried DAI-style and Permit2 entrypoints too. Both were
+///      dropped to fit: the improved uri() render pushed the combined build 150
+///      bytes past EIP-170, and of everything in it those two were the cheapest
+///      to lose. No token in any of the three chains' lists uses the DAI shape,
+///      and Permit2 is a convenience rung whose fallback — approve, then
+///      deposit — still works and is what wallets without EIP-5792 already do.
+///      The render is immutable and every holder sees it forever; a fifth
+///      permit rung is not.
 ///
 /// @dev THIS CANNOT BE A ROUTER, AND THAT IS THE WHOLE DESIGN CONSTRAINT.
 ///
@@ -38,8 +47,6 @@ pragma solidity ^0.8.30;
 ///      already sufficient.
 abstract contract SlowPermit {
     /// @dev Canonical Permit2, at the same address on every chain it is on.
-    address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-
     error PermitFailed();
     error InsufficientPermit();
     error InvalidPermitDeposit();
@@ -135,109 +142,6 @@ abstract contract SlowPermit {
             abi.encodeWithSelector(0xd505accf, msg.sender, address(this), amount, deadline, v, r, s)
         );
         if (!ok) _requireAllowance(token, amount);
-    }
-
-    // ───────────────────────────────────────────────── DAI-STYLE PERMIT
-
-    /// @notice Deposit an ERC-20 whose `permit` predates EIP-2612 and grants an
-    ///         unlimited, nonce-indexed allowance rather than an amount.
-    /// @dev DAI's shape: `permit(holder, spender, nonce, expiry, allowed, v, r, s)`.
-    ///      `allowed` is always true here — a signature that revoked the
-    ///      allowance could not fund a deposit.
-    function depositToWithDaiPermit(
-        address token,
-        address to,
-        uint256 amount,
-        uint96 delay,
-        bytes calldata data,
-        uint256 nonce,
-        uint256 expiry,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) public returns (uint256 transferId) {
-        if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
-        (bool ok,) = token.call(
-            abi.encodeWithSelector(
-                bytes4(0x8fcbaf0c), msg.sender, address(this), nonce, expiry, true, v, r, s
-            )
-        );
-        if (!ok) _requireAllowance(token, amount);
-        _pull(token, msg.sender, amount);
-        return _finishDeposit(token, to, amount, delay, 0, data);
-    }
-
-    // ───────────────────────────────────────────────────────── PERMIT2
-
-    /// @notice Deposit through Permit2's signature transfer, for tokens with no
-    ///         permit of their own.
-    /// @dev The one rung that works for ANY ERC-20, because the signature
-    ///      authorises Permit2 — which the user has usually already approved
-    ///      once, for every token — rather than the token authorising SLOW.
-    ///      Permit2 moves the tokens straight here, so there is no `_pull`:
-    ///      this goes directly to `_finishDeposit`.
-    /// @param nonce     Permit2's unordered nonce, chosen by the signer.
-    /// @param deadline  Signature expiry, as a unix timestamp.
-    /// @param signature The EIP-712 `PermitTransferFrom` signature.
-    function depositToWithPermit2(
-        address token,
-        address to,
-        uint256 amount,
-        uint96 delay,
-        bytes calldata data,
-        uint256 nonce,
-        uint256 deadline,
-        bytes calldata signature
-    ) public returns (uint256 transferId) {
-        if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
-        _permit2Transfer(token, amount, nonce, deadline, signature);
-        return _finishDeposit(token, to, amount, delay, 0, data);
-    }
-
-    /// @notice `depositToWithPermit2` with a keeper tip attached.
-    function depositToWithTipAndPermit2(
-        address token,
-        address to,
-        uint256 amount,
-        uint96 delay,
-        uint256 tip,
-        bytes calldata data,
-        uint256 nonce,
-        uint256 deadline,
-        bytes calldata signature
-    ) public payable returns (uint256 transferId) {
-        if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidPermitDeposit();
-        if (msg.value != tip) revert InvalidPermitDeposit();
-        _permit2Transfer(token, amount, nonce, deadline, signature);
-        return _finishDeposit(token, to, amount, delay, tip, data);
-    }
-
-    /// @dev `permitTransferFrom(((token,amount),nonce,deadline),(to,requestedAmount),owner,signature)`.
-    ///      Not tolerant of a spent nonce: unlike an allowance-granting permit,
-    ///      a replayed signature transfer has already moved the tokens
-    ///      somewhere, and proceeding would credit a deposit this contract was
-    ///      never funded for.
-    function _permit2Transfer(
-        address token,
-        uint256 amount,
-        uint256 nonce,
-        uint256 deadline,
-        bytes calldata signature
-    ) internal {
-        (bool ok,) = PERMIT2.call(
-            abi.encodeWithSelector(
-                bytes4(0x30f28b7a),
-                token,
-                amount,
-                nonce,
-                deadline,
-                address(this),
-                amount,
-                msg.sender,
-                signature
-            )
-        );
-        if (!ok) revert PermitFailed();
     }
 
     /// @dev The permit call failed. It is only survivable if the allowance it

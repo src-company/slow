@@ -97,6 +97,11 @@ const PER_CHAIN = [
   'out', 'inb', 'hasGuardian', 'balance',
   'token', 'symbol', 'amount', 'step',
   'detail', 'lastHash',
+  // Found by the bug hunt: a keeper tip is priced from cfg().minGasPrice and
+  // cfg().minTip, which differ by 10-50x across the three registries. Carried
+  // across a switch it is either a large overpayment or below the destination's
+  // keeper floor, in which case nobody settles and the sender paid for nothing.
+  'autoClaim', 'tip', 'unlocked',
 ];
 // `guard` is checked field by field: its transient flags are expected to be
 // true straight after a switch, because the switch starts the reload.
@@ -115,6 +120,7 @@ Object.assign(C.S, {
   out: [{id: '1'}], inb: [{id: '2'}],
   hasGuardian: true,
   balance: 123n,
+  autoClaim: true, tip: 675000000000000n, unlocked: [{id: '1', raw: 5n}],
   token: '0xabc', symbol: 'X', amount: '1.5', step: 2,
   guard: {
     guardian: '0x000000000000000000000000000000000000bEEF',

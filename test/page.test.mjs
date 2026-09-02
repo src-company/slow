@@ -71,6 +71,7 @@ const EXPORTS = [
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
+  'depositRecipe', 'recipeText', 'unlockedKey',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -416,6 +417,60 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   eq(shapes.length, 8, 'the still frame has six facets and two rules');
   ok(shapes.every((sh) => C.LOADER.includes(sh)),
     'every shape in the still frame is drawn identically in the animation');
+}
+
+// ─── Regressions the bug hunt found ────────────────────────────────────────
+
+// A short or empty return is not an address. '0x' + '0x'.slice(-40) is the
+// literal string '0x0x', which is not the zero address, so an unreadable
+// guardian rendered as a real one — with a live Remove button under it.
+{
+  const bad = '0x';
+  const built = (bad && C.strip(bad).length >= 40) ? '0x' + bad.slice(-40) : C.ZERO;
+  eq(built, C.ZERO, 'an empty guardian read falls back to the zero address');
+  eq(C.isAddr('0x0x'), false, 'the old construction was never a valid address');
+  ok(!C.isAddr('0x' + '0x'.slice(-40)), 'and would have been shown as a guardian');
+}
+
+// Unlocked positions are remembered per chain AND per account: the same wrapper
+// id means a different position on a different chain.
+{
+  const snap = {chain: C.S.chain, account: C.S.account};
+  C.S.account = '0x000000000000000000000000000000000000dEaD';
+  const keys = C.CHAIN_IDS.map((id) => { C.S.chain = id; return C.unlockedKey(); });
+  eq(new Set(keys).size, keys.length, 'each chain keeps its own unlocked list');
+  C.S.chain = 1;
+  const a = C.unlockedKey();
+  C.S.account = '0x000000000000000000000000000000000000bEEF';
+  ok(a !== C.unlockedKey(), 'and each account keeps its own');
+  Object.assign(C.S, snap);
+}
+
+// The call recipe is the generalisation: anything that can send a transaction
+// can deposit into SLOW without SLOW knowing it exists.
+{
+  const snap = {...C.S};
+  Object.assign(C.S, {chain: 1, dest: null, token: C.ZERO, symbol: 'ETH', decimals: 18,
+    amount: '0.5', delay: 3600, resolved: '0x000000000000000000000000000000000000dEaD'});
+  const r = C.depositRecipe();
+  ok(r, 'a complete form yields a recipe');
+  eq(r.to, C.SLOW, 'the recipe targets SLOW');
+  eq(r.value, 500000000000000000n, 'ETH rides as value');
+  eq(r.data.slice(0, 10), C.SEL.depositTo, 'and calls depositTo');
+  eq(BigInt('0x' + r.data.slice(10 + 128, 10 + 192)), 0n, 'with amount zero, as the local path does');
+  ok(!r.note, 'native ETH needs no allowance note');
+  // An ERC-20 recipe carries the amount and warns about the allowance.
+  Object.assign(C.S, {token: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', symbol: 'USDC', decimals: 6, amount: '10'});
+  const r2 = C.depositRecipe();
+  eq(r2.value, 0n, 'an ERC-20 recipe sends no value');
+  eq(BigInt('0x' + r2.data.slice(10 + 128, 10 + 192)), 10000000n, 'and carries the amount');
+  ok(/allowance/i.test(r2.note), 'and says an allowance is needed first');
+  ok(C.recipeText(r2).includes(C.SLOW) && C.recipeText(r2).includes('data:'),
+    'the copyable text carries target and calldata');
+  // A destination overrides the chain the recipe is for.
+  C.S.dest = 8453;
+  eq(C.depositRecipe().chainId, 8453, 'a destination retargets the recipe');
+  Object.assign(C.S, snap);
 }
 
 // ─── Bridging ──────────────────────────────────────────────────────────────

@@ -447,6 +447,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
         <p class="note" id="planNote" aria-live="polite"></p>
         <button class="btn" id="confirmBtn">Send</button>
   <button class="btn alt" id="shareBtn">Copy request link</button>
+  <button class="btn alt" id="recipeBtn">Copy the call</button>
       </div>
     </div>
 
@@ -484,6 +485,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
       <div class="tabs" role="tablist" aria-label="Transfers">
         <button class="tab" id="tabOut" role="tab" aria-selected="true"  data-tab="outbound">Outbound</button>
         <button class="tab" id="tabIn"  role="tab" aria-selected="false" data-tab="inbound">Inbound</button>
+        <button class="tab" id="tabUnlocked" role="tab" aria-selected="false" data-tab="unlocked" hidden>Unlocked</button>
       </div>
       <div class="list" id="list" role="tabpanel" aria-live="polite"></div>
     </div>
@@ -815,6 +817,47 @@ async function loadBridgeRoutes(){
 /* ══════════════════════════════════════════════════════════════════
    One transaction: bridge the ETH and land inside depositTo
    ══════════════════════════════════════════════════════════════════ */
+/*
+   Wrap-and-call, generalised.
+
+   A bridge is not the only thing that wants to say "put this into SLOW on my
+   behalf". A multisig batching a payroll, a scheduler, a script, another dapp —
+   all of them need the same three values and none of them need SLOW to know
+   they exist. So rather than SLOW growing an integration per counterparty, it
+   publishes the call: target, calldata, value. Anything that can send a
+   transaction can consume it, including bridges this page has never heard of.
+
+   This is also what the built-in bridge routes use, so the two cannot drift:
+   there is one construction, and the bridge is just its first caller.
+*/
+function depositRecipe(){
+  if(!ready()) return null;
+  const isETH = S.token===ZERO;
+  let wei;
+  try { wei = parseUnits(S.amount, S.decimals); } catch(e){ return null; }
+  const chain = S.dest || S.chain;
+  return {
+    chainId: chain,
+    chainName: cfg(chain).name,
+    to: SLOW,
+    data: isETH
+      ? innerDepositCalldata(S.resolved, S.delay)
+      : cd(SEL.depositTo, ['address','address','uint256','uint96','bytes'],
+          [S.token, S.resolved, wei, BigInt(S.delay), '0x']),
+    value: isETH ? wei : 0n,
+    note: isETH ? null : `Requires an allowance of ${S.amount} ${S.symbol} to ${SLOW} first.`,
+  };
+}
+function recipeText(r){
+  return [
+    `# SLOW deposit — ${r.chainName} (chain ${r.chainId})`,
+    `to:    ${r.to}`,
+    `value: ${r.value} wei`,
+    `data:  ${r.data}`,
+    r.note ? `note:  ${r.note}` : null,
+  ].filter(Boolean).join('\n');
+}
+
 function innerDepositCalldata(recipient, delay){
   // On arrival this executes with the bridged ETH as msg.value, so depositTo
   // takes amount == 0 exactly as it does for a local ETH deposit.
@@ -1389,7 +1432,7 @@ async function reverseAny(addr){
 const S = {
   chain:MAINNET, theme:'system',
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
-  slowDeployed:{}, slowMismatch:null,
+  slowDeployed:{}, slowMismatch:null, slowUnknown:null,
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
   resolved:null, resolvedName:null, resolveSeq:0,
@@ -1398,6 +1441,7 @@ const S = {
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
   guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
+  unlocked:[],
   dest:null, routesLoaded:false,
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
@@ -1552,6 +1596,16 @@ async function ensureChain(){
     if(unknown && c.addChain){
       try {
         await rpc('wallet_addEthereumChain',[c.addChain]);
+        // Adding is not switching. Several wallets add and stay put, and a
+        // deposit submitted on the assumption lands on the wrong chain.
+        let now;
+        try { now = parseInt(await rpc('eth_chainId',[]),16); } catch(e3){ now = null; }
+        if(now !== c.id){
+          try { await rpc('wallet_switchEthereumChain',[{chainId:c.hex}]); }
+          catch(e4){ if(isRejection(e4)) return false; }
+          try { now = parseInt(await rpc('eth_chainId',[]),16); } catch(e5){ now = null; }
+        }
+        if(now !== c.id){ toast(`Switch your wallet to ${c.name} to send here`); return false; }
         S.chainId=c.id; render();
         return true;
       } catch(e2){
@@ -1582,7 +1636,11 @@ function switchChain(id){
   // keyed by chain. A detail sheet holds a transfer that only exists on the
   // chain it was read from.
   S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
-  S.detail=null; S.dest=null;
+  S.detail=null; S.dest=null; S.unlocked=[];
+  // Priced from cfg().minGasPrice/minTip, so inherently per-chain.
+  S.autoClaim=false; S.tip=0n;
+  if(el.autoClaimChk) el.autoClaimChk.checked=false;
+  if(el.tipPre) el.tipPre.textContent='';
   S.lastHash=null;
   hideAllModals();
   buildTokenGrid();
@@ -1616,7 +1674,12 @@ async function checkDeployed(){
     const present = typeof code==='string' && code.length>4;
     S.slowDeployed[id] = present && REQUIRED_SELECTORS.every(x=>code.includes(x.slice(2)));
     if(present && !S.slowDeployed[id]) S.slowMismatch=id;
-  } catch(e){ S.slowDeployed[id]=undefined; }
+  } catch(e){
+    // Leave it unknown, but say so — the guards test for `=== false`, so an
+    // unknown would otherwise pass as deployed.
+    delete S.slowDeployed[id];
+    S.slowUnknown = id;
+  }
   if(S.chain===id) paintDeployed();
 }
 function setAccount(a){
@@ -1727,7 +1790,15 @@ function domainSeparator(name, version, verifying){
 // chain after the user had already signed it.
 async function permitInfo(token, owner){
   const k=token.toLowerCase()+':'+owner.toLowerCase();
-  if(k in S.permitCache) return S.permitCache[k];
+  // The (name, version) pair is a property of the token and worth caching. The
+  // NONCE is not — it increments on every permit, so a cached one signs a
+  // signature the chain has already consumed and the deposit reverts.
+  const cached = S.permitCache[k];
+  if(cached === null) return null;               // known not to support 2612
+  if(cached){
+    const fresh = await permitNonce(token, owner);
+    return fresh===null ? null : {...cached, nonce:fresh};
+  }
   let out=null;
   try {
     const [ds,th,nc,nm] = await mc([
@@ -1751,6 +1822,13 @@ async function permitInfo(token, owner){
   } catch(e){}
   S.permitCache[k]=out;
   return out;
+}
+/// Read the live nonce. Never cached — it is consumed by every permit.
+async function permitNonce(token, owner){
+  try {
+    const [r]=await mc([{to:token,data:cd(SEL.nonces,['address'],[owner])}]);
+    return r ? decode(['uint256'],r)[0] : null;
+  } catch(e){ return null; }
 }
 async function signPermit(token, info, owner, spender, value, deadline){
   const td = {
@@ -1886,7 +1964,8 @@ async function deposit(){
   const isETH=S.token===ZERO;
   const meta = isETH?{decimals:18}:await tokenMeta(S.token);
   const wei = parseUnits(S.amount, meta.decimals);
-  if(S.autoClaim && !S.tip) S.tip = await estimateTip(S.token);
+  if(!S.autoClaim) S.tip = 0n;                    // authoritative at spend time
+  else if(!S.tip) S.tip = await estimateTip(S.token);
   const value = isETH ? wei + S.tip : S.tip;
   const valueHex = value>0n ? '0x'+value.toString(16) : '0x0';
 
@@ -2023,7 +2102,8 @@ async function loadTransfers(force){
     S.aliasHasTransfers = viaBridge.length>0;
     const oIds = [...own, ...viaBridge];
     const iIds = ih ? decode(['uint256[]'],ih)[0] : [];
-    const hasGuardian = !!gh && ('0x'+gh.slice(-40)).toLowerCase()!==ZERO;
+    const gAddr = (gh && strip(gh).length>=40) ? '0x'+gh.slice(-40) : ZERO;
+    const hasGuardian = isAddr(gAddr) && gAddr.toLowerCase()!==ZERO;
 
     const all=[...new Map([...oIds,...iIds].map(id=>[id.toString(),id])).values()];
     const pts = await mc(all.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])})));
@@ -2080,11 +2160,119 @@ async function loadTransfers(force){
     }
     if(stale()) return;
     S.out=outArr; S.inb=inArr; S.hasGuardian=hasGuardian;
+    await loadUnlocked();
+    if(stale()) return;
   } catch(e){
     if(!stale()) toast('Could not load transfers — '+errText(e), 5000);
   } finally {
     if(!stale()){ S.loading=false; renderList(); }
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Unlocked positions
+   ══════════════════════════════════════════════════════════════════
+   Without a guardian, settling is one transaction: reverse or clawback
+   are multicalled with withdrawFrom, and claim pays out directly. With
+   a guardian every one of those stops at the wrapper — unlock, reverse
+   and clawback all credit `unlockedBalances` and delete the pending
+   entry, and the underlying only moves on a separate `withdrawFrom`
+   that the guardian has pre-approved.
+
+   The page had no such control, so a guardian user who tapped Claim
+   watched the row vanish and had no way back to their money from here.
+
+   The id is what makes this awkward: it is deleted from the pending
+   entry at settlement, and nothing on chain enumerates what an account
+   holds unlocked. So it is remembered locally at the moment of
+   settlement — and then VERIFIED against unlockedBalances before being
+   shown, so a stale note can never invent a balance.
+   ══════════════════════════════════════════════════════════════════ */
+const unlockedKey = () => `slow.unlocked.${S.chain}.${(S.account||'').toLowerCase()}`;
+function rememberUnlocked(t){
+  try {
+    const k=unlockedKey();
+    const cur=JSON.parse(localStorage.getItem(k)||'[]');
+    if(!cur.some(x=>x.id===t.tokenId)){
+      cur.push({id:t.tokenId, token:t.token, symbol:t.symbol, decimals:t.decimals});
+      localStorage.setItem(k, JSON.stringify(cur));
+    }
+  } catch(e){}
+}
+function forgetUnlocked(id){
+  try {
+    const k=unlockedKey();
+    const cur=JSON.parse(localStorage.getItem(k)||'[]').filter(x=>x.id!==id);
+    localStorage.setItem(k, JSON.stringify(cur));
+  } catch(e){}
+}
+async function loadUnlocked(){
+  if(!S.account){ S.unlocked=[]; return; }
+  let notes=[];
+  try { notes=JSON.parse(localStorage.getItem(unlockedKey())||'[]'); } catch(e){}
+  if(!notes.length){ S.unlocked=[]; return; }
+  const acct=S.account;
+  const res=await mc(notes.map(n=>({to:SLOW,
+    data:cd(SEL.unlockedBalances,['address','uint256'],[acct,BigInt(n.id)])})));
+  if(S.account!==acct) return;
+  const live=[];
+  notes.forEach((n,i)=>{
+    if(!res[i]) return;
+    let bal=0n;
+    try { bal=decode(['uint256'],res[i])[0]; } catch(e){ return; }
+    if(bal>0n) live.push({...n, raw:bal, amount:fmtAmt(bal,n.decimals)});
+    else forgetUnlocked(n.id);          // settled elsewhere; drop the note
+  });
+  S.unlocked=live;
+}
+async function doWithdraw(u){
+  if(!guardWritable()) return;
+  try {
+    if(S.hasGuardian){
+      // withdrawFrom recomputes the operation id and consumes the approval, so
+      // the guardian has to have approved THIS exact withdrawal already.
+      const [r]=await mc([{to:SLOW,
+        data:cd(SEL.isWithdrawalApprovalNeeded,['address','address','uint256','uint256'],
+          [S.account,S.account,BigInt(u.id),u.raw])}]);
+      if(r && decode(['uint256'],r)[0]!==0n){
+        const [p]=await mc([{to:SLOW,
+          data:cd(SEL.predictWithdrawalId,['address','address','uint256','uint256'],
+            [S.account,S.account,BigInt(u.id),u.raw])}]);
+        const opId = p ? decode(['uint256'],p)[0].toString() : '(could not derive)';
+        showApprovalNeeded(u, opId);
+        return;
+      }
+    }
+    await slowTx(cd(SEL.withdrawFrom,['address','address','uint256','uint256'],
+      [S.account,S.account,BigInt(u.id),u.raw]), `Withdrawing ${u.amount} ${u.symbol}`, 'Confirm in your wallet');
+    forgetUnlocked(u.id);
+    toast(`Withdrew ${u.amount} ${u.symbol}.`);
+    await loadUnlocked(); renderList();
+  } catch(e){ fail(e); }
+}
+function showApprovalNeeded(u, opId){
+  el.detailTitle.textContent='Guardian approval needed';
+  el.detailRows.replaceChildren();
+  const rows=[
+    ['Amount', `${u.amount} ${u.symbol}`],
+    ['To', S.account],
+    ['Position id', u.id],
+    ['Operation id', opId],
+    ['Guardian', S.guard.guardian || '(unknown)'],
+  ];
+  for(const [k,v] of rows){
+    const row=document.createElement('div'); row.className='kv';
+    const dt=document.createElement('dt'), dd=document.createElement('dd');
+    dt.textContent=k; dd.textContent=v; row.append(dt,dd); el.detailRows.appendChild(row);
+  }
+  const btn=el.detailAction;
+  btn.hidden=false; btn.disabled=false; btn.className='btn alt';
+  btn.textContent='Copy the details for your guardian';
+  btn.onclick=()=>copyLink(
+    `SLOW withdrawal awaiting your approval\nchain: ${cfg().name} (${S.chain})\n`+
+    `account: ${S.account}\nto: ${S.account}\nposition id: ${u.id}\namount: ${u.raw}\n`+
+    `operation id: ${opId}\napprove with: approveTransfer(${S.account}, ${opId})`, 'Details');
+  showModal(el.detailModal);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2109,7 +2297,8 @@ async function doClaim(t){
   try {
     await slowTx(c1(guardian?SEL.unlock:SEL.claim,t.id),
       guardian?'Unlocking…':'Claiming…','Confirm in your wallet');
-    toast(guardian ? 'Unlocked. Withdraw through your guardian to receive the underlying.' : 'Claimed.', 6000);
+    if(guardian) rememberUnlocked(t);
+    toast(guardian ? 'Unlocked. It is now in Unlocked, awaiting a guardian-approved withdrawal.' : 'Claimed.', 6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
@@ -2119,8 +2308,9 @@ async function doReverse(t){
     const data = S.hasGuardian ? c1(SEL.reverse,t.id)
       : cd(SEL.multicall,['bytes[]'],[[c1(SEL.reverse,t.id),wfCall(t)]]);
     await slowTx(data,'Reversing the transfer…','Confirm in your wallet');
+    if(S.hasGuardian) rememberUnlocked(t);
     const tip=await refundTipIfAny(t);
-    toast((S.hasGuardian?'Reversed. Coordinate with your guardian to withdraw.':'Reversed and returned.')+tip,6000);
+    toast((S.hasGuardian?'Reversed. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Reversed and returned.')+tip,6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
@@ -2131,8 +2321,9 @@ async function doClawback(t){
     const data = S.hasGuardian ? c1(SEL.clawback,t.id)
       : cd(SEL.multicall,['bytes[]'],[[c1(SEL.clawback,t.id),wfCall(t)]]);
     await slowTx(data,'Recovering…','Confirm in your wallet');
+    if(S.hasGuardian) rememberUnlocked(t);
     const tip=await refundTipIfAny(t);
-    toast((S.hasGuardian?'Recovered. Coordinate with your guardian to withdraw.':'Recovered.')+tip,6000);
+    toast((S.hasGuardian?'Recovered. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Recovered.')+tip,6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
@@ -2278,6 +2469,11 @@ function paintWallet(){
 }
 function paintDeployed(){
   const live=S.slowDeployed[S.chain];
+  if(live===undefined && S.slowUnknown===S.chain){
+    el.chainWarn.hidden=false;
+    el.chainWarn.textContent=`Could not reach ${cfg().name} to check SLOW is there. Reads may be incomplete.`;
+    render(); return;
+  }
   el.chainWarn.hidden = live!==false;
   if(live===false) el.chainWarn.textContent = S.slowMismatch===S.chain
     ? `The contract at this address on ${cfg().name} is not the build this page speaks to.`
@@ -2357,8 +2553,11 @@ const progressOf = t => t.delay>0 ? Math.max(0,Math.min(100,((nw()-t.timestamp)/
 const RANK = {ready:0, recover:1, pending:2, settling:3};
 
 function renderList(){
-  const list = S.tab==='outbound' ? S.out : S.inb;
   const c = el.list;
+  el.tabUnlocked.hidden = !S.unlocked.length;
+  if(S.tab==='unlocked' && !S.unlocked.length) S.tab='inbound';
+  if(S.tab==='unlocked'){ renderUnlocked(); return; }
+  const list = S.tab==='outbound' ? S.out : S.inb;
   c.replaceChildren();
   if(!S.account){ c.appendChild(emptyState('Connect a wallet to see your transfers.','Connect',()=>connect(true))); return; }
   if(S.loading){
@@ -2386,6 +2585,37 @@ function renderList(){
   });
   for(const t of sorted) c.appendChild(makeRow(t));
   startTimer();
+}
+function renderUnlocked(){
+  const c=el.list; c.replaceChildren();
+  if(!S.unlocked.length){ c.appendChild(emptyState('Nothing unlocked.')); return; }
+  const note=document.createElement('div'); note.className='empty'; note.style.padding='0 0 6px';
+  note.textContent = S.hasGuardian
+    ? 'Settled, and held as a wrapper. Your guardian approves each withdrawal before it can leave.'
+    : 'Settled, and held as a wrapper. Withdraw to receive the underlying.';
+  c.appendChild(note);
+  for(const u of S.unlocked){
+    const row=document.createElement('div'); row.className='tx';
+    const bar=document.createElement('span'); bar.className='tx-bar';
+    bar.style.background=TOKEN_COLORS[u.symbol]||tokenColor(u.token);
+    const open=document.createElement('button'); open.type='button'; open.className='tx-open';
+    const l1=document.createElement('span'); l1.className='tx-line';
+    const amt=document.createElement('span'); amt.className='tx-amt';
+    amt.textContent=`${u.amount} ${u.symbol==='???'?shortAddr(u.token):u.symbol}`;
+    const party=document.createElement('span'); party.className='tx-party'; party.textContent='unlocked';
+    l1.append(amt,party);
+    const meta=document.createElement('span'); meta.className='tx-meta';
+    const st=document.createElement('span'); st.className='tx-status';
+    st.textContent = S.hasGuardian ? 'Needs a guardian-approved withdrawal' : 'Ready to withdraw';
+    meta.appendChild(st);
+    open.append(l1,meta);
+    open.onclick=()=>doWithdraw(u);
+    const act=document.createElement('button');
+    act.type='button'; act.className='tx-act'; act.textContent='Withdraw';
+    act.onclick=e=>{ e.stopPropagation(); doWithdraw(u); };
+    row.append(bar,open,act);
+    c.appendChild(row);
+  }
 }
 function emptyState(text, cta, fn){
   const w=document.createElement('div'); w.className='empty';
@@ -2614,8 +2844,10 @@ async function loadGuard(){
       {to:SLOW,data:cd(SEL.pendingGuardian,['address'],[acct])},
     ]);
     if(stale()) return;
-    const guardian = gh ? '0x'+gh.slice(-40) : ZERO;
-    S.guard.guardian = guardian.toLowerCase()===ZERO ? null : guardian;
+    // A short or empty return is not an address. '0x' + '0x'.slice(-40) is the
+    // string '0x0x', which is not ZERO, so it rendered as a real guardian.
+    const guardian = (gh && strip(gh).length>=40) ? '0x'+gh.slice(-40) : ZERO;
+    S.guard.guardian = (!isAddr(guardian) || guardian.toLowerCase()===ZERO) ? null : guardian;
     S.guard.pending = null;
     if(ph){
       const [g,at] = decode(['address','uint256'], ph);
@@ -2682,6 +2914,7 @@ async function loadWardTransfers(w){
   } catch(e){ w.txs=[]; renderGuard(); toast('Could not read that account'); }
 }
 async function guardApprove(w){
+  if(!guardWritable()) return;
   const to=(el.gaTo.value||'').trim();
   const idRaw=(el.gaId.value||'').trim();
   const amtRaw=(el.gaAmt.value||'').trim();
@@ -2868,7 +3101,15 @@ async function applyGuardModal(){
   hideModal(el.guardModal);
   setGuardianTx(addr);
 }
+function guardWritable(){
+  if(S.slowDeployed[S.chain]===false){
+    toast(`SLOW is not deployed on ${cfg().name} — there is nothing to set a guardian on.`, 6000);
+    return false;
+  }
+  return true;
+}
 async function setGuardianTx(addr){
+  if(!guardWritable()) return;
   const staged = !!S.guard.guardian;
   try {
     await slowTx(cd(SEL.setGuardian,['address'],[addr]),
@@ -2880,12 +3121,14 @@ async function setGuardianTx(addr){
   } catch(e){ fail(e); }
 }
 async function commitGuardianTx(){
+  if(!guardWritable()) return;
   try {
     await slowTx(cd(SEL.commitGuardian,['address'],[S.account]),'Committing…','Confirm in your wallet');
     toast('Committed.'); loadGuard();
   } catch(e){ fail(e); }
 }
 async function cancelGuardianTx(){
+  if(!guardWritable()) return;
   try {
     await slowTx(cd(SEL.cancelGuardianChange,['address'],[S.account]),'Cancelling…','Confirm in your wallet');
     toast('Change cancelled.'); loadGuard();
@@ -3387,7 +3630,13 @@ el.tokenApply.onclick=async()=>{
 el.tokenInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.tokenApply.click(); });
 [el.dInput,el.hInput,el.mInput,el.sInput].forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') el.timeApply.click(); }));
 
-el.autoClaimChk.onchange=()=>{ S.autoClaim=el.autoClaimChk.checked; updateTipPreview(); renderReview(); };
+el.autoClaimChk.onchange=()=>{
+  S.autoClaim=el.autoClaimChk.checked;
+  // The tip is part of msg.value. Leaving a stale one set after unticking sends
+  // ETH the user withdrew their consent for.
+  if(!S.autoClaim) S.tip=0n;
+  updateTipPreview(); renderReview();
+};
 let ensTimer;
 el.recipientInput.addEventListener('input',()=>{
   const v=el.recipientInput.value.trim();
@@ -3405,6 +3654,11 @@ el.confirmBtn.onclick=handleConfirm;
 el.detailClose.onclick=()=>hideModal(el.detailModal);
 el.detailShare.onclick=()=>{ if(S.detail) copyLink(txLink(S.detail.t.id),'Link'); };
 el.shareBtn.onclick=()=>copyLink(payLink(),'Request link');
+el.recipeBtn.onclick=()=>{
+  const r=depositRecipe();
+  if(!r){ toast('Fill in the transfer first'); return; }
+  copyLink(recipeText(r), 'Call');
+};
 el.txDismiss.onclick=txHide;
 el.helpBtn.onclick=()=>showModal(el.helpModal);
 el.helpClose.onclick=()=>hideModal(el.helpModal);

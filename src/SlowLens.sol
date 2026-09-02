@@ -239,7 +239,28 @@ contract SlowLens {
             return (string(s), len != 0);
         }
         if (ret.length < 64) return ("", false);
-        return (abi.decode(ret, (string)), true);
+        // Decoded by hand, with bounds checks, because abi.decode is the CHECKED
+        // decoder: an out-of-range head offset makes it revert, and a token's
+        // return data is entirely attacker-chosen. A revert here does not fail
+        // one token — it propagates out of _tokens and takes down viewOf for the
+        // whole account, which anyone can trigger by depositing a hostile token
+        // to a victim with a delay they cannot outlast.
+        uint256 off;
+        assembly ("memory-safe") {
+            off := mload(add(ret, 0x20))
+        }
+        // Room for the offset word plus a length word at it.
+        if (off > ret.length - 64 || off % 32 != 0) return ("", false);
+        uint256 len;
+        assembly ("memory-safe") {
+            len := mload(add(add(ret, 0x20), off))
+        }
+        if (len > 64 || off + 64 + len > ret.length + 32) return ("", false);
+        bytes memory str = new bytes(len);
+        for (uint256 i; i != len; ++i) {
+            str[i] = ret[off + 32 + i];
+        }
+        return (string(str), len != 0);
     }
 
     function _decimals(address token) private view returns (uint8, bool) {
