@@ -757,8 +757,18 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
 
     // URI HELPERS
 
+    /// @dev Rolls up past days. The deployed build stops there, so a hundred-year
+    ///      lock reads "36525 days" — correct, and not legible as a duration.
     function _formatDelay(uint256 delay) internal pure returns (string memory) {
         unchecked {
+            if (delay >= 31536000) {
+                uint256 y = delay / 31536000;
+                return string(abi.encodePacked(y.toString(), y == 1 ? " year" : " years"));
+            }
+            if (delay >= 2592000) {
+                uint256 mo = delay / 2592000;
+                return string(abi.encodePacked(mo.toString(), mo == 1 ? " month" : " months"));
+            }
             if (delay >= 86400) {
                 uint256 d = delay / 86400;
                 return string(abi.encodePacked(d.toString(), d == 1 ? " day" : " days"));
@@ -891,6 +901,30 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return string(abi.encodePacked(_utf8Trim(string(clipped)), "..."));
     }
 
+    /// @dev Monospace has a fixed 0.6em advance, so the width of a string is
+    ///      known without measuring it. That is what lets this CHOOSE a size
+    ///      rather than force one: the deployed build sets
+    ///      `textLength="260" lengthAdjust="spacingAndGlyphs"` on the name row,
+    ///      which draws every name at exactly 260px however long it is. Measured
+    ///      across the collection that is 23.6px per character for "Ether (ETH)"
+    ///      and 8.4 for "Liquid staked Ether 2.0 (stETH)" — a 2.8x swing in
+    ///      letterform width, driven by a name this contract does not control.
+    /// @param len Character count of the string to be drawn.
+    /// @param box Width in pixels it has to fit inside.
+    function _fit(uint256 len, uint256 box, uint256 max, uint256 min)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (len == 0) return max;
+        unchecked {
+            uint256 size = (box * 10) / (len * 6);
+            if (size > max) return max;
+            if (size < min) return min;
+            return size;
+        }
+    }
+
     function _createImage(
         address token,
         uint256 delay,
@@ -906,7 +940,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             ? ""
             : string(
                 abi.encodePacked(
-                    '<text x="150" y="105" font-size="10" textLength="260" lengthAdjust="spacingAndGlyphs">',
+                    '<text x="150" y="105" font-size="9">',
                     token.toHexStringChecksummed(),
                     "</text>"
                 )
@@ -916,7 +950,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         string memory secondsRow = delay > 60
             ? string(
                 abi.encodePacked(
-                    '<text x="150" y="230" font-size="8" fill="#888">',
+                    '<text x="150" y="232" font-size="8" fill="#8A8A8A">',
                     delay.toString(),
                     " seconds</text>"
                 )
@@ -930,20 +964,30 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             unicode" · ",
             delayLabel,
             "</title>",
-            '<rect width="300" height="300" fill="#000"/>',
+            '<rect width="300" height="300" fill="#0A0A0A"/>',
             '<rect x="1" y="1" width="298" height="298" fill="none" stroke="#fff"/>',
             '<line x1="20" y1="50" x2="280" y2="50" stroke="#fff"/>',
             '<text x="20" y="35" font-family="Helvetica,Arial,sans-serif" font-size="24" fill="#fff">SLOW</text>',
             '<g font-family="monospace" text-anchor="middle" fill="#fff">',
             addressRow,
-            '<text x="150" y="165" font-size="12" textLength="260" lengthAdjust="spacingAndGlyphs">',
-            dispName,
-            " (",
+            '<text x="150" y="160" font-size="',
+            _fit(bytes(escSymbol).length, 210, 40, 12).toString(),
+            '">',
             escSymbol,
-            ")</text>"
+            "</text>"
         );
         bytes memory tail = abi.encodePacked(
-            '<text x="150" y="215" font-size="12">', delayLabel, "</text>", secondsRow, "</g></svg>"
+            '<text x="150" y="186" font-size="',
+            _fit(bytes(dispName).length, 250, 13, 7).toString(),
+            '" fill="#8A8A8A">',
+            dispName,
+            '</text><text x="150" y="218" font-size="',
+            _fit(bytes(delayLabel).length, 230, 20, 10).toString(),
+            '">',
+            delayLabel,
+            "</text>",
+            secondsRow,
+            "</g></svg>"
         );
 
         return string(

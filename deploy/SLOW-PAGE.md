@@ -208,12 +208,25 @@ rather than assumed.
 | build | runtime | under EIP-170 |
 | --- | --- | --- |
 | `SLOW.sol` as deployed | 21,648 B | 2,928 |
-| `SLOWNext.sol`, both extensions | **24,144 B** | **432** |
-| `SLOWNext.sol`, EIP-2612 only | 23,268 B | 1,308 |
+| 2612 + DAI + Permit2, with the improved render | 24,726 B | **150 OVER** |
+| EIP-2612 only, `html()` kept | 23,850 B | 726 |
+| EIP-2612 only, `html()` removed | 23,670 B | 906 |
 
-432 bytes is enough to deploy and not much else. Dropping the DAI-style and
-Permit2 entrypoints buys back 876 — worth taking if this contract is expected to
-grow again, and worth skipping if it is not.
+The full set no longer fits. The improved `uri()` render pushed it 150 bytes
+past the limit, so something has to give, and the numbers say which:
+
+- Dropping the DAI-style and Permit2 entrypoints buys back **876 bytes**. Neither
+  asset in any of the three token lists is a DAI-style permit token, and the
+  EIP-5792 batch rung already covers "one confirmation" for wallets that can
+  batch. This is the cheap cut.
+- Dropping `html()` buys back only **180**. That is the surprise: the page
+  machinery is two immutables and a concat, and it is nearly free in the protocol
+  contract. The argument for moving the page into its own `SlowPage` contract was
+  never about the protocol's code size — it is about the PAGE's budget, which
+  goes from 47 bytes to unbounded. That argument stands on its own; this one does
+  not support it.
+
+Recommendation: EIP-2612 only, `html()` kept — 726 bytes clear.
 
 Two things the integration makes true that are easy to miss:
 
