@@ -246,6 +246,12 @@ body.light .loading{background:rgba(255,255,255,.7)}
 }
 .toast.on{opacity:1}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.warn{
+  flex:0 0 auto;margin:0 16px 6px;padding:9px 13px;border-radius:4px;font-size:13px;
+  background:var(--bg2);border:1px solid var(--warn);color:var(--fg);text-align:center;
+}
+.wallet-opt small{display:block;opacity:.6;font-size:11px;margin-top:2px}
+.wallet-opt[aria-current=true]{border-color:var(--fg)}
 </style>
 </head>
 <body>
@@ -253,10 +259,12 @@ body.light .loading{background:rgba(255,255,255,.7)}
 <div class="bar">
   <button class="chip" id="themeBtn" aria-label="Switch to light theme">☾</button>
   <div class="bar-r">
+    <button class="chip" id="chainBtn">Mainnet</button>
     <span id="netDot" title="Read connection"></span>
     <button class="chip" id="walletBtn">Connect</button>
   </div>
 </div>
+<p class="warn" id="chainWarn" role="status" hidden></p>
 
 <main>
   <!-- SEND / HOME -->
@@ -269,12 +277,7 @@ body.light .loading{background:rgba(255,255,255,.7)}
     </div>
 
     <div class="stage">
-      <div class="grid" id="cryptoGrid" role="group" aria-label="Token">
-        <button class="crypto" data-symbol="ETH"  data-token="0x0000000000000000000000000000000000000000">ETH</button>
-        <button class="crypto" data-symbol="USDC" data-token="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48">USDC</button>
-        <button class="crypto" data-symbol="BOLD" data-token="0x6440f144b7e50d6a8439336510312d2f54beb01d">BOLD</button>
-        <button class="crypto" data-symbol="USDT" data-token="0xdac17f958d2ee523a2206206994597c13d831ec7">USDT</button>
-      </div>
+      <div class="grid" id="cryptoGrid" role="group" aria-label="Token"></div>
       <div class="frame">
         <button class="box" id="sendBox">SEND</button>
         <div class="divider"></div>
@@ -356,6 +359,14 @@ body.light .loading{background:rgba(255,255,255,.7)}
   <button class="btn alt" id="detailClose">Close</button>
 </div></div>
 
+<!-- Network picker -->
+<div class="modal" id="chainModal" role="dialog" aria-modal="true" aria-labelledby="chainTitle"><div class="card">
+  <h3 id="chainTitle">Network</h3>
+  <p class="note mute">SLOW lives at the same address on each. Names always resolve on Ethereum.</p>
+  <div class="wallets" id="chainList"></div>
+  <button class="btn alt" id="chainCancel">Cancel</button>
+</div></div>
+
 <!-- Wallet picker -->
 <div class="modal" id="walletModal" role="dialog" aria-modal="true" aria-labelledby="walletTitle"><div class="card">
   <h3 id="walletTitle">Choose a wallet</h3>
@@ -378,9 +389,71 @@ const ZERO    = '0x0000000000000000000000000000000000000000';
 const ENS_REG = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const WNS     = '0x0000000000696760E15f265e828DB644A0c242EB';
 const MC3     = '0xcA11bde05977b3631167028862bE2a173976CA11';
-const CHAIN   = 1;
+const MAINNET = 1;
 const GRACE   = 2592000;                 // 30-day clawback window
 const MAX_DELAY = 3155760000;            // 100 years
+
+/* ──────────────────────────────────────────────────────────────────
+   Chains
+   ──────────────────────────────────────────────────────────────────
+   SLOW sits at the same canonical address on every chain it is
+   deployed to, so the address above is not per-chain. What differs is
+   the CODE at it: a later deployment may carry the permit entrypoints
+   the mainnet one does not, and the dapp detects that per chain rather
+   than assuming it.
+
+   Verified on chain for 4663: Multicall3 and Permit2 are both at their
+   canonical addresses, so read batching and the Permit2 rung work
+   unchanged. Names are the exception. WNS is absent, and the ENS
+   registry is present at its canonical address but EMPTY — asking it
+   to resolve .eth returns the zero address rather than reverting. A
+   dapp that resolved against the active chain would not fail loudly
+   there; it would tell the reader a valid name does not exist. Name
+   reads are therefore pinned to mainnet unconditionally.
+   ────────────────────────────────────────────────────────────────── */
+const CHAINS = {
+  1: {
+    id:1, hex:'0x1', name:'Ethereum', short:'Mainnet',
+    explorer:'https://etherscan.io',
+    rpcs:[
+      'https://ethereum-rpc.publicnode.com',
+      'https://eth.llamarpc.com',
+      'https://1rpc.io/eth',
+      'https://eth-pokt.nodies.app',
+      'https://gateway.tenderly.co/public/mainnet',
+    ],
+    tokens:[
+      {symbol:'ETH',  address:'0x0000000000000000000000000000000000000000', decimals:18},
+      {symbol:'USDC', address:'0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', decimals:6},
+      {symbol:'BOLD', address:'0x6440f144b7e50d6a8439336510312d2f54beb01d', decimals:18},
+      {symbol:'USDT', address:'0xdac17f958d2ee523a2206206994597c13d831ec7', decimals:6},
+    ],
+  },
+  4663: {
+    id:4663, hex:'0x1237', name:'Robinhood Chain', short:'Robinhood',
+    explorer:'https://robinhoodchain.blockscout.com',
+    rpcs:['https://rpc.mainnet.chain.robinhood.com'],
+    // Bridged addresses, each derived from the L2 Gateway Router's
+    // calculateL2TokenAddress and confirmed to have code and a symbol.
+    // BOLD is deliberately absent: it has not been bridged.
+    tokens:[
+      {symbol:'ETH',  address:'0x0000000000000000000000000000000000000000', decimals:18},
+      {symbol:'USDC', address:'0x80e0e24718dbfcad49ecaa6f1e6c89a190586ca8', decimals:6},
+      {symbol:'WETH', address:'0x0bd7d308f8e1639fab988df18a8011f41eacad73', decimals:18},
+      {symbol:'USDT', address:'0xe246bc49b0598d7cd9f0ead48b885034f1254380', decimals:6},
+    ],
+    // Most wallets have never heard of chain 4663, so a switch has to be
+    // able to fall back to adding it.
+    addChain:{
+      chainId:'0x1237', chainName:'Robinhood Chain',
+      nativeCurrency:{name:'Ether', symbol:'ETH', decimals:18},
+      rpcUrls:['https://rpc.mainnet.chain.robinhood.com'],
+      blockExplorerUrls:['https://robinhoodchain.blockscout.com'],
+    },
+  },
+};
+const CHAIN_IDS = Object.keys(CHAINS).map(Number);
+const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
 
 const SEL = {
   // SLOW
@@ -405,17 +478,10 @@ const SEL = {
 // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
 const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9';
 
-const RPCS = [
-  'https://ethereum-rpc.publicnode.com',
-  'https://eth.llamarpc.com',
-  'https://1rpc.io/eth',
-  'https://eth-pokt.nodies.app',
-  'https://gateway.tenderly.co/public/mainnet',
-];
-
-const KNOWN = ['ETH','USDC','USDT','BOLD'];
+// Fixed colours for the symbols the app knows; anything else is hashed.
+const TOKEN_COLORS = {ETH:'var(--eth)', WETH:'var(--eth)', USDC:'var(--usdc)', USDT:'var(--usdt)', BOLD:'var(--bold)'};
 // Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
-const PRESETS = {ETH:['0.01','0.1','1'], default:['10','100','1000']};
+const PRESETS = {ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'], default:['10','100','1000']};
 
 /* ══════════════════════════════════════════════════════════════════
    keccak256
@@ -590,7 +656,7 @@ function decodeId(big){
 }
 const nw = () => Date.now()/1000|0;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-const tokSym = sym => KNOWN.includes(sym) ? sym : 'other';
+const tokSym = sym => sym in TOKEN_COLORS ? sym : 'other';
 const tokenColor = a => `hsl(${parseInt(a.slice(2,8),16)%360},55%,45%)`;
 
 /* ══════════════════════════════════════════════════════════════════
@@ -609,40 +675,48 @@ let PROV = null;                              // the chosen wallet provider
 const walletProv = () => PROV || window.ethereum || null;
 const SIGN = /^(eth_requestAccounts|eth_sendTransaction|eth_sign|personal_sign|eth_signTypedData|eth_signTypedData_v4|wallet_)/;
 
-let rpcIdx = 0;
-async function nodeRead(method, params){
+const rpcIdx = {};
+async function nodeRead(method, params, chainId){
+  const c = cfg(chainId), pool = c.rpcs;
+  const start = rpcIdx[c.id] || 0;
   let last;
-  for(let i=0;i<RPCS.length;i++){
-    const url = RPCS[(rpcIdx+i)%RPCS.length];
+  for(let i=0;i<pool.length;i++){
+    const at = (start+i)%pool.length;
     const ac = new AbortController();
     const kill = setTimeout(()=>ac.abort(), 12000);
     try {
-      const r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+      const r = await fetch(pool[at],{method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:ac.signal});
       const j = await r.json();
       if(j.error) throw new Error(j.error.message||'rpc error');
-      rpcIdx=(rpcIdx+i)%RPCS.length;
-      S.readOk=true; paintNet();
+      rpcIdx[c.id]=at;
+      if(c.id===S.chain){ S.readOk=true; paintNet(); }
       return j.result;
     } catch(e){ last=e; }
     finally { clearTimeout(kill); }
   }
-  S.readOk=false; paintNet();
-  throw last||new Error('No RPC reachable');
+  if(c.id===S.chain){ S.readOk=false; paintNet(); }
+  throw last||new Error(`No RPC reachable for ${c.name}`);
 }
-// Signing always goes to the wallet. Reads prefer the wallet (it is the user's
-// own node) and fall back to the public pool, so the page is fully readable
-// with no wallet installed at all.
-async function rpc(method, params){
+/*
+   Signing always goes to the wallet. Reads go to the wallet only when it is
+   already on the chain being read — asking a wallet parked on mainnet to
+   eth_call chain 4663 returns mainnet's answer, silently and wrongly — and
+   otherwise to that chain's public pool. This is also what makes the page
+   fully readable with no wallet installed, and what lets it read the chain it
+   is NOT currently transacting on.
+*/
+async function rpc(method, params, chainId){
+  const target = chainId ?? S.chain;
   const p = walletProv();
   if(SIGN.test(method)){
     if(!p) throw Object.assign(new Error('No wallet connected'),{noWallet:true});
     return p.request({method,params});
   }
-  if(p && S.account){
-    try { return await p.request({method,params}); } catch(e){ /* fall through */ }
+  if(p && S.account && S.chainId===target){
+    try { return await p.request({method,params}); } catch(e){ /* fall through to the pool */ }
   }
-  return nodeRead(method,params);
+  return nodeRead(method,params,target);
 }
 async function rpcRetry(method,params,tries=3){
   let last;
@@ -653,7 +727,13 @@ async function rpcRetry(method,params,tries=3){
   throw last;
 }
 const ethCall = (to,data) => rpc('eth_call',[{to,data},'latest']);
-const callOk  = (to,data) => ethCall(to,data).then(r=>r&&r!=='0x'?r:null).catch(()=>null);
+// ENS and WNS exist only on mainnet. A .eth name means the same thing wherever
+// you are spending, so these reads are pinned to chain 1 no matter which chain
+// is active — including when the page is served from Robinhood Chain and there
+// is no registry underneath it at all.
+const mainnetCall = (to,data) =>
+  rpc('eth_call',[{to,data},'latest'],MAINNET).then(r=>r&&r!=='0x'?r:null).catch(()=>null);
+const callOk = mainnetCall;
 
 /* ══════════════════════════════════════════════════════════════════
    Multicall3 — adaptive batching with split-on-failure
@@ -689,12 +769,12 @@ const chunk = (a,n) => { const o=[]; for(let i=0;i<a.length;i+=n) o.push(a.slice
 // Returns one entry per call: hex on success, null on failure. Never rejects for
 // a partial failure, so one bad token or one rate-limited page cannot blank the
 // whole view the way a single Promise.all does.
-async function mc(calls, depth=0){
+async function mc(calls, depth=0, chainId){
   if(!calls.length) return [];
-  const fan = n => Promise.all(chunk(calls,n).map(c=>mc(c,depth+1))).then(r=>r.flat());
+  const fan = n => Promise.all(chunk(calls,n).map(c=>mc(c,depth+1,chainId))).then(r=>r.flat());
   if(calls.length>mcCap && depth<8) return fan(mcCap);
   try {
-    const raw = await rpc('eth_call',[{to:MC3,data:encAggregate3(calls)},'latest']);
+    const raw = await rpc('eth_call',[{to:MC3,data:encAggregate3(calls)},'latest'],chainId);
     const out = decAggregate3(raw);
     if(out.length!==calls.length) throw new Error('multicall length mismatch');
     if(calls.length>=mcCap && mcCap<MC_MAX && out.every(x=>x!=null) && ++mcWon>=2){ mcCap++; mcWon=0; mcSave(); }
@@ -768,7 +848,9 @@ const reverseAny  = async a => (await wnsReverse(a)) || (await ensReverse(a));
    State
    ══════════════════════════════════════════════════════════════════ */
 const S = {
+  chain:MAINNET,
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
+  slowDeployed:{},
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
   resolved:null, resolvedName:null, resolveSeq:0,
@@ -796,11 +878,13 @@ function showLoad(msg,step){ el.loadingText.textContent=msg; el.loadingStep.text
 function setStep(step){ el.loadingStep.textContent=step||''; }
 function hideLoad(){ el.loading.classList.remove('on'); }
 function paintNet(){
-  const dot=el.netDot;
+  const dot=el.netDot, c=cfg();
   dot.classList.toggle('off', !S.readOk);
   dot.classList.toggle('ro', S.readOk && !S.account);
-  dot.title = !S.readOk ? 'No RPC reachable'
-    : S.account ? 'Connected' : 'Read-only — connect a wallet to send';
+  dot.title = !S.readOk ? `No RPC reachable for ${c.name}`
+    : !S.account ? `Reading ${c.name} — connect a wallet to send`
+    : S.chainId!==c.id ? `Reading ${c.name}; your wallet is elsewhere`
+    : `Connected to ${c.name}`;
 }
 
 let lastFocus=null, trapped=null;
@@ -884,7 +968,10 @@ function bindProvider(p){
   });
   p.on?.('chainChanged', id=>{
     S.chainId=parseInt(id,16);
-    if(S.chainId!==CHAIN) toast('Switched off Ethereum mainnet — switch back to send');
+    // Following the wallet is the least surprising behaviour when it lands on
+    // a chain the page knows: the reader moved, so the portal moves with them.
+    if(CHAINS[S.chainId] && S.chainId!==S.chain) switchChain(S.chainId);
+    else if(S.chainId!==S.chain) toast(`Wallet is on chain ${S.chainId}; sending needs ${cfg().name}`);
     else if(S.account&&S.view==='take') loadTransfers(true);
     render();
   });
@@ -903,7 +990,7 @@ async function connect(interactive=true){
     try { localStorage.setItem('slow.wallet', S.walletName||''); } catch(e){}
     S.chainId = parseInt(await p.request({method:'eth_chainId',params:[]}),16);
     setAccount(accs[0]);
-    if(S.chainId!==CHAIN && interactive) await ensureMainnet();
+    if(S.chainId!==cfg().id && interactive) await ensureChain();
     return true;
   } catch(e){ if(interactive) fail(e); return false; }
 }
@@ -924,16 +1011,77 @@ async function eagerConnect(){
     setAccount(accs[0]);
   } catch(e){ PROV=null; }
 }
-async function ensureMainnet(){
-  if(S.chainId===CHAIN) return true;
+// Chain 4663 is not in most wallets' built-in list, so a switch that fails
+// with 4902 (unrecognised chain) is followed by an add, using the parameters
+// from the chain registry rather than anything the page was told at runtime.
+async function ensureChain(){
+  const c = cfg();
+  if(S.chainId===c.id) return true;
   try {
-    await rpc('wallet_switchEthereumChain',[{chainId:'0x1'}]);
-    S.chainId=CHAIN; render();
+    await rpc('wallet_switchEthereumChain',[{chainId:c.hex}]);
+    S.chainId=c.id; render();
     return true;
   } catch(e){
-    if(!isRejection(e)) toast('Switch your wallet to Ethereum mainnet');
+    if(isRejection(e)) return false;
+    const unknown = e?.code===4902 || e?.code===-32603 || /unrecognized|unknown chain|not added/i.test(e?.message||'');
+    if(unknown && c.addChain){
+      try {
+        await rpc('wallet_addEthereumChain',[c.addChain]);
+        S.chainId=c.id; render();
+        return true;
+      } catch(e2){
+        if(!isRejection(e2)) toast(`Add ${c.name} to your wallet to send here`);
+        return false;
+      }
+    }
+    toast(`Switch your wallet to ${c.name}`);
     return false;
   }
+}
+/*
+   Switching chains is a portal, not a reload. Everything cached below is a
+   property of one deployment — token metadata, whether SLOW there has the
+   permit entrypoints, that chain's gate, the wallet's batching capability for
+   it — so all of it is dropped. The name cache is not: ENS and WNS answers are
+   mainnet facts and mean the same thing on either side.
+*/
+function switchChain(id){
+  if(!CHAINS[id] || id===S.chain) return;
+  S.chain=id;
+  try { localStorage.setItem('slow.chain',String(id)); } catch(e){}
+  S.meta={}; S.permitCache={}; S.gate=undefined;
+  S.slowPermit=null; S.batchCap=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.balance=null;
+  S.token=S.symbol=null; S.amount=null; S.step=0;
+  buildTokenGrid();
+  paintChain(); paintNet(); paintPresets();
+  checkDeployed();
+  if(S.view==='take') loadTransfers(true);
+}
+function paintChain(){
+  const c=cfg();
+  el.chainBtn.textContent=c.short;
+  el.chainBtn.title=`${c.name} (chain ${c.id}) — click to switch`;
+  el.chainBtn.setAttribute('aria-label',`Network: ${c.name}. Click to switch.`);
+}
+// SLOW is at the same address everywhere it is deployed, but "deployed" is not
+// a given: telling someone their transfer list is empty when the contract is
+// not there at all would be a lie.
+async function checkDeployed(){
+  const id=S.chain;
+  if(S.slowDeployed[id]!==undefined){ paintDeployed(); return; }
+  try {
+    const code=await rpc('eth_getCode',[SLOW,'latest'],id);
+    S.slowDeployed[id]= typeof code==='string' && code.length>4;
+  } catch(e){ S.slowDeployed[id]=undefined; }
+  if(S.chain===id) paintDeployed();
+}
+function paintDeployed(){
+  const live=S.slowDeployed[S.chain];
+  const c=cfg();
+  el.chainWarn.hidden = live!==false;
+  if(live===false) el.chainWarn.textContent=`SLOW is not deployed on ${c.name} yet.`;
+  render();
 }
 function setAccount(a){
   const acct=a;
@@ -996,7 +1144,7 @@ function hasAtomic(caps){
     for(const k of Object.keys(caps)){ try { if(BigInt(k)===id) return caps[k]; } catch(e){} }
     return undefined;
   };
-  const c = pick(BigInt(CHAIN)) ?? pick(0n);
+  const c = pick(BigInt(S.chain)) ?? pick(0n);
   const st = c?.atomic?.status;
   return st==='supported'||st==='ready';
 }
@@ -1010,7 +1158,7 @@ async function canBatch(){
 }
 async function sendBatch(calls){
   const res = await rpc('wallet_sendCalls',[{
-    version:'2.0.0', chainId:'0x1', from:S.account, atomicRequired:true,
+    version:'2.0.0', chainId:cfg().hex, from:S.account, atomicRequired:true,
     calls: calls.map(c=>({to:c.to, data:c.data, value:c.value||'0x0'})),
   }]);
   const id = typeof res==='string' ? res : res?.id;
@@ -1039,7 +1187,7 @@ const EIP712_DOMAIN_TH = keccak256('EIP712Domain(string name,string version,uint
 function domainSeparator(name, version, verifying){
   return keccak256('0x'+strip(EIP712_DOMAIN_TH)
     + strip(keccak256(name)) + strip(keccak256(version))
-    + word(CHAIN) + word(verifying));
+    + word(S.chain) + word(verifying));
 }
 // A token supports 2612 only if its own DOMAIN_SEPARATOR can be reproduced from
 // a (name, version) pair we know — otherwise the signature would be rejected on
@@ -1080,7 +1228,7 @@ async function signPermit(token, info, owner, spender, value, deadline){
         {name:'value',type:'uint256'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}],
     },
     primaryType:'Permit',
-    domain:{name:info.name,version:info.version,chainId:CHAIN,verifyingContract:token},
+    domain:{name:info.name,version:info.version,chainId:S.chain,verifyingContract:token},
     message:{owner,spender,value:value.toString(),nonce:info.nonce.toString(),deadline:deadline.toString()},
   };
   const sig = strip(await rpc('eth_signTypedData_v4',[owner,JSON.stringify(td)]));
@@ -1108,7 +1256,7 @@ async function slowHasPermit(){
    Transactions
    ══════════════════════════════════════════════════════════════════ */
 async function sendTx(tx){
-  if(!await ensureMainnet()) throw new Error('Switch to Ethereum mainnet');
+  if(!await ensureChain()) throw new Error(`Switch to ${cfg().name}`);
   return rpc('eth_sendTransaction',[tx]);
 }
 async function waitTx(hash){
@@ -1223,7 +1371,7 @@ async function deposit(){
     if(plan.allowance>0n) calls.push({to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,0n])});
     calls.push({to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,wei])});
     calls.push({to:SLOW,data:depositCalldata(wei),value:valueHex});
-    if(!await ensureMainnet()) throw new Error('Switch to Ethereum mainnet');
+    if(!await ensureChain()) throw new Error(`Switch to ${cfg().name}`);
     const h=await sendBatch(calls);
     setStep('Waiting for confirmation…');
     await waitTx(h);
@@ -1629,6 +1777,21 @@ document.addEventListener('visibilitychange',()=>{
 /* ══════════════════════════════════════════════════════════════════
    Send-form rendering
    ══════════════════════════════════════════════════════════════════ */
+const tokenBg = t => TOKEN_COLORS[t.symbol] || tokenColor(t.address);
+function buildTokenGrid(){
+  const g=el.cryptoGrid;
+  g.replaceChildren();
+  for(const t of cfg().tokens){
+    const b=document.createElement('button');
+    b.type='button'; b.className='crypto';
+    b.dataset.symbol=t.symbol; b.dataset.token=t.address.toLowerCase();
+    b.dataset.decimals=String(t.decimals);
+    b.textContent=t.symbol;
+    b.style.background=tokenBg(t);
+    b.setAttribute('aria-pressed','false');
+    g.appendChild(b);
+  }
+}
 function presetsFor(sym){ return PRESETS[sym]||PRESETS.default; }
 function paintPresets(){
   const p=presetsFor(S.symbol);
@@ -1761,12 +1924,15 @@ async function updateTipPreview(){
 async function previewPlan(){
   el.planNote.textContent='';
   if(!S.account||!S.token||!S.amount) return;
+  const c=cfg();
+  const prefix = S.chainId!=null && S.chainId!==c.id
+    ? `On ${c.name} — your wallet will be asked to switch. ` : `On ${c.name}. `;
   try {
     const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
     const wei = parseUnits(S.amount,meta.decimals);
     const plan = await planDeposit(wei);
-    el.planNote.textContent = planLabel(plan);
-  } catch(e){}
+    el.planNote.textContent = prefix + planLabel(plan);
+  } catch(e){ el.planNote.textContent = prefix.trim(); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1785,13 +1951,14 @@ function openConfirmation(){
 }
 async function handleConfirm(){
   if(!S.account && !await connect(true)) return;
-  if(!await ensureMainnet()) return;
+  if(!await ensureChain()) return;
   if(!S.resolved){
     const v=el.recipientInput.value.trim();
     if(!v){ setNote(el.ens,'Who is this going to?','err'); el.recipientInput.focus(); return; }
     if(!await resolveRecipient(v)){ el.recipientInput.focus(); return; }
   }
   try {
+    if(S.slowDeployed[S.chain]===false) throw new Error(`SLOW is not deployed on ${cfg().name}`);
     const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
     if(S.token!==ZERO && !meta.ok) throw new Error('That token did not answer symbol() or decimals()');
     const wei=parseUnits(S.amount,meta.decimals);
@@ -1827,6 +1994,24 @@ el.themeBtn.onclick=()=>{
   try { localStorage.setItem('slow.theme',light?'light':'dark'); } catch(e){}
 };
 
+el.chainBtn.onclick=()=>{
+  el.chainList.replaceChildren();
+  for(const id of CHAIN_IDS){
+    const c=CHAINS[id];
+    const b=document.createElement('button');
+    b.type='button'; b.className='wallet-opt';
+    b.setAttribute('aria-current',String(id===S.chain));
+    const t=document.createElement('span');
+    t.textContent=c.name;
+    const sm=document.createElement('small');
+    sm.textContent=`chain ${c.id}${id===S.chain?' · active':''}`;
+    t.appendChild(sm); b.appendChild(t);
+    b.onclick=()=>{ hideModal(el.chainModal); switchChain(id); };
+    el.chainList.appendChild(b);
+  }
+  showModal(el.chainModal);
+};
+el.chainCancel.onclick=()=>hideModal(el.chainModal);
 el.walletBtn.onclick=()=>S.account?disconnect():connect(true);
 el.sendBox.onclick=()=>setView('send');
 el.takeBox.onclick=async()=>{
@@ -1840,7 +2025,7 @@ el.cryptoGrid.addEventListener('click',e=>{
   const b=e.target.closest('.crypto'); if(!b) return;
   S.token=b.dataset.token.toLowerCase();
   S.symbol=b.dataset.symbol;
-  S.decimals = S.symbol==='USDC'||S.symbol==='USDT' ? 6 : 18;
+  S.decimals = Number(b.dataset.decimals) || 18;
   S.amount=null; S.step=Math.max(S.step,1);
   tokenMeta(S.token).then(m=>{ if(S.token===b.dataset.token.toLowerCase()){ S.decimals=m.decimals; paintPresets(); } });
   paintPresets(); refreshBalance();
@@ -1920,7 +2105,25 @@ el.list.addEventListener('scroll',hideTip,{passive:true});
 addEventListener('resize',hideTip);
 addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(false); });
 
-paintNet(); render(); paintPresets();
+/*
+   Which chain is this page for? A gateway serves it from
+   <0xADDRESS>.<chainId>.<gateway> on ERC-4804 hosts, and from a bare
+   <0xADDRESS>.<gateway> on ERC-8244 ones. If the hostname names a chain the
+   page knows, that is the one it was published on and the one to open on.
+   Otherwise fall back to the reader's last choice.
+*/
+(()=>{
+  const parts=(location.hostname||'').split('.');
+  const fromHost = /^0x[0-9a-fA-F]{40}$/.test(parts[0]||'') && /^\d+$/.test(parts[1]||'')
+    ? Number(parts[1]) : null;
+  let saved=null;
+  try { saved=Number(localStorage.getItem('slow.chain'))||null; } catch(e){}
+  const pick = (fromHost && CHAINS[fromHost]) ? fromHost
+    : (saved && CHAINS[saved]) ? saved : MAINNET;
+  S.chain=pick;
+})();
+buildTokenGrid(); paintChain(); paintNet(); render(); paintPresets();
+checkDeployed();
 eagerConnect();
 })();
 </script>

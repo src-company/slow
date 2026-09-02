@@ -20,6 +20,40 @@ The contract embeds its own frontend in two SSTORE2 chunks; `w4eth.io` resolves 
 
 This repo ships its own resolver in [`gateway/`](./gateway) so you can host it yourself. It's a zero-dependency Node server (`node gateway/server.js`) that reads the target contract from the leftmost DNS label of `<0xADDRESS>.<yourdomain>`, makes one `eth_call` to `html()`, and serves the decoded document. It round-robins a pool of keyless public mainnet RPCs and fails over on any transient error, so it boots with no configuration; set `RPC_URL` (comma-separated) to put your own endpoints first. `index.html` is a client-only variant of the same resolver.
 
+## Networks
+
+The dapp is a portal, not a single-chain page. SLOW sits at the same canonical
+address on every chain it is deployed to, so the address is not per-chain — what
+differs is the code at it, the token set, and the surrounding infrastructure.
+
+| | Ethereum | Robinhood Chain |
+| --- | --- | --- |
+| chain id | 1 | 4663 (`0x1237`) |
+| SLOW | deployed, 21,648 B | not deployed yet |
+| Multicall3 | canonical | canonical |
+| Permit2 | canonical | canonical |
+| `.eth` / `.wei` | resolves | **does not** |
+| tokens | ETH, USDC, USDT, BOLD | ETH, USDC, USDT, WETH (BOLD not bridged) |
+
+Two consequences are baked into the page:
+
+**Names always resolve on mainnet.** WNS is absent on 4663, and the ENS registry
+is present at its canonical address but *empty* — asking it to resolve `.eth`
+returns the zero address rather than reverting. A dapp that resolved against the
+active chain would not fail loudly there; it would tell the reader that a valid
+name does not exist. So ENS and WNS reads are pinned to chain 1 unconditionally,
+whichever chain is being spent on.
+
+**Reads never go to a wallet parked elsewhere.** A wallet on mainnet asked to
+`eth_call` chain 4663 answers with mainnet's state, silently and wrongly. The
+page uses the wallet only when its chain matches the chain being read, and that
+chain's public pool otherwise — which is also what lets it read the chain it is
+not currently transacting on.
+
+Switching is a portal, not a reload: everything cached per deployment is
+dropped, the name cache is not. Sending on a chain the wallet does not know
+falls back from `wallet_switchEthereumChain` to `wallet_addEthereumChain`.
+
 ## Why use SLOW?
 
 - **Reverse mistakes.** Sent to the wrong address? Cancel before the timelock expires.
@@ -257,7 +291,8 @@ forge test
 
 Dapp tests run on vanilla Node — no NPM:
 
-- `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, transfer status, and every selector.
+- `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, the chain registry, transfer status, and every selector.
+- `node test/chains.live.mjs` — the chain registry against real nodes: each chain answers with the id it claims, Multicall3 is at the canonical address, every listed token reports the symbol and decimals the registry pins, and `.eth` resolves only on mainnet. Needs network; skips a chain cleanly if its RPCs are unreachable.
 - `node test/slow_html.test.mjs` — the same for the frozen v1 artifact `SLOW.html`.
 - `node test/slow_html.e2e.test.mjs` — end-to-end. Spawns `anvil`, deploys SLOW, drives the dapp's flow functions against the live contract, asserts on-chain state matches dapp state. Requires `anvil` on PATH and a current `forge build`.
 

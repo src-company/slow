@@ -58,7 +58,8 @@ globalThis.innerWidth = 1024;
 const captured = {};
 globalThis.__capture = captured;
 const EXPORTS = [
-  'SLOW', 'ZERO', 'ENS_REG', 'WNS', 'MC3', 'CHAIN', 'GRACE', 'SEL', 'TYPEHASH_2612', 'PRESETS',
+  'SLOW', 'ZERO', 'ENS_REG', 'WNS', 'MC3', 'MAINNET', 'GRACE', 'SEL', 'TYPEHASH_2612', 'PRESETS',
+  'CHAINS', 'CHAIN_IDS', 'cfg', 'TOKEN_COLORS',
   'keccak256', 'namehash', 'encode', 'decode', 'cd', 'word', 'strip',
   'encAggregate3', 'decAggregate3', 'chunk',
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
@@ -336,7 +337,59 @@ eq(C.MC3, '0xcA11bde05977b3631167028862bE2a173976CA11', 'Multicall3 canonical ad
 eq(C.ENS_REG, '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', 'ENS registry');
 eq(C.WNS, '0x0000000000696760E15f265e828DB644A0c242EB', 'WNS registry');
 eq(C.GRACE, 2592000, 'clawback grace is 30 days');
-eq(C.CHAIN, 1, 'mainnet');
+eq(C.MAINNET, 1, 'mainnet is chain 1');
+
+// ─── Chains ────────────────────────────────────────────────────────────────
+// SLOW is at one canonical address everywhere; what differs per chain is the
+// code at it, the token set, and whether the name registries exist at all.
+eq(C.CHAIN_IDS.join(','), '1,4663', 'the page knows mainnet and Robinhood Chain');
+eq(C.CHAINS[1].hex, '0x1', 'mainnet chain id hex');
+eq(C.CHAINS[4663].hex, '0x1237', 'Robinhood Chain is 4663 == 0x1237');
+eq(parseInt(C.CHAINS[4663].hex, 16), 4663, 'the hex and decimal chain ids agree');
+eq(C.CHAINS[1].id, 1, 'registry keys match their ids');
+eq(C.CHAINS[4663].id, 4663, 'registry keys match their ids (4663)');
+ok(C.CHAINS[4663].addChain, 'Robinhood Chain carries wallet_addEthereumChain params');
+eq(C.CHAINS[4663].addChain.chainId, '0x1237', 'addEthereumChain uses the same hex id');
+eq(C.CHAINS[4663].addChain.nativeCurrency.symbol, 'ETH', 'gas on 4663 is paid in ETH');
+eq(C.CHAINS[4663].addChain.rpcUrls[0], C.CHAINS[4663].rpcs[0],
+  'the RPC offered to the wallet is the one the page reads from');
+ok(!C.CHAINS[1].addChain, 'mainnet needs no add-chain fallback');
+
+for (const id of C.CHAIN_IDS) {
+  const c = C.CHAINS[id];
+  ok(c.rpcs.length > 0, `chain ${id} has at least one RPC`);
+  ok(/^https:\/\//.test(c.explorer), `chain ${id} explorer is https`);
+  ok(c.tokens.length >= 2, `chain ${id} has a token list`);
+  eq(c.tokens[0].address, C.ZERO, `chain ${id} lists native ETH first`);
+  eq(c.tokens[0].decimals, 18, `chain ${id} native ETH has 18 decimals`);
+  ok(c.tokens.every(t => /^0x[0-9a-f]{40}$/.test(t.address)),
+    `chain ${id} token addresses are lowercase hex`);
+  ok(new Set(c.tokens.map(t => t.address)).size === c.tokens.length,
+    `chain ${id} lists no token twice`);
+}
+
+// Bridged addresses, each confirmed on chain 4663 to have code and a symbol.
+const rh = C.CHAINS[4663].tokens;
+eq(rh.find(t => t.symbol === 'USDC').address, '0x80e0e24718dbfcad49ecaa6f1e6c89a190586ca8', 'USDC on 4663');
+eq(rh.find(t => t.symbol === 'USDC').decimals, 6, 'USDC on 4663 has 6 decimals');
+eq(rh.find(t => t.symbol === 'USDT').address, '0xe246bc49b0598d7cd9f0ead48b885034f1254380', 'USDT on 4663');
+eq(rh.find(t => t.symbol === 'WETH').address, '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 'WETH on 4663');
+ok(!rh.some(t => t.symbol === 'BOLD'), 'BOLD is absent from 4663 — it has not been bridged');
+// The bridged addresses are genuinely different from their L1 originals.
+for (const sym of ['USDC', 'USDT']) {
+  const l1 = C.CHAINS[1].tokens.find(t => t.symbol === sym);
+  const l2 = rh.find(t => t.symbol === sym);
+  ok(l1.address !== l2.address, `${sym} is at a different address on 4663 than on mainnet`);
+  eq(l1.decimals, l2.decimals, `${sym} keeps its decimals across the bridge`);
+}
+
+eq(C.cfg(4663).name, 'Robinhood Chain', 'cfg() resolves by id');
+eq(C.cfg(999999).id, 1, 'cfg() falls back to mainnet for an unknown chain');
+
+// Presets follow the asset, and WETH is an ether-scale asset like ETH.
+eq(C.presetsFor('WETH').join(','), C.presetsFor('ETH').join(','), 'WETH shares the ETH ladder');
+eq(C.tokSym('WETH'), 'WETH', 'WETH has its own colour');
+ok(C.TOKEN_COLORS.WETH === C.TOKEN_COLORS.ETH, 'WETH is painted as ether');
 
 // ─── Report ────────────────────────────────────────────────────────────────
 if (failures.length) {

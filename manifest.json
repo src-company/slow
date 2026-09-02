@@ -3,8 +3,8 @@
   "title": "SLOW \u2014 timelocked transfers with a reverse",
   "description": "The SLOW dapp as one self-contained HTML document, served from contract bytecode over ERC-8244, ERC-5219 and ERC-4804.",
   "page": "dapp/page.html",
-  "bytes": 91171,
-  "sha256": "89ee592af7d168192e6de22fe93f094629078d0497fcfe45c27bb2d5d5976970",
+  "bytes": 100904,
+  "sha256": "3d605e661746b9b4381d018a5f6fe8c048df56c75ca684cad19efb09b9dd9ea8",
   "chunks": {
     "artifact": "SlowPage",
     "maxPayload": 24575,
@@ -13,7 +13,11 @@
   "protocol": {
     "chainId": 1,
     "slow": "0x000000000000888741B254d37e1b27128AfEAaBC",
-    "note": "The page names this contract and drives it. It is not redeployed."
+    "note": "The page names this contract and drives it. It is not redeployed.",
+    "chains": {
+      "1": "Ethereum",
+      "4663": "Robinhood Chain"
+    }
   },
   "deployment": {
     "chainId": 1,

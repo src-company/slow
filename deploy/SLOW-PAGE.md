@@ -90,13 +90,13 @@ The proxy initcode hash it uses is checked against the canonical
    ```
 
    Writes `out/chunkN.creation.txt` and prints the `keccak256` the constructor
-   will be given. At 91 KB the page is 4 chunks with about 7.2 KB of headroom.
+   will be given. At 99 KB the page is 5 chunks with 21,971 B of headroom.
 
 4. **Deploy the chunks** with plain `CREATE`, in order, and record the
    addresses. Each is `eth_sendTransaction` with the initcode as `data` and no
    `to`. Reference cost from the FWA deployment: a full 24.5 KB chunk is about
-   5.37M gas, so four chunks plus the wrapper is roughly 20M gas — under
-   0.002 ETH at 0.1 gwei.
+   5.37M gas, so 5 chunks plus the wrapper is roughly 28M gas — under
+   0.003 ETH at 0.1 gwei.
 
 5. **Deploy the wrapper through CREATE3** with the mined salt:
 
@@ -123,6 +123,38 @@ The proxy initcode hash it uses is checked against the canonical
    the protocol contract, that `resolveMode()` is `"5219"` and `request()`
    answers `200` with `text/html`, and that every route declared `exact` serves
    identical bytes.
+
+## Two chains, one page
+
+The page is a portal. It opens on the chain it was served from — a gateway
+serving `<0xADDRESS>.<chainId>.<host>` names the chain in the hostname — and a
+switcher moves between them. SLOW is at the same canonical address on both, so
+publishing this page on Robinhood Chain gives readers a working mainnet portal
+for free.
+
+What is verified on chain 4663, and what the page does about it:
+
+| | 4663 | consequence |
+| --- | --- | --- |
+| Multicall3 `0xcA11…CA11` | present | read batching works unchanged |
+| Permit2 `0x0000…8BA3` | present | the Permit2 rung works |
+| CreateX `0xba5E…ba5Ed` | present | the same CREATE3 salt lands the same address here |
+| CREATE2 factory `0x4e59…956C` | present | chunk deploys are deterministic |
+| WNS | absent | `.wei` reads go to mainnet |
+| ENS registry | present but **empty** | `.eth` reads go to mainnet |
+| SLOW | not yet deployed | the page says so instead of showing an empty list |
+
+The ENS row is the one to be careful about. The registry has been
+deterministic-deployed to its canonical address on 4663 and has real code, but
+holds no records: `resolver(namehash('eth'))` is the zero address. Resolving
+against the active chain would not throw — it would report that a valid name
+does not exist. Name reads are pinned to chain 1 unconditionally.
+
+Deploying SLOW itself on 4663 is a separate exercise, and it is the natural
+place to ship `src/SlowPermit.sol`: a fresh deployment can carry the permit
+entrypoints the frozen mainnet one cannot. The page already probes for them per
+chain, so it will start using the permit rung on 4663 and keep skipping it on
+mainnet, with no change to the page.
 
 ## Routes
 
