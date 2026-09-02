@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2307130D'/%3E%3Cpath d='M4 4h56v56H4z' fill='none' stroke='%2300C805' stroke-opacity='.4' stroke-width='1.6' stroke-dasharray='3 2.4'/%3E%3Cpath d='M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z' fill='%2300C805'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23110E08'/%3E%3Cpath d='M4 4h56v56H4z' fill='none' stroke='%23CCFF00' stroke-opacity='.45' stroke-width='1.6' stroke-dasharray='3 2.4'/%3E%3Cpath d='M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z' fill='%23CCFF00'/%3E%3C/svg%3E">
 <title>SLOW</title>
 <style>
 /* ─────────────────────────────────────────────────────────────
@@ -15,8 +15,7 @@
 :root{
   --bg:#000;--fg:#fff;
   --bg2:#0d0d0d;--bg3:#1c1c1c;--bd:#333;--bd2:#555;--dim:#8b8b8b;
-  --eth:#ff69b4;--weth:#ff69b4;--usdc:#2775ca;--usdt:#26a17b;--bold:#745ddf;
-  --usde:#4d5bd9;--usdg:#00c805;--nvda:#76b900;--rh:#00c805;
+  --rh:#ccff00;--rh-ink:#110e08;
   --ok:#3ddc84;--warn:#ffb020;--err:#ff6b6b;
   --t:120ms linear;
   --sans:'Helvetica Neue',Helvetica,Arial,sans-serif;
@@ -24,7 +23,7 @@
 }
 body.light{
   --bg:#fff;--fg:#000;
-  --bg2:#f4f4f4;--bg3:#e6e6e6;--bd:#d2d2d2;--bd2:#8a8a8a;--dim:#666;
+  --bg2:#f2f2f2;--bg3:#e4e4e4;--bd:#b9b9b9;--bd2:#7a7a7a;--dim:#5a5a5a;
   --ok:#0a7f3f;--warn:#9a5b00;--err:#c62828;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -67,8 +66,8 @@ button,input{font:inherit;color:inherit;border-radius:0}
 #netDot{width:6px;height:6px;background:var(--err);flex:0 0 auto}
 #netDot[hidden]{display:none}
 .warn{
-  flex:0 0 auto;margin:0 14px 8px;padding:8px 11px;font-size:12.5px;
-  border:1px solid var(--warn);color:var(--fg);background:var(--bg2);
+  flex:0 0 auto;width:100%;max-width:420px;margin:0 auto 14px;padding:8px 11px;
+  font-size:12.5px;border:1px solid var(--warn);color:var(--fg);background:var(--bg2);
 }
 
 /* ── main ────────────────────────────────────────────────── */
@@ -112,20 +111,19 @@ body.v-take .panel{max-width:640px}
 .sendPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0}
 body.v-send .sendPane{display:flex}
 .field{display:flex;flex-direction:column;gap:8px;transition:opacity var(--t)}
-.field.locked{opacity:.28;pointer-events:none}
+.field.locked{opacity:.4;pointer-events:none}
 .flabel{
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;
   font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
 }
 .flabel em{font-style:normal;font-family:var(--mono);letter-spacing:0;text-transform:none;font-weight:400}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .crypto{
   display:flex;justify-content:center;align-items:center;
-  aspect-ratio:1/1;max-height:104px;
-  font-weight:700;font-size:17px;letter-spacing:.06em;color:#fff;
+  aspect-ratio:1/1;
+  font-weight:700;font-size:14px;letter-spacing:.02em;
   cursor:pointer;border:2px solid transparent;
-  transition:border-color var(--t),opacity var(--t);
-  text-shadow:0 1px 2px rgba(0,0,0,.4);overflow:hidden;
+  transition:border-color var(--t),opacity var(--t);overflow:hidden;
 }
 .grid.dim .crypto{opacity:.3}
 .crypto[aria-pressed=true]{border-color:var(--fg);opacity:1!important}
@@ -151,6 +149,36 @@ body.v-send .sendPane{display:flex}
 /* ── take: one row per transfer ──────────────────────────── */
 .takePane{display:none;flex-direction:column;gap:14px;flex:1 1 auto;min-height:0}
 body.v-take .takePane{display:flex}
+.guardPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0}
+body.v-guard .guardPane{display:flex}
+body.v-guard .panel,body.v-take .panel{display:flex}
+.gcard{
+  border:1px solid var(--bd);padding:13px;font-family:var(--mono);font-size:13px;
+  overflow-wrap:anywhere;display:flex;flex-direction:column;gap:5px;
+}
+.gcard .sub{font-size:11px;color:var(--dim)}
+.gcard.none{color:var(--dim)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ward{border:1px solid var(--bd);display:flex;flex-direction:column}
+.ward-h{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:12px 13px;background:transparent;border:none;cursor:pointer;
+  font-family:var(--mono);font-size:12.5px;color:var(--fg);text-align:left;
+}
+.ward-h:hover{background:var(--bg2)}
+.ward-h .cnt{font-size:11px;color:var(--dim)}
+.ward-b{border-top:1px solid var(--bd);display:flex;flex-direction:column}
+.wtx{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 13px;align-items:center}
+.wtx+.wtx{border-top:1px solid var(--bd)}
+.wtx-i{font-family:var(--mono);font-size:12px;min-width:0}
+.wtx-i span{display:block;font-size:10.5px;color:var(--dim)}
+.wtx button{
+  background:transparent;border:1px solid var(--bd);color:var(--fg);cursor:pointer;
+  font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  padding:7px 12px;white-space:nowrap;
+}
+.wtx button:hover{border-color:var(--fg)}
+.wtx button.on{background:var(--ok);border-color:var(--ok);color:#000}
 .tabs{display:flex;gap:0;flex:0 0 auto;border:1px solid var(--bd)}
 .tab{
   flex:1 1 0;height:34px;background:transparent;border:none;cursor:pointer;
@@ -293,6 +321,7 @@ body.light .loading{background:rgba(255,255,255,.92)}
     <div class="seg" role="tablist" aria-label="Mode">
       <button id="segSend" role="tab" aria-selected="true">Send</button>
       <button id="segTake" role="tab" aria-selected="false">Take</button>
+      <button id="segGuard" role="tab" aria-selected="false">Guard</button>
     </div>
 
     <div class="sendPane">
@@ -320,6 +349,32 @@ body.light .loading{background:rgba(255,255,255,.92)}
           <button class="opt" data-time="86400">1 DAY</button>
           <button class="opt" id="customTimeOpt">Custom</button>
         </div>
+      </div>
+    </div>
+
+    <div class="guardPane">
+      <div class="field">
+        <span class="flabel">Your guardian <em id="gHint"></em></span>
+        <div class="gcard" id="gCurrent">—</div>
+        <div class="row2">
+          <button class="opt" id="gSet">Set</button>
+          <button class="opt" id="gRemove">Remove</button>
+        </div>
+      </div>
+
+      <div class="field" id="gPendingField" hidden>
+        <span class="flabel">Pending change</span>
+        <div class="gcard" id="gPending">—</div>
+        <div class="row2">
+          <button class="opt" id="gCommit">Commit</button>
+          <button class="opt" id="gCancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel">Accounts you guard <em id="gWardHint"></em></span>
+        <div class="list" id="gWards"></div>
+        <button class="link" id="gAddWard">+ Add an account</button>
       </div>
     </div>
 
@@ -392,6 +447,15 @@ body.light .loading{background:rgba(255,255,255,.92)}
   <button class="btn alt" id="confirmCancel">Cancel</button>
 </div></div>
 
+<div class="modal" id="guardModal" role="dialog" aria-modal="true" aria-labelledby="guardTitle"><div class="card">
+  <h3 id="guardTitle">Guardian</h3>
+  <input type="text" class="input" id="guardInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false">
+  <p class="note" id="guardNote" aria-live="polite"></p>
+  <p class="note" id="guardWarn"></p>
+  <button class="btn" id="guardApply">Apply</button>
+  <button class="btn alt" id="guardCancel">Cancel</button>
+</div></div>
+
 <div class="modal" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="card">
   <h3 id="detailTitle">Transfer</h3>
   <dl class="rows" id="detailRows"></dl>
@@ -416,6 +480,7 @@ const WNS     = '0x0000000000696760E15f265e828DB644A0c242EB';
 const MC3     = '0xcA11bde05977b3631167028862bE2a173976CA11';
 const MAINNET = 1;
 const GRACE   = 2592000;                 // 30-day clawback window
+const GUARD_DELAY = 86400;               // veto window on rotating an active guardian
 const MAX_DELAY = 3155760000;            // 100 years
 
 /* ──────────────────────────────────────────────────────────────────
@@ -489,6 +554,9 @@ const SEL = {
   withdrawFrom:'0xd4fdc309', multicall:'0xac9650d8', pendingTransfers:'0x6577b86a',
   getOut:'0xd40d4bc6', getIn:'0xe3993ee7',
   guardians:'0x0633b14a', isWithdrawalApprovalNeeded:'0xabe616b8',
+  setGuardian:'0x8a0dac4a', commitGuardian:'0xa952a15f', cancelGuardianChange:'0xdb6c927d',
+  pendingGuardian:'0x3b0a6875', approveTransfer:'0xfa02c4b7', revokeApproval:'0x47d07c4c',
+  guardianApproved:'0x8d4a1b58', isGuardianApprovalNeeded:'0xaade934f',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
   approve:'0x095ea7b3', allowance:'0xdd62ed3e', decimals:'0x313ce567',
@@ -506,9 +574,26 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
 
 // Fixed colours for the symbols the app knows; anything else is hashed.
 const TOKEN_COLORS = {
-  ETH:'var(--eth)', WETH:'var(--eth)', USDC:'var(--usdc)', USDT:'var(--usdt)',
-  BOLD:'var(--bold)', USDe:'var(--usde)', USDG:'var(--usdg)', NVDA:'var(--nvda)',
+  ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#745ddf',
+  USDe:'#4d5bd9', USDG:'#ccff00', NVDA:'#4d7c0f',
 };
+/* USDG carries Robinhood's chartreuse, which is far too light for white text.
+   Rather than hand-maintain a second table, the ink is derived: WCAG relative
+   luminance, one threshold. A custom token's hashed colour goes through the
+   same path. */
+const RGB = h => {
+  const m=/^#?([0-9a-f]{6})$/i.exec(h||'');
+  if(!m) return null;
+  const v=parseInt(m[1],16);
+  return [(v>>16)&255,(v>>8)&255,v&255];
+};
+function luminance(hex){
+  const c=RGB(hex);
+  if(!c) return 0;                                  // hsl() from tokenColor(): always mid-dark
+  const lin=x=>{ x/=255; return x<=0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055,2.4); };
+  return 0.2126*lin(c[0])+0.7152*lin(c[1])+0.0722*lin(c[2]);
+}
+const inkOn = hex => luminance(hex)>0.42 ? '#110e08' : '#ffffff';
 // Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
 const PRESETS = {
   ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'],
@@ -891,6 +976,7 @@ const S = {
   view:'home', step:0, tab:'outbound',
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
+  guard:{guardian:null, pending:null, wards:[], open:null, loading:false},
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
   timer:null, lastLoad:0, loadSeq:0,
@@ -1101,6 +1187,7 @@ function setAccount(a){
   paintWallet(); paintNet();
   reverseAny(acct).then(n=>{ if(S.account===acct){ S.ensName=n; paintWallet(); } }).catch(()=>{});
   if(S.view==='take') loadTransfers(true);
+  if(S.view==='guard') loadGuard();
   if(S.token) refreshBalance();
 }
 function disconnect(silent){
@@ -1577,8 +1664,14 @@ const ICONS = {
   1:'<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">'
    +'<path d="M16 3 8.5 16.2 16 20.6l7.5-4.4L16 3Z" opacity=".45"/><path d="M16 3v17.6l7.5-4.4L16 3Z"/>'
    +'<path d="M8.5 17.7 16 22.1l7.5-4.4L16 29 8.5 17.7Z" opacity=".45"/><path d="M16 22.1V29l7.5-11.3L16 22.1Z"/></svg>',
-  4663:'<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="square" aria-hidden="true">'
-   +'<path d="M7 27 25 6"/><path d="M25 6c1.6 8-1 14.2-7.4 16.6C13 24.3 9.6 23.3 7 21"/></svg>',
+  // The Robinhood feather: blade and quill as one outline, with the arrow
+  // knocked out through fill-rule="evenodd" so the notch shows the ground
+  // rather than a second colour — which is what lets one path sit on either
+  // theme. Redrawn from the mark, not the official file.
+  4663:'<svg viewBox="0 0 32 32" fill="currentColor" fill-rule="evenodd" aria-hidden="true">'
+   +'<path d="M5.6 26.9 6.9 28.2 13.1 21.6c2.5.4 5.1 0 7.4-1.1 4.7-2.2 7.6-7.1 7.8-13.6 0-1.5-1.2-2.7-2.7-2.6-6.4.4-11.2 3.4-13.4 8.2-1.1 2.5-1.4 5.3-.8 7.9Z'
+   +'M14.8 8.8v1.5h4.9L11 18.9 12.1 20l8.7-8.7v5h1.5V8.8Z"/>'
+   +'</svg>',
 };
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1594,7 +1687,9 @@ function buildTokenGrid(){
     b.dataset.symbol=t.symbol; b.dataset.token=t.address.toLowerCase();
     b.dataset.decimals=String(t.decimals);
     b.textContent=t.symbol;
-    b.style.background=tokenBg(t);
+    const bgc=tokenBg(t);
+    b.style.background=bgc;
+    b.style.color=inkOn(bgc);
     b.setAttribute('aria-pressed','false');
     g.appendChild(b);
   }
@@ -1651,8 +1746,10 @@ function render(){
   b.classList.toggle('v-home',S.view==='home');
   b.classList.toggle('v-send',S.view==='send');
   b.classList.toggle('v-take',S.view==='take');
+  b.classList.toggle('v-guard',S.view==='guard');
   el.segSend.setAttribute('aria-selected',String(S.view==='send'));
   el.segTake.setAttribute('aria-selected',String(S.view==='take'));
+  el.segGuard.setAttribute('aria-selected',String(S.view==='guard'));
 
   // Steps stay on screen and dim until reachable, so the layout never jumps.
   el.fAmount.classList.toggle('locked',S.step<1);
@@ -1660,8 +1757,9 @@ function render(){
 
   const isCustom = S.token && !qs(`.crypto[data-token="${S.token}" i]`);
   el.customTokenOpt.setAttribute('aria-pressed',String(!!isCustom));
-  el.customTokenOpt.style.background = isCustom?tokenColor(S.token):'';
-  el.customTokenOpt.style.color = isCustom?'#fff':'';
+  const customBg = isCustom?tokenColor(S.token):'';
+  el.customTokenOpt.style.background = customBg;
+  el.customTokenOpt.style.color = isCustom?inkOn(customBg):'';
   el.customTokenOpt.textContent = isCustom?S.symbol:'+ Custom token';
   el.cryptoGrid.classList.toggle('dim',!!isCustom);
 
@@ -1697,6 +1795,7 @@ function setView(v){
   if(v!=='send') hideAllModals();
   render();
   if(v==='take'){ renderList(); loadTransfers(true); }
+  if(v==='guard'){ renderGuard(); loadGuard(); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1868,6 +1967,258 @@ document.addEventListener('visibilitychange',()=>{
 function hideTip(){ el.tipLayer.replaceChildren(); }
 
 /* ══════════════════════════════════════════════════════════════════
+   Guardian
+   ══════════════════════════════════════════════════════════════════
+   Two halves. The account you protect with a guardian, and the accounts
+   you are the guardian for.
+
+   The second half cannot be read from state: `guardians` maps user to
+   guardian, not the reverse, and the GuardianSet event — which does
+   index both sides — sits behind an eth_getLogs range that free public
+   nodes decline. So wards are a list you keep, and every entry is
+   VERIFIED against `guardians(ward)` before it is shown. An address you
+   no longer guard is labelled as such rather than quietly dropped.
+   ══════════════════════════════════════════════════════════════════ */
+const wardsKey = () => `slow.wards.${S.chain}.${(S.account||'').toLowerCase()}`;
+function loadWards(){
+  try { return JSON.parse(localStorage.getItem(wardsKey())||'[]').filter(isAddr); } catch(e){ return []; }
+}
+function saveWards(list){
+  try { localStorage.setItem(wardsKey(), JSON.stringify([...new Set(list.map(a=>a.toLowerCase()))])); } catch(e){}
+}
+async function loadGuard(){
+  if(!S.account) return;
+  const acct=S.account, chain=S.chain;
+  const stale=()=>S.account!==acct||S.chain!==chain;
+  S.guard.loading=true; renderGuard();
+  try {
+    const [gh,ph] = await mc([
+      {to:SLOW,data:cd(SEL.guardians,['address'],[acct])},
+      {to:SLOW,data:cd(SEL.pendingGuardian,['address'],[acct])},
+    ]);
+    if(stale()) return;
+    const guardian = gh ? '0x'+gh.slice(-40) : ZERO;
+    S.guard.guardian = guardian.toLowerCase()===ZERO ? null : guardian;
+    S.guard.pending = null;
+    if(ph){
+      const [g,at] = decode(['address','uint256'], ph);
+      if(at!==0n) S.guard.pending={guardian:g, at:Number(at)};
+    }
+
+    // Every stored ward is re-checked against the chain.
+    const stored=loadWards();
+    if(stored.length){
+      const res=await mc(stored.map(w=>({to:SLOW,data:cd(SEL.guardians,['address'],[w])})));
+      if(stale()) return;
+      S.guard.wards = stored.map((w,i)=>({
+        addr:w,
+        mine: !!res[i] && ('0x'+res[i].slice(-40)).toLowerCase()===acct.toLowerCase(),
+        txs:null,
+      }));
+    } else S.guard.wards=[];
+  } catch(e){
+    if(!stale()) toast('Could not read guardian state — '+errText(e),5000);
+  } finally { if(!stale()){ S.guard.loading=false; renderGuard(); } }
+}
+async function loadWardTransfers(w){
+  const acct=S.account;
+  try {
+    const [oh]=await mc([{to:SLOW,data:cd(SEL.getOut,['address'],[w.addr])}]);
+    const ids = oh ? decode(['uint256[]'],oh)[0] : [];
+    if(!ids.length){ w.txs=[]; renderGuard(); return; }
+    const pts=await mc(ids.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])})));
+    const live=[];
+    ids.forEach((id,i)=>{
+      if(!pts[i]) return;
+      try {
+        const [ts,from,to,tid,amt]=decode(['uint256','address','address','uint256','uint256'],pts[i]);
+        if(ts!==0n) live.push({id:id.toString(),from,to,tid,amt,ts:Number(ts)});
+      } catch(e){}
+    });
+    const tokens=[...new Set(live.map(t=>decodeId(t.tid).token))];
+    await Promise.all(tokens.map(t=>tokenMeta(t).catch(()=>{})));
+    const appr=await mc(live.map(t=>({to:SLOW,
+      data:cd(SEL.guardianApproved,['address','uint256'],[w.addr,BigInt(t.id)])})));
+    if(S.account!==acct) return;
+    w.txs=live.map((t,i)=>{
+      const {token,delay}=decodeId(t.tid);
+      const m=S.meta[token.toLowerCase()]||{symbol:'???',decimals:18};
+      return {...t, token, symbol:m.symbol, amount:fmtAmt(t.amt,m.decimals),
+        delay, unlockTime:t.ts+delay,
+        approved: !!appr[i] && decode(['uint256'],appr[i])[0]!==0n};
+    });
+    renderGuard();
+  } catch(e){ w.txs=[]; renderGuard(); toast('Could not read that account'); }
+}
+function renderGuard(){
+  const g=S.guard;
+  el.gHint.textContent = g.loading ? 'reading…' : '';
+
+  const cur=el.gCurrent;
+  cur.replaceChildren();
+  cur.classList.toggle('none',!g.guardian);
+  if(g.guardian){
+    const a=document.createElement('span'); a.textContent=g.guardian;
+    const b=document.createElement('span'); b.className='sub';
+    b.textContent='Must co-sign every outflow from your account.';
+    cur.append(a,b);
+  } else {
+    const a=document.createElement('span'); a.textContent='None set';
+    const b=document.createElement('span'); b.className='sub';
+    b.textContent='Outflows need no second signature. Setting the first guardian takes effect immediately.';
+    cur.append(a,b);
+  }
+  el.gRemove.disabled=!g.guardian;
+
+  const pf=el.gPendingField;
+  pf.hidden=!g.pending;
+  if(g.pending){
+    const ready = nw()>=g.pending.at;
+    const p=el.gPending; p.replaceChildren();
+    const a=document.createElement('span');
+    a.textContent = g.pending.guardian.toLowerCase()===ZERO ? 'Remove the guardian' : `→ ${g.pending.guardian}`;
+    const b=document.createElement('span'); b.className='sub';
+    b.textContent = ready ? 'Ready to commit. Anyone may commit it.'
+                          : `Commits in ${fmtTime(g.pending.at-nw())}. Either you or your current guardian can still cancel.`;
+    p.append(a,b);
+    el.gCommit.disabled=!ready;
+    el.gCancel.disabled=ready;
+  }
+
+  const wrap=el.gWards; wrap.replaceChildren();
+  el.gWardHint.textContent = g.wards.length ? `${g.wards.filter(w=>w.mine).length} active` : '';
+  if(!g.wards.length){
+    const e=document.createElement('div'); e.className='empty';
+    e.textContent='None. Add an address that named you as its guardian.';
+    wrap.appendChild(e);
+  }
+  for(const w of g.wards){
+    const box=document.createElement('div'); box.className='ward';
+    const h=document.createElement('button');
+    h.type='button'; h.className='ward-h';
+    const nm=document.createElement('span'); nm.textContent=shortAddr(w.addr);
+    const cnt=document.createElement('span'); cnt.className='cnt';
+    cnt.textContent = !w.mine ? 'not guarded by you'
+      : w.txs===null ? 'tap to load'
+      : `${w.txs.length} pending`;
+    h.append(nm,cnt);
+    h.onclick=()=>{
+      if(!w.mine){ if(confirmDrop(w.addr)) return; return; }
+      g.open = g.open===w.addr ? null : w.addr;
+      renderGuard();
+      if(g.open===w.addr && w.txs===null) loadWardTransfers(w);
+    };
+    box.appendChild(h);
+    if(g.open===w.addr && w.mine && w.txs){
+      const b=document.createElement('div'); b.className='ward-b';
+      if(!w.txs.length){
+        const e=document.createElement('div'); e.className='empty'; e.style.padding='22px';
+        e.textContent='No pending transfers.'; b.appendChild(e);
+      }
+      for(const t of w.txs){
+        const r=document.createElement('div'); r.className='wtx';
+        const i=document.createElement('div'); i.className='wtx-i';
+        i.textContent=`${t.amount} ${t.symbol==='???'?shortAddr(t.token):t.symbol}`;
+        const sub=document.createElement('span');
+        sub.textContent=`→ ${shortAddr(t.to)} · ${nw()>=t.unlockTime?'unlocked':fmtTime(t.unlockTime-nw())+' left'}`;
+        i.appendChild(sub);
+        const btn=document.createElement('button');
+        btn.type='button';
+        btn.className=t.approved?'on':'';
+        btn.textContent=t.approved?'Approved':'Approve';
+        btn.onclick=()=>guardAct(w,t,!t.approved);
+        r.append(i,btn); b.appendChild(r);
+      }
+      box.appendChild(b);
+    }
+    wrap.appendChild(box);
+  }
+}
+function confirmDrop(addr){
+  saveWards(loadWards().filter(a=>a!==addr.toLowerCase()));
+  S.guard.wards=S.guard.wards.filter(w=>w.addr!==addr.toLowerCase());
+  toast('Removed — you are not that account’s guardian');
+  renderGuard();
+  return true;
+}
+async function guardAct(w,t,approve){
+  try {
+    await slowTx(cd(approve?SEL.approveTransfer:SEL.revokeApproval,['address','uint256'],[w.addr,BigInt(t.id)]),
+      approve?'Approving…':'Revoking…','Confirm in your wallet');
+    t.approved=approve;
+    toast(approve?'Approved.':'Approval revoked.');
+    renderGuard();
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+function openGuardModal(mode){
+  el.guardModal.dataset.mode=mode;
+  el.guardInput.value='';
+  el.guardInput.hidden = mode==='remove';
+  setNote(el.guardNote,'');
+  el.guardTitle.textContent = mode==='ward' ? 'Account you guard'
+    : mode==='remove' ? 'Remove guardian' : (S.guard.guardian?'Change guardian':'Set guardian');
+  el.guardApply.textContent = mode==='remove' ? 'Remove' : 'Apply';
+  const warn=el.guardWarn;
+  if(mode==='ward') warn.textContent='The address must already have named you as its guardian on chain.';
+  else if(mode==='remove') warn.textContent=`Removal is staged for ${fmtTime(GUARD_DELAY)} and then has to be committed. Until it commits, your guardian can cancel it.`;
+  else warn.textContent = S.guard.guardian
+    ? `Changing an active guardian is staged for ${fmtTime(GUARD_DELAY)}. Either of you can cancel it in that window.`
+    : 'The first guardian takes effect immediately. It cannot be your own address — a stolen key could approve its own withdrawals.';
+  showModal(el.guardModal);
+}
+async function applyGuardModal(){
+  const mode=el.guardModal.dataset.mode;
+  if(mode==='remove'){ hideModal(el.guardModal); return setGuardianTx(ZERO); }
+  const raw=el.guardInput.value.trim();
+  let addr=raw;
+  if(!isAddr(raw)){
+    if(!raw.includes('.')){ setNote(el.guardNote,'Enter an address or a name','err'); return; }
+    setNote(el.guardNote,'Resolving…');
+    addr=await resolveName(raw);
+    if(!addr||!isAddr(addr)){ setNote(el.guardNote,`No address set for ${raw}`,'err'); return; }
+  }
+  if(mode==='ward'){
+    const [r]=await mc([{to:SLOW,data:cd(SEL.guardians,['address'],[addr])}]);
+    const who = r ? '0x'+r.slice(-40) : ZERO;
+    if(who.toLowerCase()!==(S.account||'').toLowerCase()){
+      setNote(el.guardNote,'That account has not named you as its guardian','err'); return;
+    }
+    saveWards([...loadWards(),addr]);
+    hideModal(el.guardModal);
+    loadGuard();
+    return;
+  }
+  if(addr.toLowerCase()===(S.account||'').toLowerCase()){
+    setNote(el.guardNote,'A guardian cannot be your own address','err'); return;
+  }
+  hideModal(el.guardModal);
+  setGuardianTx(addr);
+}
+async function setGuardianTx(addr){
+  const staged = !!S.guard.guardian;
+  try {
+    await slowTx(cd(SEL.setGuardian,['address'],[addr]),
+      staged?'Staging the change…':'Setting your guardian…','Confirm in your wallet');
+    toast(staged
+      ? `Staged. Commit it after ${fmtTime(GUARD_DELAY)}.`
+      : (addr.toLowerCase()===ZERO?'Guardian removed.':'Guardian set.'), 6000);
+    loadGuard();
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+async function commitGuardianTx(){
+  try {
+    await slowTx(cd(SEL.commitGuardian,['address'],[S.account]),'Committing…','Confirm in your wallet');
+    toast('Committed.'); loadGuard();
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+async function cancelGuardianTx(){
+  try {
+    await slowTx(cd(SEL.cancelGuardianChange,['address'],[S.account]),'Cancelling…','Confirm in your wallet');
+    toast('Change cancelled.'); loadGuard();
+  } catch(e){ fail(e); } finally { hideLoad(); }
+}
+
+/* ══════════════════════════════════════════════════════════════════
    Recipient
    ══════════════════════════════════════════════════════════════════ */
 function setNote(node,text,cls){ node.textContent=text; node.className='note'+(cls?' '+cls:''); }
@@ -2036,6 +2387,15 @@ el.sendBox.onclick=()=>setView('send');
 el.takeBox.onclick=async()=>{ setView('take'); if(!S.account) await connect(true); };
 el.segSend.onclick=()=>setView('send');
 el.segTake.onclick=async()=>{ setView('take'); if(!S.account) await connect(true); };
+el.segGuard.onclick=async()=>{ setView('guard'); if(!S.account) await connect(true); };
+el.gSet.onclick=()=>openGuardModal('set');
+el.gRemove.onclick=()=>openGuardModal('remove');
+el.gAddWard.onclick=()=>openGuardModal('ward');
+el.gCommit.onclick=commitGuardianTx;
+el.gCancel.onclick=cancelGuardianTx;
+el.guardApply.onclick=applyGuardModal;
+el.guardCancel.onclick=()=>hideModal(el.guardModal);
+el.guardInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.guardApply.click(); });
 
 el.cryptoGrid.addEventListener('click',e=>{
   const b=e.target.closest('.crypto'); if(!b) return;

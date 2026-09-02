@@ -65,7 +65,7 @@ const EXPORTS = [
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
   'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'tokSym',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
-  'presetsFor', 'S', 'depositCalldata', 'planLabel',
+  'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -108,6 +108,16 @@ const sigs = {
   permit: 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)',
   nonces: 'nonces(address)', domainSeparator: 'DOMAIN_SEPARATOR()', permitTypehash: 'PERMIT_TYPEHASH()',
   aggregate3: 'aggregate3((address,bool,bytes)[])',
+  guardians: 'guardians(address)',
+  setGuardian: 'setGuardian(address)',
+  commitGuardian: 'commitGuardian(address)',
+  cancelGuardianChange: 'cancelGuardianChange(address)',
+  pendingGuardian: 'pendingGuardian(address)',
+  approveTransfer: 'approveTransfer(address,uint256)',
+  revokeApproval: 'revokeApproval(address,uint256)',
+  guardianApproved: 'guardianApproved(address,uint256)',
+  isGuardianApprovalNeeded: 'isGuardianApprovalNeeded(address,address,uint256,uint256)',
+  isWithdrawalApprovalNeeded: 'isWithdrawalApprovalNeeded(address,address,uint256,uint256)',
   resolver: 'resolver(bytes32)', addr: 'addr(bytes32)',
 };
 for (const [key, sig] of Object.entries(sigs)) {
@@ -330,6 +340,33 @@ for (const kind of ['direct', 'batch', 'permit', 'approve']) {
 }
 ok(/reset first/.test(C.planLabel({kind: 'approve', allowance: 1n})),
   'the approve rung warns when a reset-to-zero is needed');
+
+// ─── Guardian ──────────────────────────────────────────────────────────────
+eq(C.GUARD_DELAY, 86400, 'the guardian rotation veto window is 1 day');
+const ward = '0x000000000000000000000000000000000000dEaD';
+const gset = C.cd(C.SEL.setGuardian, ['address'], [ward]);
+eq(gset.slice(0, 10), C.SEL.setGuardian, 'setGuardian calldata carries its selector');
+eq('0x' + gset.slice(10 + 24), ward.toLowerCase(), 'setGuardian carries the address');
+const appr = C.cd(C.SEL.approveTransfer, ['address', 'uint256'], [ward, 7n]);
+eq(appr.length, 10 + 128, 'approveTransfer takes two words');
+eq(BigInt('0x' + appr.slice(10 + 64)), 7n, 'approveTransfer carries the transfer id');
+// Removal is a rotation to the zero address, not a separate entrypoint.
+eq(BigInt('0x' + C.cd(C.SEL.setGuardian, ['address'], [C.ZERO]).slice(10)), 0n,
+  'removing a guardian is setGuardian(0)');
+
+// ─── Tile contrast ─────────────────────────────────────────────────────────
+// Robinhood's chartreuse is far too light for white text; the ink is derived
+// rather than hand-maintained, so a custom token gets the same treatment.
+ok(C.luminance('#ccff00') > 0.42, 'USDG chartreuse reads as a light ground');
+eq(C.inkOn('#ccff00'), '#110e08', 'chartreuse gets dark ink');
+eq(C.inkOn('#2775ca'), '#ffffff', 'USDC blue gets white ink');
+eq(C.inkOn('#ff69b4'), '#ffffff', 'ETH pink gets white ink');
+eq(C.inkOn('#4d7c0f'), '#ffffff', 'NVDA green gets white ink');
+eq(C.inkOn('hsl(210,55%,45%)'), '#ffffff', 'a hashed hsl() colour falls back to white ink');
+ok(C.luminance('#000000') < C.luminance('#ffffff'), 'luminance is ordered');
+// NVDA and USDG must not read as one colour side by side.
+ok(Math.abs(C.luminance('#4d7c0f') - C.luminance('#ccff00')) > 0.3,
+  'NVDA and USDG are separated by value, not just hue');
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 eq(C.SLOW.toLowerCase(), '0x000000000000888741b254d37e1b27128afeaabc', 'SLOW address');
