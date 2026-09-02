@@ -356,6 +356,108 @@ body.light .modal{background:rgba(0,0,0,.4)}
 }
 .toast.on{opacity:1}
 #tipLayer{position:fixed;inset:0;pointer-events:none;z-index:30}
+
+/* ══════════════════════════════════════════════════════════════════
+   Touch and small screens
+   ══════════════════════════════════════════════════════════════════
+   Kept to the end so these override by order rather than by weight, and
+   scoped by CAPABILITY (hover, pointer) rather than by width wherever the
+   thing being fixed is about the input device rather than the viewport — a
+   touch laptop is wide and still cannot hover, and a desktop window dragged
+   narrow can. Width-scoped rules are the ones about layout.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* iOS Safari zooms the whole viewport when a focused input's text is under
+   16px, and never zooms back. Every input here was 14px, so tapping the
+   recipient field left the page magnified with the layout pushed sideways.
+   16px on touch is not a design choice, it is the threshold. */
+@media (pointer:coarse){
+  .input,.tgrid input{font-size:16px}
+  .tgrid input{padding:12px 2px}
+}
+
+/* A tap fires :hover and it STAYS until you touch something else, so a token
+   you selected sits looking hovered next to the one you actually chose. There
+   is no such state on a touchscreen; remove it rather than approximate it.
+   :active below gives the press its own feedback instead. */
+@media (hover:none){
+  .box:hover,#sendBox:hover,.chip:hover,.link:hover,.opt:hover:not(:disabled),
+  .pick:hover,.seg button:hover,.tab:hover,.tx-act:hover,.tx-open:hover,
+  .ward-h:hover,.wtx button:hover,.btn:hover:not(:disabled),.btn.alt:hover{
+    background:inherit;color:inherit;border-color:inherit;opacity:inherit;
+  }
+  .box:hover{background:var(--bg);color:var(--fg)}
+  #sendBox:hover{background:var(--fg);color:var(--bg)}
+  .btn:hover:not(:disabled){background:var(--fg);color:var(--bg);border-color:var(--fg);opacity:1}
+  .btn.alt:hover{background:transparent;color:var(--fg);border-color:var(--bd)}
+  .tx-act:hover{background:transparent;color:var(--fg)}
+  .wordmark:hover{opacity:1}
+  .box:active{background:var(--fg);color:var(--bg)}
+  #sendBox:active{background:var(--bg);color:var(--fg)}
+  .btn:active:not(:disabled){opacity:.75}
+  .chip:active,.opt:active:not(:disabled),.pick:active,.tab:active,
+  .seg button:active,.tx-open:active,.ward-h:active,.link:active{background:var(--bg2)}
+  .tx-act:active{background:var(--fg);color:var(--bg)}
+}
+
+@media (pointer:coarse){
+  /* iOS paints a grey box over anything tappable. focus-visible still draws
+     the real ring, so nothing is lost for keyboard users. */
+  button,a,input,label,.tx-open,.ward-h{-webkit-tap-highlight-color:transparent}
+  /* Removes the 300ms double-tap-to-zoom wait without disabling pinch zoom,
+     which maximum-scale would and which is an accessibility regression. */
+  button,a,label,summary{touch-action:manipulation}
+
+  /* 44px is the smallest reliably hittable target. These were 29-36px, which
+     is fine under a mouse and a coin-flip under a thumb. */
+  .chip{height:44px}
+  #themeBtn,#helpBtn{width:44px}
+  .tab,.seg button,.link{height:44px}
+  .opt{height:46px}
+  .wtx button{padding:12px 14px;min-height:44px}
+  .txbar button{padding:0 8px;font-size:20px;min-height:44px}
+  .ward-h{min-height:44px}
+  .wordmark{min-height:44px}
+  .check input{width:20px;height:20px}
+  .btn{height:48px}
+}
+
+@media (max-width:520px){
+  /* The bar is the only row that cannot wrap, and on a 360px screen the
+     wordmark plus four chips do not fit. The chain name is the one label
+     already carried by its own icon, so it is what goes. */
+  .bar{gap:6px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .bar-r{gap:6px}
+  .chip{padding:0 10px}
+  .chip .lbl{max-width:26vw}
+  main{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+
+  /* A bottom sheet with a text field in it disappears behind the keyboard
+     unless it can scroll inside itself. dvh tracks the shrunken viewport
+     where vh does not. */
+  .card{max-height:88dvh;overflow-y:auto;overscroll-behavior:contain}
+
+  /* dt and dd fight over one line, and an address wins by wrapping into four.
+     Stacked, each gets the full width and stays left-aligned and readable. */
+  .kv{flex-direction:column;gap:3px}
+  .kv dd{text-align:left}
+}
+
+@media (max-width:380px){
+  #chainName{display:none}
+  .chip .lbl{max-width:34vw}
+  .wordmark{letter-spacing:.18em;font-size:14px;gap:8px}
+  .wordmark .mk{width:22px;height:22px}
+}
+
+/* The strip and the toast both sit at the bottom centre, so a toast raised
+   while a transaction is in flight lands on top of it. */
+body.txlive .toast{bottom:calc(max(18px,env(safe-area-inset-bottom)) + 62px)}
+
+/* An app shell has nothing to pull-to-refresh into, and the rubber-band
+   bounce at the end of a list reads as the page itself coming loose. */
+body{overscroll-behavior:none}
+.list,.sendPane,.guardPane,.modal{overscroll-behavior:contain}
 </style>
 </head>
 <body>
@@ -1224,24 +1326,77 @@ const walletProv = () => PROV || window.ethereum || null;
 const SIGN = /^(eth_requestAccounts|eth_sendTransaction|eth_sign|personal_sign|eth_signTypedData|eth_signTypedData_v4|wallet_)/;
 
 const rpcIdx = {};
+
+/* WHICH FAILURES ARE WORTH A SECOND OPINION.
+
+   A revert, a bad parameter, or a method the chain does not implement is the
+   same answer at every endpoint. Walking the whole pool for one costs five
+   round trips and, when the endpoints are slow rather than wrong, up to a
+   minute of timeouts — to arrive at the answer the first node already gave.
+   Rate limits, timeouts, and node-side faults are the ones another node may
+   genuinely not have.
+
+   The codes are the ones that mean "this node, right now": -32005 limit
+   exceeded, -32603 internal error, -32004/-32002/-32001 unsupported or
+   unavailable, and HTTP 429. A transport failure carries no code at all and is
+   always worth retrying; anything else is the chain's answer, not the node's. */
+const RETRY_CODES = new Set([-32005, -32603, -32004, -32002, -32001, 429]);
+const rpcErr = (msg, retry, code) =>
+  Object.assign(new Error(msg), {retry: !!retry, code});
+
+// A reader may point the page at their own node. localStorage only, never a
+// query parameter: a read endpoint chosen by whoever wrote the link can lie
+// about balances and pending transfers, and a link is the one place a reader
+// cannot see what they are agreeing to.
+function rpcPool(c){
+  try {
+    const own = localStorage.getItem(`slow.rpc.${c.id}`);
+    if(own && /^https:\/\/\S+$/.test(own)) return [own, ...c.rpcs];
+  } catch(e){}
+  return c.rpcs;
+}
+
+async function httpRead(url, method, params){
+  const ac = new AbortController();
+  const kill = setTimeout(()=>ac.abort(), 12000);
+  try {
+    let r;
+    try {
+      r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:ac.signal});
+    } catch(e){ throw rpcErr('Could not reach the read node', true); }
+    if(!r.ok) throw rpcErr(`A read node answered ${r.status}`, r.status===429||r.status>=500, r.status);
+    let j;
+    try { j = await r.json(); } catch(e){ throw rpcErr('A read node sent an unreadable answer', true); }
+    if(j && j.error){
+      const code = j.error.code;
+      throw rpcErr(j.error.message||'The read node refused', code==null||RETRY_CODES.has(code), code);
+    }
+    return j ? j.result : null;
+  } finally { clearTimeout(kill); }
+}
+
 async function nodeRead(method, params, chainId){
-  const c = cfg(chainId), pool = c.rpcs;
+  const c = cfg(chainId), pool = rpcPool(c);
   const start = rpcIdx[c.id] || 0;
   let last;
-  for(let i=0;i<pool.length;i++){
-    const at = (start+i)%pool.length;
-    const ac = new AbortController();
-    const kill = setTimeout(()=>ac.abort(), 12000);
-    try {
-      const r = await fetch(pool[at],{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:ac.signal});
-      const j = await r.json();
-      if(j.error) throw new Error(j.error.message||'rpc error');
-      rpcIdx[c.id]=at;
-      if(c.id===S.chain){ S.readOk=true; paintNet(); }
-      return j.result;
-    } catch(e){ last=e; }
-    finally { clearTimeout(kill); }
+  // Two passes. The first walks the pool; the second exists because a burst of
+  // rate limits can hit every endpoint at once and clear a moment later, which
+  // is exactly the failure a single pass turns into a blank screen.
+  for(let pass=0; pass<2; pass++){
+    for(let i=0;i<pool.length;i++){
+      const at = (start+i)%pool.length;
+      try {
+        const result = await httpRead(pool[at], method, params);
+        rpcIdx[c.id]=at;
+        if(c.id===S.chain){ S.readOk=true; paintNet(); }
+        return result;
+      } catch(e){
+        last=e;
+        if(!e.retry) throw e;          // the chain's answer, not this node's
+      }
+    }
+    if(pass===0) await sleep(400);
   }
   if(c.id===S.chain){ S.readOk=false; paintNet(); }
   throw last||new Error(`No RPC reachable for ${c.name}`);
@@ -3450,8 +3605,11 @@ function validateAmount(){
    can act on. This strip stays out of the way, names the step, and
    links the hash the moment there is one.
    ══════════════════════════════════════════════════════════════════ */
+// The toast and the strip share the bottom centre; body.txlive lifts the toast
+// clear of the strip rather than letting one land on the other.
+function txVisible(on){ el.txbar.hidden=!on; document.body.classList.toggle('txlive', on); }
 function txShow(msg, step, hash){
-  el.txbar.hidden=false;
+  txVisible(true);
   el.txSpin.hidden=false;
   el.txMsg.textContent=msg;
   el.txStep.textContent=step||'';
@@ -3463,7 +3621,7 @@ function txShow(msg, step, hash){
   } else el.txLink.hidden=true;
 }
 function txDone(msg, hash){
-  el.txbar.hidden=false;
+  txVisible(true);
   el.txSpin.hidden=true;
   el.txMsg.textContent=msg;
   el.txStep.textContent='';
@@ -3474,9 +3632,9 @@ function txDone(msg, hash){
     el.txLink.textContent=hash.slice(0,10)+'…';
   }
   clearTimeout(txDone.t);
-  txDone.t=setTimeout(()=>{ el.txbar.hidden=true; }, 12000);
+  txDone.t=setTimeout(()=>txVisible(false), 12000);
 }
-const txHide = () => { el.txbar.hidden=true; clearTimeout(txDone.t); };
+const txHide = () => { txVisible(false); clearTimeout(txDone.t); };
 
 async function handleConfirm(){
   if(!ready()) return;

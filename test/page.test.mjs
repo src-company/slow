@@ -72,6 +72,7 @@ const EXPORTS = [
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
   'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
+  'RETRY_CODES', 'rpcErr', 'rpcPool',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -471,6 +472,43 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   C.S.dest = 8453;
   eq(C.depositRecipe().chainId, 8453, 'a destination retargets the recipe');
   Object.assign(C.S, snap);
+}
+
+// ─── RPC failover ──────────────────────────────────────────────────────────
+
+// Only ask a different node about failures a different node might not have.
+{
+  const transient = [null, undefined, -32005, -32603, -32004, -32002, -32001, 429];
+  for (const code of transient) {
+    const retry = code == null || C.RETRY_CODES.has(code);
+    ok(retry, `code ${code} is worth a second opinion`);
+  }
+  // A revert is the chain's answer. Walking five endpoints for it costs five
+  // round trips to learn the same thing the first one said.
+  for (const code of [3, -32000, -32602, -32601, 400]) {
+    ok(!C.RETRY_CODES.has(code), `code ${code} is the chain's answer, not the node's`);
+  }
+  const e = C.rpcErr('execution reverted', false, 3);
+  eq(e.retry, false, 'a non-retryable error says so');
+  eq(e.code, 3, 'and carries its code');
+  ok(C.rpcErr('timeout', true).retry, 'a transport failure is retryable');
+}
+
+// A reader's own node goes first; anything that is not plainly an https URL is
+// ignored rather than trusted.
+{
+  const c = C.CHAINS[1];
+  const snap = globalThis.localStorage.getItem('slow.rpc.1');
+  eq(C.rpcPool(c), c.rpcs, 'with nothing stored the pool is the shipped one');
+  globalThis.localStorage.setItem('slow.rpc.1', 'https://my.node.example');
+  eq(C.rpcPool(c)[0], 'https://my.node.example', 'a stored node is tried first');
+  eq(C.rpcPool(c).length, c.rpcs.length + 1, 'and the shipped pool stays behind it');
+  for (const bad of ['http://insecure.example', 'javascript:alert(1)', 'not a url', '']) {
+    globalThis.localStorage.setItem('slow.rpc.1', bad);
+    eq(C.rpcPool(c), c.rpcs, `${bad || '(empty)'} is ignored`);
+  }
+  if (snap == null) globalThis.localStorage.removeItem('slow.rpc.1');
+  else globalThis.localStorage.setItem('slow.rpc.1', snap);
 }
 
 // ─── Unwrap and call ───────────────────────────────────────────────────────
