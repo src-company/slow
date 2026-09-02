@@ -292,6 +292,7 @@ forge test
 Dapp tests run on vanilla Node — no NPM:
 
 - `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, the chain registry, transfer status, and every selector.
+- `node test/twochain.test.mjs` — the state that must not survive a chain switch. Dirties every field, switches chain, and asserts the per-chain ones cleared while the chain-independent ones (the name cache, the connected account) survive. Offline.
 - `node test/names.live.mjs` — name resolution against mainnet, and what it costs: forward resolution per TLD, reverse across all three registries, and a count of the JSON-RPC round trips each takes. Also asserts that name reads stay on mainnet while another chain is active.
 - `node test/chains.live.mjs` — the chain registry against real nodes: each chain answers with the id it claims, Multicall3 is at the canonical address, every listed token reports the symbol and decimals the registry pins, and `.eth` resolves only on mainnet. Needs network; skips a chain cleanly if its RPCs are unreachable.
 - `node test/slow_html.test.mjs` — the same for the frozen v1 artifact `SLOW.html`.

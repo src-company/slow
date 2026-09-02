@@ -65,7 +65,7 @@ const EXPORTS = [
   'keccak256', 'namehash', 'encode', 'decode', 'cd', 'word', 'strip',
   'encAggregate3', 'decAggregate3', 'chunk',
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
-  'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'tokSym',
+  'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
@@ -250,8 +250,6 @@ eq(C.decodeId(id).delay, 86400, 'decodeId delay');
 eq(C.isAddr('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'), true, 'isAddr accepts');
 eq(C.isAddr('0xnope'), false, 'isAddr rejects');
 eq(C.shortAddr('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'), '0xa0b8…eb48', 'shortAddr');
-eq(C.tokSym('ETH'), 'ETH', 'tokSym known');
-eq(C.tokSym('WBTC'), 'other', 'tokSym unknown');
 
 // ─── EIP-712 domain separator ──────────────────────────────────────────────
 // USDC mainnet: name "USD Coin", version "2".

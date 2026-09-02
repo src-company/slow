@@ -447,6 +447,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
     </div>
 
     <div class="guardPane">
+      <p class="warn" id="gNotDeployed" hidden></p>
       <div class="field">
         <span class="flabel">Your guardian <em id="gHint"></em></span>
         <div class="gcard" id="gCurrent">—</div>
@@ -944,7 +945,6 @@ function fmtWhen(ts){
   try { return d.toLocaleString(undefined,opts); } catch(e){ return d.toISOString().slice(0,16).replace('T',' '); }
 }
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-const tokSym = sym => sym in TOKEN_COLORS ? sym : 'other';
 const tokenColor = a => `hsl(${parseInt(a.slice(2,8),16)%360},55%,45%)`;
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1006,15 +1006,6 @@ async function rpc(method, params, chainId){
   }
   return nodeRead(method,params,target);
 }
-async function rpcRetry(method,params,tries=3){
-  let last;
-  for(let i=0;i<tries;i++){
-    try { return await rpc(method,params); }
-    catch(e){ last=e; await sleep(250*(i+1)); }
-  }
-  throw last;
-}
-const ethCall = (to,data) => rpc('eth_call',[{to,data},'latest']);
 // ENS and WNS exist only on mainnet. A .eth name means the same thing wherever
 // you are spending, so these reads are pinned to chain 1 no matter which chain
 // is active — including when the page is served from Robinhood Chain and there
@@ -1207,7 +1198,6 @@ const S = {
 };
 const el={}; document.querySelectorAll('[id]').forEach(e=>el[e.id]=e);
 const qs=s=>document.querySelector(s), qsa=s=>[...document.querySelectorAll(s)];
-const tg=(e,c,b)=>e.classList.toggle(c,b);
 
 /* ══════════════════════════════════════════════════════════════════
    Chrome: toasts, loading, modals, focus management
@@ -1381,10 +1371,18 @@ function switchChain(id){
   S.slowPermit=null; S.batchCap=null;
   S.out=[]; S.inb=[]; S.hasGuardian=false; S.balance=null;
   S.token=S.symbol=null; S.amount=null; S.step=0;
+  // Per-chain too: guardians is a mapping on the contract, and a ward list is
+  // keyed by chain. A detail sheet holds a transfer that only exists on the
+  // chain it was read from.
+  S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
+  S.detail=null;
+  S.lastHash=null;
+  hideAllModals();
   buildTokenGrid();
-  paintChain(); paintNet(); paintPresets();
+  paintChain(); paintNet(); paintPresets(); renderGuard();
   checkDeployed();
   if(S.view==='take') loadTransfers(true);
+  if(S.view==='guard') loadGuard();
 }
 // SLOW is at the same address everywhere it is deployed, but "deployed" is not
 // a given: telling someone their transfer list is empty when the contract is
@@ -2091,6 +2089,11 @@ function renderList(){
     w.appendChild(p);
     c.appendChild(w); return;
   }
+  if(S.slowDeployed[S.chain]===false){
+    c.appendChild(emptyState(`SLOW is not deployed on ${cfg().name} yet — there is nothing to read here.`,
+      'Switch network', ()=>el.chainBtn.click()));
+    return;
+  }
   if(!list.length){
     c.appendChild(S.tab==='outbound'
       ? emptyState('Nothing sent yet.','Send one',()=>setView('send'))
@@ -2230,7 +2233,6 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden){ stopTimer(); return; }
   if(S.view==='take'){ startTimer(); tick(); loadTransfers(false); }
 });
-function hideTip(){ el.tipLayer.replaceChildren(); }
 
 /* ══════════════════════════════════════════════════════════════════
    Guardian
@@ -2433,6 +2435,11 @@ function openApprove(w){
 }
 function renderGuard(){
   const g=S.guard;
+  // Same lie in the other pane: "None set" reads as a fact about your account
+  // when it is really a fact about there being no contract to ask.
+  el.gNotDeployed.hidden = S.slowDeployed[S.chain]!==false;
+  if(!el.gNotDeployed.hidden) el.gNotDeployed.textContent =
+    `SLOW is not deployed on ${cfg().name} yet. Guardian settings there do not exist.`;
   el.gHint.textContent = g.scanning ? 'scanning…' : g.loading ? 'reading…' : '';
   el.gScan.disabled = !!(g.loading||g.scanning);
 
