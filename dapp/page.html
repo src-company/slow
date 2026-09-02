@@ -54,7 +54,7 @@ button,input{font:inherit;color:inherit;border-radius:0}
   transition:border-color var(--t),background var(--t);
 }
 .chip:hover{border-color:var(--fg);background:var(--bg2)}
-.chip svg{width:15px;height:15px;flex:0 0 auto}
+.chip svg{width:17px;height:17px;flex:0 0 auto;display:block}
 .chip .lbl{overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 #themeBtn,#helpBtn{width:34px;padding:0;justify-content:center;font-size:14px}
 .wordmark{
@@ -315,7 +315,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
 }
 .pick:hover{border-color:var(--fg);background:var(--bg2)}
 .pick[aria-current=true]{border-color:var(--fg);background:var(--bg2)}
-.pick svg{width:18px;height:18px;flex:0 0 auto}
+.pick svg{width:22px;height:22px;flex:0 0 auto;display:block}
 .pick img{width:18px;height:18px;flex:0 0 auto}
 .pick small{display:block;color:var(--dim);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
 @media (max-width:520px){
@@ -511,6 +511,21 @@ body.light .modal{background:rgba(0,0,0,.4)}
   <button class="btn alt" id="guardCancel">Cancel</button>
 </div></div>
 
+<div class="modal" id="gaModal" role="dialog" aria-modal="true" aria-labelledby="gaTitle"><div class="card">
+  <h3 id="gaTitle">Approve one outflow</h3>
+  <p class="note">Pre-authorises a single operation for <b id="gaWard"></b> — <span id="gaNonce"></span>. It is consumed when they run it, and voided if their guardian changes.</p>
+  <select class="input" id="gaKind" aria-label="Operation">
+    <option value="withdraw">Withdraw the underlying</option>
+    <option value="transfer">Transfer the position</option>
+  </select>
+  <input type="text" class="input" id="gaTo" placeholder="Recipient address" autocomplete="off" spellcheck="false" aria-label="Recipient">
+  <input type="text" class="input" id="gaId" placeholder="Position id" inputmode="numeric" autocomplete="off" aria-label="Position id">
+  <input type="text" class="input" id="gaAmt" placeholder="Amount, in base units" inputmode="numeric" autocomplete="off" aria-label="Amount">
+  <p class="note" id="gaNote" aria-live="polite"></p>
+  <button class="btn" id="gaApply">Approve</button>
+  <button class="btn alt" id="gaCancel">Cancel</button>
+</div></div>
+
 <div class="modal" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="card">
   <h3 id="detailTitle">Transfer</h3>
   <dl class="rows" id="detailRows"></dl>
@@ -631,6 +646,8 @@ const SEL = {
   setGuardian:'0x8a0dac4a', commitGuardian:'0xa952a15f', cancelGuardianChange:'0xdb6c927d',
   pendingGuardian:'0x3b0a6875', approveTransfer:'0xfa02c4b7', revokeApproval:'0x47d07c4c',
   guardianApproved:'0x8d4a1b58', isGuardianApprovalNeeded:'0xaade934f',
+  predictWithdrawalId:'0x2d0eae84', predictTransferId:'0xd8a29acf',
+  unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
   approve:'0x095ea7b3', allowance:'0xdd62ed3e', decimals:'0x313ce567',
@@ -1738,16 +1755,24 @@ async function doClawback(t){
    Chain marks
    ══════════════════════════════════════════════════════════════════
    Inline, because the document has to work forever from bytecode and
-   cannot fetch an asset. Both are the simple-icons glyphs (CC0-1.0),
-   which is what makes them sit together: one 24 grid, one optical
-   weight, drawn to read at 15px. The hand-drawn feather they replace
-   did not.
+   cannot fetch an asset.
    ══════════════════════════════════════════════════════════════════ */
 const ICONS = {
-  1:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
-   +'<path d="M11.944 17.97 4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0 4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>',
-  4663:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
-   +'<path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852"/></svg>',
+  // Brand tiles, not bare glyphs. Robinhood's mark is a dark feather on
+  // chartreuse — the feather alone in #CCFF00 is close to invisible on a white
+  // ground, and in currentColor it carries no brand at all. A self-contained
+  // tile is legible on either theme and is what the marks actually look like.
+  // Glyph paths are the simple-icons ones (CC0-1.0), centred in a 32 box.
+  1:'<svg viewBox="0 0 32 32" aria-hidden="true">'
+   +'<rect width="32" height="32" fill="#627EEA"/>'
+   +'<g transform="translate(4 4)" fill="#fff">'
+   +'<path d="M11.944 17.97 4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0 4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/>'
+   +'</g></svg>',
+  4663:'<svg viewBox="0 0 32 32" aria-hidden="true">'
+   +'<rect width="32" height="32" fill="#CCFF00"/>'
+   +'<g transform="translate(4 4)" fill="#110E08">'
+   +'<path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852"/>'
+   +'</g></svg>',
 };
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2095,13 +2120,30 @@ async function loadGuard(){
     if(!stale()) toast('Could not read guardian state — '+errText(e),5000);
   } finally { if(!stale()){ S.guard.loading=false; renderGuard(); } }
 }
+/*
+   A guardian does not approve a transfer that already exists.
+
+   `guardianApproved` is keyed on an id derived from the operation ITSELF —
+   (from, to, id, amount, nonces[from], lastGuardianChange[from], OP) — and both
+   `withdrawFrom` and `safeTransferFrom` recompute that id at execution and
+   consume the flag. So the guardian pre-authorises a SPECIFIC prospective
+   operation, not a row in a list. Approving the id of an existing
+   pendingTransfer sets a flag nothing will ever read.
+
+   `nonces[from]` increments on every guarded operation, so an approval is good
+   for exactly one, in order. `lastGuardianChange[from]` is in there too: setting
+   a new guardian invalidates every approval the old one had granted.
+*/
 async function loadWardTransfers(w){
   const acct=S.account;
   try {
-    const [oh]=await mc([{to:SLOW,data:cd(SEL.getOut,['address'],[w.addr])}]);
+    const [oh, nh] = await mc([
+      {to:SLOW,data:cd(SEL.getOut,['address'],[w.addr])},
+      {to:SLOW,data:cd(SEL.nonces,['address'],[w.addr])},
+    ]);
+    w.nonce = nh ? decode(['uint256'],nh)[0] : 0n;
     const ids = oh ? decode(['uint256[]'],oh)[0] : [];
-    if(!ids.length){ w.txs=[]; renderGuard(); return; }
-    const pts=await mc(ids.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])})));
+    const pts = ids.length ? await mc(ids.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])}))) : [];
     const live=[];
     ids.forEach((id,i)=>{
       if(!pts[i]) return;
@@ -2112,18 +2154,46 @@ async function loadWardTransfers(w){
     });
     const tokens=[...new Set(live.map(t=>decodeId(t.tid).token))];
     await Promise.all(tokens.map(t=>tokenMeta(t).catch(()=>{})));
-    const appr=await mc(live.map(t=>({to:SLOW,
-      data:cd(SEL.guardianApproved,['address','uint256'],[w.addr,BigInt(t.id)])})));
     if(S.account!==acct) return;
-    w.txs=live.map((t,i)=>{
+    w.txs=live.map(t=>{
       const {token,delay}=decodeId(t.tid);
       const m=S.meta[token.toLowerCase()]||{symbol:'???',decimals:18};
-      return {...t, token, symbol:m.symbol, amount:fmtAmt(t.amt,m.decimals),
-        delay, unlockTime:t.ts+delay,
-        approved: !!appr[i] && decode(['uint256'],appr[i])[0]!==0n};
+      return {...t, token, symbol:m.symbol, decimals:m.decimals,
+        amount:fmtAmt(t.amt,m.decimals), delay, unlockTime:t.ts+delay};
     });
     renderGuard();
   } catch(e){ w.txs=[]; renderGuard(); toast('Could not read that account'); }
+}
+async function guardApprove(w){
+  const to=(el.gaTo.value||'').trim();
+  const idRaw=(el.gaId.value||'').trim();
+  const amtRaw=(el.gaAmt.value||'').trim();
+  if(!isAddr(to)){ setNote(el.gaNote,'Enter the address the funds will go to','err'); return; }
+  if(!/^\d+$/.test(idRaw)){ setNote(el.gaNote,'Enter the position id they will draw from','err'); return; }
+  let amount;
+  try { amount=BigInt(amtRaw); if(amount<=0n) throw 0; }
+  catch(e){ setNote(el.gaNote,'Enter the exact amount in base units','err'); return; }
+  try {
+    setNote(el.gaNote,'Deriving the operation id…');
+    const sel = el.gaKind.value==='transfer' ? SEL.predictTransferId : SEL.predictWithdrawalId;
+    const [r] = await mc([{to:SLOW,
+      data:cd(sel,['address','address','uint256','uint256'],[w.addr,to,BigInt(idRaw),amount])}]);
+    if(!r) throw new Error('Could not derive the operation id');
+    const opId = decode(['uint256'],r)[0];
+    hideModal(el.gaModal);
+    await slowTx(cd(SEL.approveTransfer,['address','uint256'],[w.addr,opId]),
+      'Approving one operation','Confirm in your wallet');
+    toast('Approved. Good for exactly this operation, once.',6000);
+    loadGuard();
+  } catch(e){ fail(e); setNote(el.gaNote,''); }
+}
+function openApprove(w){
+  el.gaModal.dataset.ward=w.addr;
+  el.gaTo.value=w.addr; el.gaId.value=''; el.gaAmt.value='';
+  setNote(el.gaNote,'');
+  el.gaWard.textContent=shortAddr(w.addr);
+  el.gaNonce.textContent = w.nonce!==undefined ? `their nonce is ${w.nonce}` : '';
+  showModal(el.gaModal);
 }
 function renderGuard(){
   const g=S.guard;
@@ -2197,13 +2267,19 @@ function renderGuard(){
         const sub=document.createElement('span');
         sub.textContent=`→ ${shortAddr(t.to)} · ${nw()>=t.unlockTime?'unlocked':fmtTime(t.unlockTime-nw())+' left'}`;
         i.appendChild(sub);
-        const btn=document.createElement('button');
-        btn.type='button';
-        btn.className=t.approved?'on':'';
-        btn.textContent=t.approved?'Approved':'Approve';
-        btn.onclick=()=>guardAct(w,t,!t.approved);
-        r.append(i,btn); b.appendChild(r);
+        r.appendChild(i);
+        b.appendChild(r);
       }
+      const foot=document.createElement('div'); foot.className='wtx';
+      const note=document.createElement('div'); note.className='wtx-i';
+      note.textContent='Approve an outflow';
+      const ns=document.createElement('span');
+      ns.textContent='Pre-authorises one operation. Their next one, in order.';
+      note.appendChild(ns);
+      const ab=document.createElement('button');
+      ab.type='button'; ab.textContent='Approve…';
+      ab.onclick=()=>openApprove(w);
+      foot.append(note,ab); b.appendChild(foot);
       box.appendChild(b);
     }
     wrap.appendChild(box);
@@ -2215,15 +2291,6 @@ function confirmDrop(addr){
   toast('Removed — you are not that account’s guardian');
   renderGuard();
   return true;
-}
-async function guardAct(w,t,approve){
-  try {
-    await slowTx(cd(approve?SEL.approveTransfer:SEL.revokeApproval,['address','uint256'],[w.addr,BigInt(t.id)]),
-      approve?'Approving…':'Revoking…','Confirm in your wallet');
-    t.approved=approve;
-    toast(approve?'Approved.':'Approval revoked.');
-    renderGuard();
-  } catch(e){ fail(e); }
 }
 function openGuardModal(mode){
   el.guardModal.dataset.mode=mode;
@@ -2566,6 +2633,11 @@ el.gAddWard.onclick=()=>openGuardModal('ward');
 el.gCommit.onclick=commitGuardianTx;
 el.gCancel.onclick=cancelGuardianTx;
 el.guardApply.onclick=applyGuardModal;
+el.gaApply.onclick=()=>{
+  const w=S.guard.wards.find(x=>x.addr===el.gaModal.dataset.ward);
+  if(w) guardApprove(w);
+};
+el.gaCancel.onclick=()=>hideModal(el.gaModal);
 el.guardCancel.onclick=()=>hideModal(el.guardModal);
 el.guardInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.guardApply.click(); });
 

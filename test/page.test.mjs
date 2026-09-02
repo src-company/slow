@@ -119,6 +119,10 @@ const sigs = {
   guardianApproved: 'guardianApproved(address,uint256)',
   isGuardianApprovalNeeded: 'isGuardianApprovalNeeded(address,address,uint256,uint256)',
   isWithdrawalApprovalNeeded: 'isWithdrawalApprovalNeeded(address,address,uint256,uint256)',
+  predictWithdrawalId: 'predictWithdrawalId(address,address,uint256,uint256)',
+  predictTransferId: 'predictTransferId(address,address,uint256,uint256)',
+  unlockedBalances: 'unlockedBalances(address,uint256)',
+  nonces: 'nonces(address)',
   resolver: 'resolver(bytes32)', addr: 'addr(bytes32)',
 };
 for (const [key, sig] of Object.entries(sigs)) {
@@ -377,6 +381,14 @@ eq(BigInt('0x' + appr.slice(10 + 64)), 7n, 'approveTransfer carries the transfer
 // Removal is a rotation to the zero address, not a separate entrypoint.
 eq(BigInt('0x' + C.cd(C.SEL.setGuardian, ['address'], [C.ZERO]).slice(10)), 0n,
   'removing a guardian is setGuardian(0)');
+
+// A guardian pre-authorises a prospective operation, whose id comes from
+// predict*Id — not the id of a transfer that already exists. Approving the
+// latter sets a flag nothing reads.
+ok(C.SEL.predictWithdrawalId !== C.SEL.predictTransferId,
+  'withdrawal and transfer derive different operation ids');
+ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
+  'approving and predicting are different calls');
 
 // ─── Tile contrast ─────────────────────────────────────────────────────────
 // Robinhood's chartreuse is far too light for white text; the ink is derived
