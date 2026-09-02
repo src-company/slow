@@ -34,6 +34,16 @@ const slug = (url.match(/github\.com[/:]([^/]+\/[^/.]+)/) || [])[1];
 
 console.log(`published ${bytes.length.toLocaleString()} B  sha256 ${sha256.slice(0, 16)}…`);
 if (slug) {
-  console.log(`\n  https://raw.githack.com/${slug}/gh-pages/index.html   (uncached — reflects each push)`);
-  console.log(`  https://${slug.split('/')[0]}.github.io/${slug.split('/')[1]}/   (once Pages is enabled on gh-pages)`);
+  // Pin the URL to the commit, not the branch.
+  //
+  // raw.githack.com bills itself as the uncached endpoint and is not: it served
+  // a build four commits old while the branch was correct, which looks exactly
+  // like a change that did not ship. A commit-pinned rawcdn path is immutable,
+  // so it cannot go stale — at the cost of a new URL per publish, which is the
+  // right trade while iterating.
+  console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/index.html`);
+  console.log(`  \u2514 pinned to this commit, cannot serve a stale copy`);
+  const [owner, repo] = slug.split('/');
+  console.log(`\n  https://${owner}.github.io/${repo}/`);
+  console.log(`  \u2514 stable URL, updates on push \u2014 needs Pages enabled on gh-pages`);
 }
