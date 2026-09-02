@@ -56,7 +56,7 @@ button,input{font:inherit;color:inherit;border-radius:0}
 .chip:hover{border-color:var(--fg);background:var(--bg2)}
 .chip svg{width:15px;height:15px;flex:0 0 auto}
 .chip .lbl{overflow:hidden;text-overflow:ellipsis;max-width:34vw}
-#themeBtn{width:34px;padding:0;justify-content:center;font-size:14px}
+#themeBtn,#helpBtn{width:34px;padding:0;justify-content:center;font-size:14px}
 .wordmark{
   display:inline-flex;align-items:center;gap:10px;
   background:transparent;border:none;cursor:pointer;color:var(--fg);
@@ -140,6 +140,49 @@ body.v-send .sendPane{display:flex}
 .opt:hover:not(:disabled){border-color:var(--fg)}
 .opt[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .opt:disabled{opacity:.25;cursor:not-allowed}
+/* amount: a field you type in, with the presets as quick fills */
+.amt{display:grid;grid-template-columns:1fr auto;gap:6px}
+.amt .input{font-size:19px;padding:12px 13px}
+#maxBtn{padding:0 16px}
+.row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#amountRow{grid-template-columns:repeat(3,1fr)}
+
+/* what happens, as a sequence with real dates */
+.tl{list-style:none;display:flex;flex-direction:column;margin:2px 0 4px}
+.tl li{display:grid;grid-template-columns:13px 1fr;gap:12px;padding-bottom:16px;position:relative}
+.tl li:last-child{padding-bottom:0}
+.tl li::before{
+  content:'';grid-column:1;width:9px;height:9px;margin-top:4px;
+  background:var(--fg);border-radius:50%;
+}
+.tl li:not(:last-child)::after{
+  content:'';position:absolute;left:4px;top:15px;bottom:-1px;width:1px;background:var(--bd);
+}
+.tl li.now::before{background:var(--ok)}
+.tl li.warn::before{background:var(--warn)}
+.tl .when{display:block;font-family:var(--mono);font-size:12px;color:var(--fg)}
+.tl .what{display:block;font-size:12.5px;color:var(--dim);margin-top:2px}
+
+/* transaction strip: tells you where you are without taking the page away */
+.txbar{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:max(16px,env(safe-area-inset-bottom));z-index:65;
+  display:flex;align-items:center;gap:12px;
+  background:var(--fg);color:var(--bg);padding:11px 14px;
+  max-width:min(94vw,520px);font-size:12.5px;
+}
+.txbar[hidden]{display:none}
+.txbar .txmsg{display:flex;flex-direction:column;min-width:0}
+.txbar b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txbar em{font-style:normal;font-size:10.5px;opacity:.7;letter-spacing:.1em;text-transform:uppercase}
+.txbar a{color:var(--bg);font-family:var(--mono);font-size:11px;text-decoration:underline;white-space:nowrap}
+.txbar button{background:transparent;border:none;color:var(--bg);cursor:pointer;font-size:17px;line-height:1;padding:0 2px}
+.spinner.sm{width:15px;height:15px;border-width:2px;border-color:rgba(0,0,0,.25);border-top-color:var(--bg);flex:0 0 auto}
+body.light .spinner.sm{border-color:rgba(255,255,255,.3);border-top-color:var(--bg)}
+.skel{height:52px;border:1px solid var(--bd);background:linear-gradient(90deg,transparent,var(--bg2),transparent);
+  background-size:200% 100%;animation:sk 1.1s linear infinite}
+@keyframes sk{to{background-position:-200% 0}}
+
 .link{
   background:transparent;color:var(--dim);font-size:11px;cursor:pointer;
   letter-spacing:.14em;text-transform:uppercase;border:1px dashed var(--bd);
@@ -279,13 +322,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
   .modal{align-items:flex-end;padding:0}
   .card{width:100%;margin:0;border-width:2px 0 0;padding-bottom:max(22px,env(safe-area-inset-bottom))}
 }
-.loading{display:none;position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:60;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:20px}
-body.light .loading{background:rgba(255,255,255,.92)}
-.loading.on{display:flex}
 .spinner{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--fg);animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
-.loading p{font-size:13.5px;text-align:center}
-.steps{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);text-align:center}
 .toast{
   position:fixed;left:50%;transform:translateX(-50%);bottom:max(18px,env(safe-area-inset-bottom));
   background:var(--fg);color:var(--bg);padding:11px 16px;font-size:12.5px;z-index:70;
@@ -306,6 +344,7 @@ body.light .loading{background:rgba(255,255,255,.92)}
     </svg><span>SLOW</span>
   </button>
   <div class="bar-r">
+    <button class="chip" id="helpBtn" aria-label="How SLOW works">?</button>
     <button class="chip" id="themeBtn" aria-label="Appearance"></button>
     <button class="chip" id="chainBtn" aria-label="Network">
       <span id="chainIcon" aria-hidden="true"></span><span class="lbl" id="chainName">Ethereum</span><span id="netDot" hidden></span>
@@ -333,7 +372,13 @@ body.light .loading{background:rgba(255,255,255,.92)}
     </div>
 
     <div class="sendPane">
-      <div class="field" id="fAsset">
+      <div class="field">
+        <span class="flabel">To</span>
+        <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false" aria-describedby="ens">
+        <p class="note" id="ens" aria-live="polite"></p>
+      </div>
+
+      <div class="field">
         <span class="flabel">Asset</span>
         <div class="grid" id="cryptoGrid" role="group" aria-label="Asset"></div>
         <button class="link" id="customTokenOpt">+ Custom token</button>
@@ -341,12 +386,16 @@ body.light .loading{background:rgba(255,255,255,.92)}
 
       <div class="field locked" id="fAmount">
         <span class="flabel">Amount <em id="balHint"></em></span>
-        <div class="row" id="amountRow" role="group" aria-label="Amount">
+        <div class="amt">
+          <input type="text" class="input" id="amountInput" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount">
+          <button class="opt" id="maxBtn">Max</button>
+        </div>
+        <div class="row" id="amountRow" role="group" aria-label="Quick amounts">
           <button class="opt" data-amount="1">1</button>
           <button class="opt" data-amount="10">10</button>
           <button class="opt" data-amount="100">100</button>
-          <button class="opt" id="customAmountOpt">Custom</button>
         </div>
+        <p class="note" id="amountNote"></p>
       </div>
 
       <div class="field locked" id="fTime">
@@ -357,6 +406,16 @@ body.light .loading{background:rgba(255,255,255,.92)}
           <button class="opt" data-time="86400">1 DAY</button>
           <button class="opt" id="customTimeOpt">Custom</button>
         </div>
+      </div>
+
+      <div class="field" id="fReview" hidden>
+        <span class="flabel">What happens</span>
+        <p class="summary" id="summary"></p>
+        <ol class="tl" id="timeline"></ol>
+        <label class="check" for="autoClaimChk"><input type="checkbox" id="autoClaimChk"> Pay a keeper to auto-claim it</label>
+        <p class="note" id="tipPre"></p>
+        <p class="note" id="planNote" aria-live="polite"></p>
+        <button class="btn" id="confirmBtn">Send</button>
       </div>
     </div>
 
@@ -443,18 +502,6 @@ body.light .loading{background:rgba(255,255,255,.92)}
   <button class="btn" id="tokenApply">Apply</button>
 </div></div>
 
-<div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="card">
-  <h3 id="confirmTitle">Confirm</h3>
-  <p class="summary" id="summary"></p>
-  <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false" aria-describedby="ens">
-  <p class="note" id="ens" aria-live="polite"></p>
-  <label class="check" for="autoClaimChk"><input type="checkbox" id="autoClaimChk"> Pay a keeper to auto-claim</label>
-  <p class="note" id="tipPre"></p>
-  <p class="note" id="planNote" aria-live="polite"></p>
-  <button class="btn" id="confirmBtn">Send</button>
-  <button class="btn alt" id="confirmCancel">Cancel</button>
-</div></div>
-
 <div class="modal" id="guardModal" role="dialog" aria-modal="true" aria-labelledby="guardTitle"><div class="card">
   <h3 id="guardTitle">Guardian</h3>
   <input type="text" class="input" id="guardInput" placeholder="Address, .eth, or .wei" autocomplete="off" spellcheck="false">
@@ -471,7 +518,26 @@ body.light .loading{background:rgba(255,255,255,.92)}
   <button class="btn alt" id="detailClose">Close</button>
 </div></div>
 
-<div class="loading" id="loading"><div class="spinner"></div><p id="loadingText">Working…</p><p class="steps" id="loadingStep"></p></div>
+<div class="modal" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><div class="card">
+  <h3 id="helpTitle">How SLOW works</h3>
+  <dl class="rows">
+    <div class="kv"><dt>Wrap</dt><dd>Your token becomes a SLOW position with a timelock you pick.</dd></div>
+    <div class="kv"><dt>Reverse</dt><dd>Until the lock expires, you can pull it back. Wrong address, changed mind, stolen key.</dd></div>
+    <div class="kv"><dt>Claim</dt><dd>After it expires, the recipient takes the underlying. A keeper can do it for them if you tip.</dd></div>
+    <div class="kv"><dt>Recover</dt><dd>If nobody ever claims, you can take it back 30 days after expiry.</dd></div>
+    <div class="kv"><dt>Guardian</dt><dd>Optional cosigner who must approve every outflow from your account.</dd></div>
+  </dl>
+  <p class="note">Every transfer is an ERC-1155 position that draws its own picture on chain.</p>
+  <button class="btn alt" id="helpClose">Close</button>
+</div></div>
+
+<div class="txbar" id="txbar" role="status" aria-live="polite" hidden>
+  <span class="spinner sm" id="txSpin"></span>
+  <span class="txmsg"><b id="txMsg"></b><em id="txStep"></em></span>
+  <a id="txLink" target="_blank" rel="noopener" hidden>View</a>
+  <button id="txDismiss" aria-label="Dismiss" hidden>\u00d7</button>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -781,6 +847,14 @@ function decodeId(big){
   return { token:'0x'+(b&((1n<<160n)-1n)).toString(16).padStart(40,'0'), delay:Number(b>>160n) };
 }
 const nw = () => Date.now()/1000|0;
+/* Relative time says how long; absolute time says when — and only one of those
+   lets somebody plan around it. The review shows both. */
+function fmtWhen(ts){
+  const d=new Date(ts*1000), now=new Date();
+  const opts={weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'};
+  if(d.getFullYear()!==now.getFullYear()) opts.year='numeric';
+  try { return d.toLocaleString(undefined,opts); } catch(e){ return d.toISOString().slice(0,16).replace('T',' '); }
+}
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 const tokSym = sym => sym in TOKEN_COLORS ? sym : 'other';
 const tokenColor = a => `hsl(${parseInt(a.slice(2,8),16)%360},55%,45%)`;
@@ -1001,9 +1075,6 @@ function toast(msg, ms=3200){
   el.toast.textContent=msg; el.toast.classList.add('on');
   clearTimeout(toastT); toastT=setTimeout(()=>el.toast.classList.remove('on'), ms);
 }
-function showLoad(msg,step){ el.loadingText.textContent=msg; el.loadingStep.textContent=step||''; el.loading.classList.add('on'); }
-function setStep(step){ el.loadingStep.textContent=step||''; }
-function hideLoad(){ el.loading.classList.remove('on'); }
 
 let lastFocus=null, trapped=null;
 const FOCUSABLE='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
@@ -1382,11 +1453,12 @@ async function waitTx(hash){
   throw new Error('Not confirmed within 10 minutes — check your wallet before retrying');
 }
 async function slowTx(data, msg, step, value){
-  showLoad(msg, step);
+  txShow(msg, step);
   const tx={from:S.account,to:SLOW,data};
   if(value&&value!=='0x0') tx.value=value;
   const h=await sendTx(tx);
-  setStep('Waiting for confirmation…');
+  S.lastHash=h;
+  txShow(msg,'Waiting for confirmation',h);
   await waitTx(h);
   return h;
 }
@@ -1462,12 +1534,12 @@ async function deposit(){
 
   if(plan.kind==='direct'){
     // Carries the ETH being wrapped, plus any keeper tip.
-    await slowTx(depositCalldata(wei),'Creating your time-locked transfer…','Confirm in your wallet',valueHex);
+    await slowTx(depositCalldata(wei),'Sending','Confirm in your wallet',valueHex);
     return;
   }
 
   if(plan.kind==='batch'){
-    showLoad('Creating your time-locked transfer…','Approve the batch in your wallet');
+    txShow('Sending','Approve the batch in your wallet');
     const calls=[];
     // USDT and friends refuse a non-zero-to-non-zero approve.
     if(plan.allowance>0n) calls.push({to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,0n])});
@@ -1475,19 +1547,21 @@ async function deposit(){
     calls.push({to:SLOW,data:depositCalldata(wei),value:valueHex});
     if(!await ensureChain()) throw new Error(`Switch to ${cfg().name}`);
     const h=await sendBatch(calls);
-    setStep('Waiting for confirmation…');
+    S.lastHash=h;
+    txShow('Sending','Waiting for confirmation',h);
     await waitTx(h);
     return;
   }
 
   if(plan.kind==='permit'){
-    showLoad('Creating your time-locked transfer…','Sign the approval in your wallet');
+    txShow('Sending','Sign the approval in your wallet');
     const info=await permitInfo(S.token,S.account);
     const deadline=BigInt(nw()+1800);
     const sig=await signPermit(S.token,info,S.account,SLOW,wei,deadline);
-    setStep('Confirm the transfer in your wallet');
+    txShow('Sending','Confirm the transfer in your wallet');
     const h=await sendTx({from:S.account,to:SLOW,data:depositCalldata(wei,sig,deadline),value:valueHex});
-    setStep('Waiting for confirmation…');
+    S.lastHash=h;
+    txShow('Sending','Waiting for confirmation',h);
     await waitTx(h);
     return;
   }
@@ -1495,16 +1569,17 @@ async function deposit(){
   // Sequential fallback: exact amount, never an infinite allowance.
   const steps = plan.allowance>0n ? [0n,wei] : [wei];
   for(let i=0;i<steps.length;i++){
-    showLoad(`Approving ${S.symbol}…`, steps.length>1?`Step ${i+1} of ${steps.length+1}`:'Step 1 of 2');
+    txShow(`Approving ${S.symbol}`, `Step ${i+1} of ${steps.length+1}`);
     const h=await sendTx({from:S.account,to:S.token,data:cd(SEL.approve,['address','uint256'],[SLOW,steps[i]])});
-    setStep('Waiting for confirmation…');
+    txShow(`Approving ${S.symbol}`, `Step ${i+1} of ${steps.length+1}`, h);
     await waitTx(h);
   }
   const [fresh]=await mc([{to:S.token,data:cd(SEL.allowance,['address','address'],[S.account,SLOW])}]);
   if(!fresh||decode(['uint256'],fresh)[0]<wei) throw new Error('The approval did not take effect');
-  showLoad('Creating your time-locked transfer…',`Step ${steps.length+1} of ${steps.length+1}`);
+  txShow('Sending',`Step ${steps.length+1} of ${steps.length+1}`);
   const h=await sendTx({from:S.account,to:SLOW,data:depositCalldata(wei),value:valueHex});
-  setStep('Waiting for confirmation…');
+  S.lastHash=h;
+  txShow('Sending','Waiting for confirmation',h);
   await waitTx(h);
 }
 async function estimateTip(token){
@@ -1617,7 +1692,7 @@ async function refundTipIfAny(t){
   const gate=await getGate();
   if(!gate) return '';
   try {
-    setStep('Refunding the keeper tip…');
+    txShow('Refunding the keeper tip','Confirm in your wallet');
     await waitTx(await sendTx({from:S.account,to:gate,data:c1(SEL.refundTip,t.id)}));
     return ' Tip refunded.';
   } catch(e){
@@ -1633,7 +1708,7 @@ async function doClaim(t){
       guardian?'Unlocking…':'Claiming…','Confirm in your wallet');
     toast(guardian ? 'Unlocked. Withdraw through your guardian to receive the underlying.' : 'Claimed.', 6000);
     loadTransfers(true);
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 async function doReverse(t){
   if(nw()>=t.unlockTime){ toast("The timelock expired — this can no longer be reversed"); return; }
@@ -1644,7 +1719,7 @@ async function doReverse(t){
     const tip=await refundTipIfAny(t);
     toast((S.hasGuardian?'Reversed. Coordinate with your guardian to withdraw.':'Reversed and returned.')+tip,6000);
     loadTransfers(true);
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 async function doClawback(t){
   const ready=t.unlockTime+GRACE;
@@ -1656,7 +1731,7 @@ async function doClawback(t){
     const tip=await refundTipIfAny(t);
     toast((S.hasGuardian?'Recovered. Coordinate with your guardian to withdraw.':'Recovered.')+tip,6000);
     loadTransfers(true);
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1712,7 +1787,8 @@ function paintPresets(){
     el.balHint.textContent = S.token&&!S.account ? 'connect to see balance' : '';
     for(const b of btns){ b.disabled=false; b.title=''; }
   }
-  render();
+  el.maxBtn.disabled = S.balance===null;
+  render(); renderReview();
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1765,18 +1841,15 @@ function render(){
   el.cryptoGrid.classList.toggle('dim',!!isCustom);
 
   qsa('.crypto').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.token.toLowerCase()===S.token)));
-  const customAmt = S.amount && ![...el.amountRow.querySelectorAll('[data-amount]')].some(x=>x.dataset.amount===S.amount);
-  el.amountRow.querySelectorAll('.opt').forEach(o=>{
-    const on = o===el.customAmountOpt ? !!customAmt : o.dataset.amount===S.amount;
-    o.setAttribute('aria-pressed',String(!!on));
-  });
+  el.amountRow.querySelectorAll('.opt').forEach(o=>
+    o.setAttribute('aria-pressed',String(o.dataset.amount===S.amount)));
   const customDly = S.delay && !qs(`#timeRow [data-time="${S.delay}"]`);
   el.timeRow.querySelectorAll('.opt').forEach(o=>{
     const on = o===el.customTimeOpt ? !!customDly : parseInt(o.dataset.time)===S.delay;
     o.setAttribute('aria-pressed',String(!!on));
   });
-  el.customAmountOpt.textContent = customAmt?S.amount:'Custom';
   el.customTimeOpt.textContent = customDly?S.delayDisplay:'Custom';
+  el.confirmBtn.disabled = !ready();
   el.tabOut.setAttribute('aria-selected',String(S.tab==='outbound'));
   el.tabIn.setAttribute('aria-selected',String(S.tab==='inbound'));
 }
@@ -1784,9 +1857,10 @@ function resetForm(){
   S.token=S.symbol=null; S.decimals=18; S.amount=S.delay=S.delayDisplay=null;
   S.resolved=S.resolvedName=null; S.step=0; S.autoClaim=false; S.tip=0n; S.balance=null;
   el.recipientInput.value=''; setNote(el.ens,'');
-  el.amountInput.value=''; el.planNote.textContent='';
+  el.amountInput.value=''; setNote(el.amountNote,''); el.planNote.textContent='';
   el.dInput.value=el.hInput.value=el.mInput.value=el.sInput.value='';
   el.autoClaimChk.checked=false; el.tipPre.textContent=''; el.balHint.textContent='';
+  el.fReview.hidden=true;
   paintPresets();
 }
 function setView(v){
@@ -2149,7 +2223,7 @@ async function guardAct(w,t,approve){
     t.approved=approve;
     toast(approve?'Approved.':'Approval revoked.');
     renderGuard();
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 function openGuardModal(mode){
   el.guardModal.dataset.mode=mode;
@@ -2204,19 +2278,19 @@ async function setGuardianTx(addr){
       ? `Staged. Commit it after ${fmtTime(GUARD_DELAY)}.`
       : (addr.toLowerCase()===ZERO?'Guardian removed.':'Guardian set.'), 6000);
     loadGuard();
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 async function commitGuardianTx(){
   try {
     await slowTx(cd(SEL.commitGuardian,['address'],[S.account]),'Committing…','Confirm in your wallet');
     toast('Committed.'); loadGuard();
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 async function cancelGuardianTx(){
   try {
     await slowTx(cd(SEL.cancelGuardianChange,['address'],[S.account]),'Cancelling…','Confirm in your wallet');
     toast('Change cancelled.'); loadGuard();
-  } catch(e){ fail(e); } finally { hideLoad(); }
+  } catch(e){ fail(e); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2262,12 +2336,46 @@ async function resolveRecipient(input){
     if(!stale()) el.confirmBtn.disabled=false;
   }
 }
-function updateSummary(){
-  if(!S.amount||!S.symbol||!S.delayDisplay) return;
-  let s=`${S.amount} ${S.symbol}\n${S.delayDisplay}`;
-  if(S.resolved) s+=` → ${S.resolvedName||shortAddr(S.resolved)}`;
-  el.summary.textContent=s;
-  el.summary.style.whiteSpace='pre-line';
+function updateSummary(){ renderReview(); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Review
+   ══════════════════════════════════════════════════════════════════
+   SLOW's product is not "a transfer". It is three windows: one where
+   the sender can still pull it back, one where the recipient can take
+   it, and one where an unclaimed transfer comes home. A form that only
+   says "1 day" has told you the least interesting fact about it, so
+   the review spells the windows out against real dates.
+   ══════════════════════════════════════════════════════════════════ */
+function ready(){
+  return !!(S.resolved && S.token && S.symbol && S.amount && S.delay);
+}
+function renderReview(){
+  const show = ready();
+  el.fReview.hidden = !show;
+  if(!show) return;
+
+  const who = S.resolvedName || shortAddr(S.resolved);
+  el.summary.textContent = `${S.amount} ${S.symbol} → ${who}`;
+
+  const t0=nw(), unlock=t0+S.delay, claw=unlock+GRACE;
+  const rows=[
+    {cls:'now',  when:'Now', what:`Locked. You can reverse it and take it back at any point until it unlocks.`},
+    {cls:'',     when:fmtWhen(unlock), what:`Unlocks after ${fmtTime(S.delay)}. ${who} can claim it${S.autoClaim?', or a keeper will settle it for them':''}. You can no longer reverse it.`},
+    {cls:'warn', when:fmtWhen(claw), what:`If it was never claimed, you can recover it from here.`},
+  ];
+  el.timeline.replaceChildren();
+  for(const r of rows){
+    const li=document.createElement('li');
+    if(r.cls) li.className=r.cls;
+    const w=document.createElement('span'); w.className='when'; w.textContent=r.when;
+    const t=document.createElement('span'); t.className='what'; t.textContent=r.what;
+    const box=document.createElement('div'); box.append(w,t);
+    li.appendChild(box);
+    el.timeline.appendChild(li);
+  }
+  el.confirmBtn.textContent=`Send ${S.amount} ${S.symbol}`;
+  previewPlan();
 }
 async function updateTipPreview(){
   if(!S.autoClaim){ el.tipPre.textContent=''; return; }
@@ -2275,7 +2383,7 @@ async function updateTipPreview(){
   const tip=await estimateTip(S.token);
   if(!S.autoClaim) return;
   S.tip=tip;
-  el.tipPre.textContent=`Tip ≈ ${fmtAmt(tip,18)} ETH, refunded if the recipient settles it themselves.`;
+  el.tipPre.textContent=`Keeper tip ≈ ${fmtAmt(tip,18)} ETH, refunded if ${S.resolvedName||'they'} settle it directly.`;
 }
 async function previewPlan(){
   el.planNote.textContent='';
@@ -2290,23 +2398,87 @@ async function previewPlan(){
     el.planNote.textContent = prefix + planLabel(plan);
   } catch(e){ el.planNote.textContent = prefix.trim(); }
 }
-function openConfirmation(){
-  updateSummary();
-  S.autoClaim=false; S.tip=0n;
-  el.autoClaimChk.checked=false; el.tipPre.textContent=''; el.planNote.textContent='';
-  showModal(el.confirmModal);
-  if(matchMedia('(hover:hover)').matches) el.recipientInput.focus();
-  render();
-  previewPlan();
+
+/* ══════════════════════════════════════════════════════════════════
+   Amount
+   ══════════════════════════════════════════════════════════════════ */
+async function maxSpendable(){
+  if(S.balance===null) return null;
+  if(S.token!==ZERO) return S.balance;
+  // Native ETH has to keep enough back to pay for its own deposit.
+  let reserve=3_000_000_000_000_000n;
+  try {
+    const fh=await rpc('eth_feeHistory',['0x5','latest',[50]]);
+    const base=BigInt(fh.baseFeePerGas.at(-1));
+    let prio=BigInt(fh.reward?.at(-1)?.[0]||0);
+    if(prio<1_000_000_000n) prio=1_000_000_000n;
+    reserve=220_000n*(base*2n+prio);
+  } catch(e){}
+  return S.balance>reserve ? S.balance-reserve : 0n;
 }
+function setAmount(v){
+  S.amount = v || null;
+  if(el.amountInput.value!==v) el.amountInput.value=v||'';
+  if(v) S.step=Math.max(S.step,2);
+  render(); renderReview();
+}
+function validateAmount(){
+  const raw=el.amountInput.value.trim();
+  if(!raw){ S.amount=null; setNote(el.amountNote,''); render(); renderReview(); return; }
+  try {
+    const wei=parseUnits(raw,S.decimals);
+    if(wei<=0n){ S.amount=null; setNote(el.amountNote,'Enter an amount above zero','err'); render(); renderReview(); return; }
+    if(S.balance!==null && wei>S.balance){
+      S.amount=null;
+      setNote(el.amountNote,`You have ${fmtAmt(S.balance,S.decimals)} ${S.symbol}`,'err');
+      render(); renderReview(); return;
+    }
+    setNote(el.amountNote,'');
+    S.amount=raw; S.step=Math.max(S.step,2);
+  } catch(e){ S.amount=null; setNote(el.amountNote,e.message,'err'); }
+  render(); renderReview();
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Transaction status
+   ══════════════════════════════════════════════════════════════════
+   A full-screen spinner takes the page away and tells you nothing you
+   can act on. This strip stays out of the way, names the step, and
+   links the hash the moment there is one.
+   ══════════════════════════════════════════════════════════════════ */
+function txShow(msg, step, hash){
+  el.txbar.hidden=false;
+  el.txSpin.hidden=false;
+  el.txMsg.textContent=msg;
+  el.txStep.textContent=step||'';
+  el.txDismiss.hidden=true;
+  if(hash){
+    el.txLink.hidden=false;
+    el.txLink.href=`${cfg().explorer}/tx/${hash}`;
+    el.txLink.textContent=hash.slice(0,10)+'…';
+  } else el.txLink.hidden=true;
+}
+function txDone(msg, hash){
+  el.txbar.hidden=false;
+  el.txSpin.hidden=true;
+  el.txMsg.textContent=msg;
+  el.txStep.textContent='';
+  el.txDismiss.hidden=false;
+  if(hash){
+    el.txLink.hidden=false;
+    el.txLink.href=`${cfg().explorer}/tx/${hash}`;
+    el.txLink.textContent=hash.slice(0,10)+'…';
+  }
+  clearTimeout(txDone.t);
+  txDone.t=setTimeout(()=>{ el.txbar.hidden=true; }, 12000);
+}
+const txHide = () => { el.txbar.hidden=true; clearTimeout(txDone.t); };
+
 async function handleConfirm(){
+  if(!ready()) return;
   if(!S.account && !await connect(true)) return;
   if(!await ensureChain()) return;
-  if(!S.resolved){
-    const v=el.recipientInput.value.trim();
-    if(!v){ setNote(el.ens,'Who is this going to?','err'); el.recipientInput.focus(); return; }
-    if(!await resolveRecipient(v)){ el.recipientInput.focus(); return; }
-  }
+  el.confirmBtn.disabled=true;
   try {
     if(S.slowDeployed[S.chain]===false) throw new Error(`SLOW is not deployed on ${cfg().name}`);
     const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
@@ -2314,15 +2486,14 @@ async function handleConfirm(){
     const wei=parseUnits(S.amount,meta.decimals);
     if(S.balance!==null && wei>S.balance)
       throw new Error(`You have ${fmtAmt(S.balance,meta.decimals)} ${S.symbol}`);
-    hideModal(el.confirmModal);
     await deposit();
-    toast('Sent. Locked in SLOW.',5000);
-    setView('take');
+    const who=S.resolvedName||shortAddr(S.resolved);
+    txDone(`Sent to ${who}. Locked for ${fmtTime(S.delay)}.`, S.lastHash);
+    setView('send'); resetForm();
     loadTransfers(true);
   } catch(e){
-    fail(e);
-    if(!isRejection(e)) showModal(el.confirmModal);
-  } finally { hideLoad(); }
+    txHide();
+    fail(e); } finally { el.confirmBtn.disabled=false; }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2403,35 +2574,40 @@ el.cryptoGrid.addEventListener('click',e=>{
   S.token=b.dataset.token.toLowerCase();
   S.symbol=b.dataset.symbol;
   S.decimals=Number(b.dataset.decimals)||18;
-  S.amount=null; S.step=Math.max(S.step,1);
+  S.step=Math.max(S.step,1);
+  setNote(el.amountNote,'');
   tokenMeta(S.token).then(m=>{ if(S.token===b.dataset.token.toLowerCase()){ S.decimals=m.decimals; paintPresets(); } });
   paintPresets(); refreshBalance();
+  if(S.amount) validateAmount();
 });
 el.amountRow.addEventListener('click',e=>{
-  const o=e.target.closest('.opt'); if(!o||o.disabled) return;
-  if(o===el.customAmountOpt){
-    el.amountInput.value=S.amount||'';
-    el.amountNote.textContent = S.balance!==null ? `You have ${fmtAmt(S.balance,S.decimals)} ${S.symbol}` : '';
-    showModal(el.amountModal);
-    return;
-  }
-  S.amount=o.dataset.amount; S.step=Math.max(S.step,2); render();
+  const o=e.target.closest('.opt'); if(!o||o.disabled||!o.dataset.amount) return;
+  setAmount(o.dataset.amount);
+  setNote(el.amountNote,'');
 });
+let amtTimer;
+el.amountInput.addEventListener('input',()=>{ clearTimeout(amtTimer); amtTimer=setTimeout(validateAmount,220); });
+el.amountInput.addEventListener('blur',validateAmount);
+el.maxBtn.onclick=async()=>{
+  const max=await maxSpendable();
+  if(max===null){ toast('Connect a wallet to see your balance'); return; }
+  if(max<=0n){ setNote(el.amountNote,'Not enough ETH left over to pay for the transaction','err'); return; }
+  setAmount(formatUnits(max,S.decimals));
+  setNote(el.amountNote, S.token===ZERO ? 'Leaves enough ETH to pay for this transaction' : '');
+};
 el.timeRow.addEventListener('click',e=>{
   const o=e.target.closest('.opt'); if(!o) return;
   if(o===el.customTimeOpt){ showModal(el.timeModal); return; }
   S.delay=parseInt(o.dataset.time); S.delayDisplay=o.textContent;
-  openConfirmation();
+  render(); renderReview();
 });
-el.amountApply.onclick=()=>{
-  const raw=el.amountInput.value.trim();
-  try {
-    const wei=parseUnits(raw,S.decimals);
-    if(wei<=0n){ el.amountNote.textContent='Enter an amount greater than zero'; return; }
-    if(S.balance!==null&&wei>S.balance){ el.amountNote.textContent=`More than your ${fmtAmt(S.balance,S.decimals)} ${S.symbol}`; return; }
-    S.amount=raw; S.step=Math.max(S.step,2);
-    hideModal(el.amountModal); render();
-  } catch(e){ el.amountNote.textContent=e.message; }
+el.timeApply.onclick=()=>{
+  const r=fmtCustomTime({d:el.dInput.value,h:el.hInput.value,m:el.mInput.value,s:el.sInput.value});
+  if(!r.seconds){ toast('Enter a delay longer than zero'); return; }
+  if(r.seconds>MAX_DELAY){ toast('The longest delay is 100 years'); return; }
+  S.delay=r.seconds; S.delayDisplay=r.display;
+  hideModal(el.timeModal);
+  render(); renderReview();
 };
 el.customTokenOpt.onclick=()=>{ el.tokenInput.value=''; setNote(el.tokenStatus,''); showModal(el.tokenModal); };
 el.tokenApply.onclick=async()=>{
@@ -2441,36 +2617,33 @@ el.tokenApply.onclick=async()=>{
   const meta=await tokenMeta(addr);
   if(!meta.ok){ setNote(el.tokenStatus,'That address did not answer symbol() or decimals()','err'); return; }
   S.token=addr.toLowerCase(); S.symbol=meta.symbol; S.decimals=meta.decimals;
-  S.amount=null; S.step=Math.max(S.step,1);
+  S.step=Math.max(S.step,1);
   hideModal(el.tokenModal);
   paintPresets(); refreshBalance();
-};
-el.timeApply.onclick=()=>{
-  const r=fmtCustomTime({d:el.dInput.value,h:el.hInput.value,m:el.mInput.value,s:el.sInput.value});
-  if(!r.seconds){ toast('Enter a delay longer than zero'); return; }
-  if(r.seconds>MAX_DELAY){ toast('The longest delay is 100 years'); return; }
-  S.delay=r.seconds; S.delayDisplay=r.display;
-  hideModal(el.timeModal);
-  openConfirmation();
+  if(S.amount) validateAmount();
 };
 el.tokenInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.tokenApply.click(); });
-el.amountInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.amountApply.click(); });
 [el.dInput,el.hInput,el.mInput,el.sInput].forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') el.timeApply.click(); }));
 
-el.autoClaimChk.onchange=()=>{ S.autoClaim=el.autoClaimChk.checked; updateTipPreview(); previewPlan(); };
+el.autoClaimChk.onchange=()=>{ S.autoClaim=el.autoClaimChk.checked; updateTipPreview(); renderReview(); };
 let ensTimer;
 el.recipientInput.addEventListener('input',()=>{
   const v=el.recipientInput.value.trim();
   S.resolved=null; S.resolvedName=null; S.resolveSeq++;
-  updateSummary();
+  renderReview();
   clearTimeout(ensTimer);
   if(!v){ setNote(el.ens,''); return; }
   ensTimer=setTimeout(()=>resolveRecipient(v),450);
 });
-el.recipientInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.confirmBtn.click(); });
+el.recipientInput.addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return;
+  if(ready()) el.confirmBtn.click(); else el.amountInput.focus();
+});
 el.confirmBtn.onclick=handleConfirm;
-el.confirmCancel.onclick=()=>hideModal(el.confirmModal);
 el.detailClose.onclick=()=>hideModal(el.detailModal);
+el.txDismiss.onclick=txHide;
+el.helpBtn.onclick=()=>showModal(el.helpModal);
+el.helpClose.onclick=()=>hideModal(el.helpModal);
 
 qsa('.tab[data-tab]').forEach(t=>t.addEventListener('click',()=>{ S.tab=t.dataset.tab; render(); renderList(); }));
 addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(false); });

@@ -66,6 +66,7 @@ const EXPORTS = [
   'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'tokSym',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
+  'fmtWhen', 'ready',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -340,6 +341,29 @@ for (const kind of ['direct', 'batch', 'permit', 'approve']) {
 }
 ok(/reset first/.test(C.planLabel({kind: 'approve', allowance: 1n})),
   'the approve rung warns when a reset-to-zero is needed');
+
+// ─── Absolute time ─────────────────────────────────────────────────────────
+// "in 4 hours" says how long; only a date says when. The review shows both.
+const when = C.fmtWhen(Math.floor(Date.UTC(2026, 8, 4, 14, 32) / 1000));
+ok(typeof when === 'string' && when.length > 6, 'fmtWhen returns a readable string');
+ok(!/Invalid/.test(when), 'fmtWhen never emits Invalid Date');
+ok(C.fmtWhen(Math.floor(Date.now() / 1000)) !== C.fmtWhen(Math.floor(Date.now() / 1000) + 86400 * 40),
+  'fmtWhen distinguishes dates 40 days apart');
+
+// ─── Send readiness ────────────────────────────────────────────────────────
+// The review, and the send button, appear only when all four facts are known.
+const snap = {...C.S};
+Object.assign(C.S, {resolved: null, token: null, symbol: null, amount: null, delay: null});
+eq(C.ready(), false, 'not ready with an empty form');
+C.S.resolved = '0x000000000000000000000000000000000000dEaD';
+eq(C.ready(), false, 'not ready with only a recipient');
+C.S.token = C.ZERO; C.S.symbol = 'ETH';
+eq(C.ready(), false, 'not ready without an amount');
+C.S.amount = '0.1';
+eq(C.ready(), false, 'not ready without a timelock');
+C.S.delay = 86400;
+eq(C.ready(), true, 'ready once recipient, asset, amount and timelock are all set');
+Object.assign(C.S, snap);
 
 // ─── Guardian ──────────────────────────────────────────────────────────────
 eq(C.GUARD_DELAY, 86400, 'the guardian rotation veto window is 1 day');
