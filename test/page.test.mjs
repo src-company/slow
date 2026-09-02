@@ -70,6 +70,7 @@ const EXPORTS = [
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
+  'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -415,6 +416,58 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   eq(shapes.length, 8, 'the still frame has six facets and two rules');
   ok(shapes.every((sh) => C.LOADER.includes(sh)),
     'every shape in the still frame is drawn identically in the animation');
+}
+
+// ─── Bridging ──────────────────────────────────────────────────────────────
+// Both rollups take value plus calldata in one L1 transaction, which is what
+// makes this one step rather than bridge-then-deposit.
+eq(C.L1_ALIAS, 0x1111000000000000000000000000000000001111n, 'the L1-to-L2 alias offset');
+{
+  const a = '0x000000000000000000000000000000000000dEaD';
+  const al = C.aliasOf(a);
+  eq(al, '0x111100000000000000000000000000000000efbe', 'alias adds the offset');
+  eq(C.unaliasOf(al).toLowerCase(), a.toLowerCase(), 'un-alias is its inverse');
+  // The offset wraps at 160 bits; an address near the top must not overflow out
+  // of range.
+  const hi = '0xffffffffffffffffffffffffffffffffffffffff';
+  ok(/^0x[0-9a-f]{40}$/.test(C.aliasOf(hi)), 'aliasing wraps inside 160 bits');
+  eq(C.unaliasOf(C.aliasOf(hi)), hi, 'and round-trips at the boundary');
+}
+// Routes are from Ethereum only, and name a family the page can build for.
+eq(Object.keys(C.BRIDGES).sort().join(','), '4663,8453', 'routes to Base and Robinhood');
+for (const [id, b] of Object.entries(C.BRIDGES)) {
+  eq(b.from, 1, `chain ${id} is bridged from Ethereum`);
+  ok(['op', 'arb'].includes(b.kind), `chain ${id} names a known bridge family`);
+  ok(/^0x[0-9a-fA-F]{40}$/.test(b.entry), `chain ${id} has an entrypoint`);
+  ok(typeof b.l2GasLimit === 'bigint' && b.l2GasLimit > 0n, `chain ${id} buys destination gas`);
+  ok(C.CHAINS[id], `chain ${id} is a chain the page knows`);
+}
+eq(C.BRIDGES[8453].kind, 'op', 'Base is OP Stack');
+eq(C.BRIDGES[4663].kind, 'arb', 'Robinhood is Arbitrum');
+eq(C.BRIDGES[8453].entry, '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e', 'the Base portal');
+eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Robinhood inbox');
+
+// The bridged call must reproduce a local ETH deposit exactly: depositTo takes
+// amount == 0 because the bridged ETH arrives as msg.value.
+{
+  const inner = C.innerDepositCalldata('0x000000000000000000000000000000000000dEaD', 86400);
+  eq(inner.slice(0, 10), C.SEL.depositTo, 'the inner call is depositTo');
+  eq('0x' + inner.slice(10 + 24, 10 + 64), C.ZERO, 'token is the zero address');
+  eq(BigInt('0x' + inner.slice(10 + 128, 10 + 192)), 0n,
+    'amount is zero — the value rides as msg.value on arrival');
+  eq(BigInt('0x' + inner.slice(10 + 192, 10 + 256)), 86400n, 'the delay is carried');
+}
+
+// The destination row is gated on all three conditions, not just one.
+{
+  const snap = {chain: C.S.chain, token: C.S.token, deployed: C.S.slowDeployed};
+  C.S.chain = 1; C.S.token = C.ZERO;
+  eq(C.destinations().join(','), '8453,4663', 'from Ethereum, in ETH: both destinations offered');
+  C.S.token = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  eq(C.destinations().length, 0, 'an ERC-20 offers no destination — only ETH bridges here');
+  C.S.token = C.ZERO; C.S.chain = 8453;
+  eq(C.destinations().length, 0, 'no destinations when already off Ethereum');
+  Object.assign(C.S, {chain: snap.chain, token: snap.token, slowDeployed: snap.deployed});
 }
 
 // ─── Links ─────────────────────────────────────────────────────────────────

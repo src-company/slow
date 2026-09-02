@@ -423,6 +423,11 @@ body.light .modal{background:rgba(0,0,0,.4)}
         <p class="note" id="amountNote"></p>
       </div>
 
+      <div class="field" id="fDest" hidden>
+        <span class="flabel">Deliver on <em id="destHint"></em></span>
+        <div class="row" id="destRow" role="group" aria-label="Destination chain"></div>
+      </div>
+
       <div class="field locked" id="fTime">
         <span class="flabel">Unlocks after</span>
         <div class="row" id="timeRow" role="group" aria-label="Timelock">
@@ -722,6 +727,156 @@ const CHAINS = {
 // Explicit, because Object.keys sorts integer-like keys numerically and would
 // decide the picker's order for us.
 const CHAIN_IDS = [1, 8453, 4663];
+
+/* ══════════════════════════════════════════════════════════════════
+   Bridging from Ethereum, reversibly
+   ══════════════════════════════════════════════════════════════════
+   Both rollups accept VALUE PLUS CALLDATA in a single L1 transaction,
+   which is what makes this one step instead of two: bridge the ETH and
+   land inside SLOW.depositTo on arrival, rather than bridging and then
+   depositing.
+
+   Verified on chain — the Base portal and the Robinhood inbox are both
+   proxies, so these are the addresses whose IMPLEMENTATIONS carry the
+   entrypoints (0x66d94ee8… and 0x8d3b93df… respectively), and the
+   Robinhood inbox has 192 real submitRetryableTx messages against it.
+
+   WHO ARRIVES AS msg.sender IS NOT ASSUMED. It decides everything —
+   pendingTransfers[id].from is what reverse() checks — and the two
+   stacks disagree. OP Stack aliases only contracts: 2,504 real
+   TransactionDeposited logs show 6 of 6 EOA senders arriving unaliased,
+   so on Base the transfer is Alice's and she reverses there directly.
+   Arbitrum's rule for retryables could not be established the same way.
+
+   So the page does not encode an answer. It looks for the transfer under
+   BOTH candidate addresses on the destination and believes whichever
+   exists — one extra call in a batch that is already being made, no
+   assumption to be wrong about, and it keeps working if either chain
+   ever changes its mind.
+   ══════════════════════════════════════════════════════════════════ */
+const L1_ALIAS = 0x1111000000000000000000000000000000001111n;
+const ADDR_MASK = (1n<<160n)-1n;
+const aliasOf   = a => '0x'+(((BigInt(a)+L1_ALIAS)&ADDR_MASK).toString(16).padStart(40,'0'));
+const unaliasOf = a => '0x'+(((BigInt(a)-L1_ALIAS)&ADDR_MASK).toString(16).padStart(40,'0'));
+
+const BRIDGES = {
+  8453: {
+    kind:'op', from:1,
+    // OptimismPortal proxy; impl 0x66d94ee8f529b683ed6013729784e8bb44697a64
+    entry:'0x49048044D57e1C92A77f79988d21Fa8fAF74E97e',
+    // L2 gas the deposit may consume, purchased through the L1 transaction.
+    l2GasLimit:400_000n,
+  },
+  4663: {
+    kind:'arb', from:1,
+    // Delayed Inbox proxy; impl 0x8d3b93dffff4842e7b61fb553b383db2c6bc91c6
+    entry:'0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D',
+    l2GasLimit:600_000n,
+    // Arbitrum's NodeInterface, a precompile: reports 0 bytes of code and is
+    // callable anyway, which is why presence is probed by calling it.
+    nodeInterface:'0x00000000000000000000000000000000000000C8',
+  },
+};
+const bridgeTo = id => BRIDGES[id];
+
+/*
+   The registry is ADDITIVE ONLY. Routes compiled into the page above are used
+   from the page; a registry entry for one of them is ignored. So an owner who
+   is compromised, or simply wrong, can add a destination but can never redirect
+   Base or Robinhood — the two anyone is actually going to use. It stores no
+   calldata either, only an entrypoint and a `kind` naming a family this page
+   already knows how to build for, so a route can be misaddressed but never
+   shaped by whoever set it.
+*/
+const BRIDGE_REGISTRY = null;   // set once deployed on mainnet
+const KIND_BY_ID = {1:'op', 2:'arb'};
+async function loadBridgeRoutes(){
+  if(!BRIDGE_REGISTRY || S.routesLoaded) return;
+  S.routesLoaded = true;
+  try {
+    const [r] = await mc([{to:BRIDGE_REGISTRY, data:SEL.allRoutes}], 0, MAINNET);
+    if(!r) return;
+    const d=strip(r);
+    const idsOff=parseInt(d.slice(0,64),16)*2, n=parseInt(d.slice(idsOff,idsOff+64),16);
+    const rtOff=parseInt(d.slice(64,128),16)*2;
+    for(let i=0;i<n;i++){
+      const id=Number(BigInt('0x'+d.slice(idsOff+64+i*64, idsOff+128+i*64)));
+      const base=rtOff+64+i*4*64;                      // 4 static words per Route
+      const entry='0x'+d.slice(base+24, base+64);
+      const kind=KIND_BY_ID[parseInt(d.slice(base+64, base+128),16)];
+      const gas=BigInt('0x'+d.slice(base+128, base+192));
+      // The page's own routes win. The registry only fills gaps.
+      if(!kind || BRIDGES[id] || !CHAINS[id]) continue;
+      BRIDGES[id]={kind, from:MAINNET, entry, l2GasLimit:gas, registry:true};
+    }
+  } catch(e){ /* the registry is a convenience, never a requirement */ }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   One transaction: bridge the ETH and land inside depositTo
+   ══════════════════════════════════════════════════════════════════ */
+function innerDepositCalldata(recipient, delay){
+  // On arrival this executes with the bridged ETH as msg.value, so depositTo
+  // takes amount == 0 exactly as it does for a local ETH deposit.
+  return cd(SEL.depositTo, ['address','address','uint256','uint96','bytes'],
+    [ZERO, recipient, 0n, BigInt(delay), '0x']);
+}
+async function bridgePlan(destChain, recipient, delay, weiAmount){
+  const b = BRIDGES[destChain];
+  if(!b) throw new Error(`No bridge route to ${cfg(destChain).name}`);
+  const inner = innerDepositCalldata(recipient, delay);
+
+  if(b.kind==='op'){
+    // depositTransaction(to, value, gasLimit, isCreation, data); msg.value funds it.
+    return {
+      to:b.entry,
+      data: cd(SEL.depositTransaction, ['address','uint256','uint256','bool','bytes'],
+        [SLOW, weiAmount, b.l2GasLimit, false, inner]),
+      value: weiAmount,
+      parts: [['Bridged', weiAmount]],
+    };
+  }
+
+  // Arbitrum: the ticket is bought on L1, so msg.value carries the call value
+  // plus the submission fee plus the L2 gas it is prepaying for.
+  const l1Base = await l1BaseFee();
+  const bytesLen = BigInt(strip(inner).length/2);
+  let submission;
+  try {
+    const [f] = await mc([{to:b.entry,
+      data: cd(SEL.calcSubmissionFee, ['uint256','uint256'], [bytesLen, l1Base])}], 0, MAINNET);
+    submission = f ? decode(['uint256'], f)[0] : 0n;
+  } catch(e){ submission = 0n; }
+  // A stale base fee makes the ticket unredeemable, so the fee is over-bought.
+  if(!submission) submission = 100_000_000_000_000n;
+  submission = submission * 3n / 2n;
+
+  let maxFee;
+  try { maxFee = BigInt(await rpc('eth_gasPrice', [], destChain)) * 2n; }
+  catch(e){ maxFee = cfg(destChain).fallbackGasPrice * 2n; }
+  if(maxFee < cfg(destChain).minGasPrice) maxFee = cfg(destChain).minGasPrice;
+
+  const gasLimit = b.l2GasLimit;
+  const prepaid = gasLimit * maxFee;
+  return {
+    to:b.entry,
+    data: cd(SEL.createRetryableTicket,
+      ['address','uint256','uint256','address','address','uint256','uint256','bytes'],
+      [SLOW, weiAmount, submission, S.account, S.account, gasLimit, maxFee, inner]),
+    value: weiAmount + submission + prepaid,
+    parts: [['Bridged', weiAmount], ['Ticket', submission], ['Destination gas', prepaid]],
+  };
+}
+async function l1BaseFee(){
+  try {
+    const b = await rpc('eth_getBlockByNumber', ['latest', false], MAINNET);
+    return BigInt(b.baseFeePerGas || '0x0');
+  } catch(e){ return 2_000_000_000n; }
+}
+const canBridge = (fromChain, toChain) => {
+  const b = BRIDGES[toChain];
+  return !!b && b.from === fromChain && S.slowDeployed[toChain] === true;
+};
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
 
 const SEL = {
@@ -737,6 +892,12 @@ const SEL = {
   guardianApproved:'0x8d4a1b58', isGuardianApprovalNeeded:'0xaade934f',
   predictWithdrawalId:'0x2d0eae84', predictTransferId:'0xd8a29acf',
   wardsOf:'0xb266b777',
+  // L1 bridges
+  depositTransaction:'0xe9e05c42',           // OP Stack portal
+  createRetryableTicket:'0x679b6ded',        // Arbitrum Orbit inbox
+  calcSubmissionFee:'0xa66b327d',
+  estimateRetryableTicket:'0xc3dc5879',      // Arbitrum NodeInterface
+  allRoutes:'0x71da4170',                    // SlowBridgeRegistry
   unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
@@ -1237,6 +1398,7 @@ const S = {
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
   guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
+  dest:null, routesLoaded:false,
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
   timer:null, lastLoad:0, loadSeq:0,
@@ -1420,7 +1582,7 @@ function switchChain(id){
   // keyed by chain. A detail sheet holds a transfer that only exists on the
   // chain it was read from.
   S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
-  S.detail=null;
+  S.detail=null; S.dest=null;
   S.lastHash=null;
   hideAllModals();
   buildTokenGrid();
@@ -1728,6 +1890,18 @@ async function deposit(){
   const value = isETH ? wei + S.tip : S.tip;
   const valueHex = value>0n ? '0x'+value.toString(16) : '0x0';
 
+  // One L1 transaction that bridges the ETH and lands inside depositTo on the
+  // far side, rather than bridging and then depositing.
+  if(S.dest){
+    const b = await bridgePlan(S.dest, S.resolved, S.delay, wei);
+    txShow(`Sending to ${cfg(S.dest).short}`, 'Confirm in your wallet');
+    const h = await sendTx({from:S.account, to:b.to, data:b.data, value:'0x'+b.value.toString(16)});
+    S.lastHash=h;
+    txShow(`Sending to ${cfg(S.dest).short}`, 'Waiting for the L1 confirmation', h);
+    await waitTx(h);
+    return;
+  }
+
   const plan = await planDeposit(wei);
 
   if(plan.kind==='direct'){
@@ -1830,13 +2004,24 @@ async function loadTransfers(force){
   const stale = () => S.loadSeq!==seq || S.account!==account;
   S.loading=true; renderList();
   try {
-    const [oh,ih,gh] = await mc([
+    // On a destination chain, a transfer that arrived over the bridge may be
+    // recorded against this account OR against its L1 alias, depending on how
+    // that rollup attributes a cross-chain caller. Rather than encode a guess,
+    // ask for both — it is one more call in a batch already being sent — and
+    // believe whichever answers.
+    const alias = S.chain!==MAINNET ? aliasOf(account) : null;
+    const calls = [
       {to:SLOW,data:cd(SEL.getOut,['address'],[account])},
       {to:SLOW,data:cd(SEL.getIn,['address'],[account])},
       {to:SLOW,data:cd(SEL.guardians,['address'],[account])},
-    ]);
+    ];
+    if(alias) calls.push({to:SLOW,data:cd(SEL.getOut,['address'],[alias])});
+    const [oh,ih,gh,ah] = await mc(calls);
     if(stale()) return;
-    const oIds = oh ? decode(['uint256[]'],oh)[0] : [];
+    const own = oh ? decode(['uint256[]'],oh)[0] : [];
+    const viaBridge = ah ? decode(['uint256[]'],ah)[0] : [];
+    S.aliasHasTransfers = viaBridge.length>0;
+    const oIds = [...own, ...viaBridge];
     const iIds = ih ? decode(['uint256[]'],ih)[0] : [];
     const hasGuardian = !!gh && ('0x'+gh.slice(-40)).toLowerCase()!==ZERO;
 
@@ -2001,6 +2186,37 @@ const ICONS = {
    Send form
    ══════════════════════════════════════════════════════════════════ */
 const tokenBg = t => TOKEN_COLORS[t.symbol] || tokenColor(t.address);
+/*
+   Destination. Only offered from Ethereum, only for native ETH, and only to a
+   chain where SLOW is actually deployed — which is the honest gate: bridging
+   into a contract that is not there hands the ETH to an address with no code
+   and no way to give it back.
+*/
+function destinations(){
+  if(S.chain!==MAINNET || S.token!==ZERO) return [];
+  return CHAIN_IDS.filter(id => id!==MAINNET && BRIDGES[id] && BRIDGES[id].from===MAINNET);
+}
+function buildDestRow(){
+  const opts = destinations();
+  el.fDest.hidden = !opts.length;
+  if(!opts.length){ S.dest=null; return; }
+  const row=el.destRow;
+  row.replaceChildren();
+  const mk=(id,label,live)=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='opt'; b.dataset.dest=String(id);
+    b.textContent=label;
+    b.disabled=!live;
+    b.title = live ? '' : `SLOW is not deployed on ${cfg(id).name} yet`;
+    b.setAttribute('aria-pressed', String((S.dest||MAINNET)===id));
+    row.appendChild(b);
+  };
+  mk(MAINNET, 'Ethereum', true);
+  for(const id of opts) mk(id, cfg(id).short, S.slowDeployed[id]===true);
+  const live = opts.filter(id=>S.slowDeployed[id]===true).length;
+  el.destHint.textContent = live ? '' : 'awaiting deployment';
+}
+
 function buildTokenGrid(){
   const g=el.cryptoGrid, c=cfg();
   el.assetHint.textContent=`${c.tokens.length} on ${c.name}`;
@@ -2742,7 +2958,12 @@ function renderReview(){
   el.summary.textContent = `${S.amount} ${S.symbol} → ${who}`;
 
   const t0=nw(), unlock=t0+S.delay, claw=unlock+GRACE;
-  const rows=[
+  const dest = S.dest ? cfg(S.dest) : null;
+  const rows= dest ? [
+    {cls:'now',  when:'Now', what:`Leaves Ethereum. The timelock starts when it arrives on ${dest.name}, usually within a few minutes.`},
+    {cls:'',     when:`+ ${fmtTime(S.delay)} after arrival`, what:`${S.resolvedName||shortAddr(S.resolved)} can claim it on ${dest.name}. Until then you can reverse it there.`},
+    {cls:'warn', when:'+ 30 days',  what:`If it was never claimed, you can recover it on ${dest.name}.`},
+  ] : [
     {cls:'now',  when:'Now', what:`Locked. You can reverse it and take it back at any point until it unlocks.`},
     {cls:'',     when:fmtWhen(unlock), what:`Unlocks after ${fmtTime(S.delay)}. ${who} can claim it${S.autoClaim?', or a keeper will settle it for them':''}. You can no longer reverse it.`},
     {cls:'warn', when:fmtWhen(claw), what:`If it was never claimed, you can recover it from here.`},
@@ -2757,7 +2978,9 @@ function renderReview(){
     li.appendChild(box);
     el.timeline.appendChild(li);
   }
-  el.confirmBtn.textContent=`Send ${S.amount} ${S.symbol}`;
+  el.confirmBtn.textContent = S.dest
+    ? `Send ${S.amount} ${S.symbol} to ${cfg(S.dest).short}`
+    : `Send ${S.amount} ${S.symbol}`;
   previewPlan();
 }
 async function updateTipPreview(){
@@ -3102,6 +3325,12 @@ el.gaCancel.onclick=()=>hideModal(el.gaModal);
 el.guardCancel.onclick=()=>hideModal(el.guardModal);
 el.guardInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.guardApply.click(); });
 
+el.destRow.addEventListener('click',e=>{
+  const b=e.target.closest('.opt'); if(!b||b.disabled) return;
+  const id=Number(b.dataset.dest);
+  S.dest = id===MAINNET ? null : id;
+  buildDestRow(); render(); renderReview();
+});
 el.cryptoGrid.addEventListener('click',e=>{
   const b=e.target.closest('.crypto'); if(!b) return;
   S.token=b.dataset.token.toLowerCase();
@@ -3110,7 +3339,7 @@ el.cryptoGrid.addEventListener('click',e=>{
   S.step=Math.max(S.step,1);
   setNote(el.amountNote,'');
   tokenMeta(S.token).then(m=>{ if(S.token===b.dataset.token.toLowerCase()){ S.decimals=m.decimals; paintPresets(); } });
-  paintPresets(); refreshBalance();
+  paintPresets(); refreshBalance(); buildDestRow();
   if(S.amount) validateAmount();
 });
 el.amountRow.addEventListener('click',e=>{
@@ -3192,7 +3421,7 @@ addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(fals
   try { saved=Number(localStorage.getItem('slow.chain'))||null; } catch(e){}
   S.chain = (fromHost&&CHAINS[fromHost]) ? fromHost : (saved&&CHAINS[saved]) ? saved : MAINNET;
 })();
-buildTokenGrid(); paintChain(); paintNet(); paintWallet();
+buildTokenGrid(); buildDestRow(); paintChain(); paintNet(); paintWallet();
 setView('home');
 checkDeployed();
 addEventListener('hashchange', applyRoute);
