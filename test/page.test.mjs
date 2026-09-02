@@ -69,6 +69,7 @@ const EXPORTS = [
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
+  'LOADER', 'LOADER_STILL',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -370,6 +371,30 @@ eq(C.ready(), false, 'not ready without a timelock');
 C.S.delay = 86400;
 eq(C.ready(), true, 'ready once recipient, asset, amount and timelock are all set');
 Object.assign(C.S, snap);
+
+// ─── Loader ────────────────────────────────────────────────────────────────
+{
+  const frames = (C.LOADER.match(/<animate /g) || []).length;
+  eq(frames, 16, 'the loader keeps all sixteen frames');
+  eq((C.LOADER.match(/dur="3\.2s"/g) || []).length, 16, 'every frame shares the 3.2s loop');
+  ok(!/<!--/.test(C.LOADER), 'comments are stripped');
+  ok(!/\swidth="400"/.test(C.LOADER), 'the fixed pixel size is dropped so CSS can size it');
+  ok(/viewBox="0 0 400 400"/.test(C.LOADER), 'the viewBox is kept');
+  ok(/aria-label="Loading"/.test(C.LOADER), 'the loader is labelled for a screen reader');
+
+  // SMIL cannot be stopped from CSS, so reduced motion gets a still frame —
+  // and it must be the SAME drawing, not a different one.
+  eq((C.LOADER_STILL.match(/<animate /g) || []).length, 0, 'the still frame animates nothing');
+  const polys = (str) => (str.match(/<polygon /g) || []).length;
+  eq(polys(C.LOADER_STILL), 6, 'the still frame is one complete frame, six facets');
+  ok(polys(C.LOADER) > polys(C.LOADER_STILL), 'the animated loader has more frames than the still one');
+  // Same drawing, minus the animation: every shape in the still frame appears
+  // verbatim in the animated one.
+  const shapes = C.LOADER_STILL.match(/<(?:polygon|line)[^>]*\/>/g) || [];
+  eq(shapes.length, 8, 'the still frame has six facets and two rules');
+  ok(shapes.every((sh) => C.LOADER.includes(sh)),
+    'every shape in the still frame is drawn identically in the animation');
+}
 
 // ─── Links ─────────────────────────────────────────────────────────────────
 // Routes live in the fragment because a gateway serves this document from every
