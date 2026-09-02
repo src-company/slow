@@ -457,7 +457,10 @@ body.light .modal{background:rgba(0,0,0,.4)}
       <div class="field">
         <span class="flabel">Accounts you guard <em id="gWardHint"></em></span>
         <div class="list" id="gWards"></div>
-        <button class="link" id="gAddWard">+ Add an account</button>
+        <div class="row2">
+          <button class="link" id="gAddWard">+ Add an account</button>
+          <button class="link" id="gScan">Scan for mine</button>
+        </div>
       </div>
     </div>
 
@@ -586,6 +589,9 @@ const MC3     = '0xcA11bde05977b3631167028862bE2a173976CA11';
 const MAINNET = 1;
 const GRACE   = 2592000;                 // 30-day clawback window
 const GUARD_DELAY = 86400;               // veto window on rotating an active guardian
+// keccak256("GuardianSet(address,address)") — both arguments indexed, so a node
+// that serves logs at all can answer "who named me" as an exact topic query.
+const TOPIC_GUARDIAN_SET = '0xc3ce29e3ab42e524b6f6f1b4d3674898d503ee3577a64ac87b555904ebc14138';
 const MAX_DELAY = 3155760000;            // 100 years
 
 /* ──────────────────────────────────────────────────────────────────
@@ -610,6 +616,9 @@ const CHAINS = {
   1: {
     id:1, hex:'0x1', name:'Ethereum', short:'Mainnet',
     explorer:'https://etherscan.io',
+    // SLOW's deployment block, so a log scan never asks for more history than
+    // exists. Found by bisecting eth_getCode.
+    deployBlock:24986598,
     rpcs:[
       'https://ethereum-rpc.publicnode.com',
       'https://eth.llamarpc.com',
@@ -627,6 +636,7 @@ const CHAINS = {
   4663: {
     id:4663, hex:'0x1237', name:'Robinhood Chain', short:'Robinhood',
     explorer:'https://robinscan.io',
+    deployBlock:0,
     rpcs:['https://rpc.mainnet.chain.robinhood.com'],
     // Each confirmed on chain to have code and to report this symbol and these
     // decimals. All three are native to the chain rather than bridged, which is
@@ -666,6 +676,7 @@ const SEL = {
   pendingGuardian:'0x3b0a6875', approveTransfer:'0xfa02c4b7', revokeApproval:'0x47d07c4c',
   guardianApproved:'0x8d4a1b58', isGuardianApprovalNeeded:'0xaade934f',
   predictWithdrawalId:'0x2d0eae84', predictTransferId:'0xd8a29acf',
+  wardsOf:'0xb266b777',
   unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
@@ -1110,7 +1121,7 @@ const S = {
   view:'home', step:0, tab:'outbound',
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
-  guard:{guardian:null, pending:null, wards:[], open:null, loading:false},
+  guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
   timer:null, lastLoad:0, loadSeq:0,
@@ -2111,12 +2122,82 @@ function hideTip(){ el.tipLayer.replaceChildren(); }
    VERIFIED against `guardians(ward)` before it is shown. An address you
    no longer guard is labelled as such rather than quietly dropped.
    ══════════════════════════════════════════════════════════════════ */
+/*
+   Three ways to learn which accounts you guard, best first. Each is tried and
+   the results merged; none is depended on.
+
+   1. ASK THE CONTRACT. `wardsOf(guardian)` is one eth_call and works on any
+      endpoint. The deployed SLOW has no reverse index, so this is silent today
+      — src/SlowGuardianIndex.sol is the change that lights it up, and probing
+      for the selector means the same page starts using it the day it ships.
+
+   2. ASK THE LOGS. `GuardianSet` indexes both arguments, so "who named me" is
+      an exact topic query. Whether it can be asked depends entirely on the
+      endpoint: of the five in the mainnet pool, publicnode refuses getLogs
+      outright ("Archive requests require a personal token"), 1rpc caps the
+      range at FIFTY blocks, pokt rejects 50k as too large, and only Tenderly's
+      gateway serves the contract's full 900k-block history in one call. So this
+      is an opportunistic bonus, never a requirement — which is exactly why it
+      cannot be the only mechanism.
+
+   3. ASK THE USER. Always available, needs nothing but eth_call, and is the
+      only one that works when the other two do not. Whatever the first two
+      find is merged into this list rather than replacing it.
+
+   Every ward from any source is then verified against `guardians(ward)` before
+   it is shown.
+*/
 const wardsKey = () => `slow.wards.${S.chain}.${(S.account||'').toLowerCase()}`;
 function loadWards(){
   try { return JSON.parse(localStorage.getItem(wardsKey())||'[]').filter(isAddr); } catch(e){ return []; }
 }
 function saveWards(list){
   try { localStorage.setItem(wardsKey(), JSON.stringify([...new Set(list.map(a=>a.toLowerCase()))])); } catch(e){}
+}
+// Tier 1: the contract's own reverse index, if this deployment has one.
+async function wardsFromIndex(){
+  const key='idx:'+S.chain;
+  if(S.guard[key]===false) return [];
+  try {
+    if(S.guard[key]===undefined){
+      const code=await rpc('eth_getCode',[SLOW,'latest'],S.chain);
+      S.guard[key] = typeof code==='string' && code.includes(SEL.wardsOf.slice(2));
+      if(!S.guard[key]) return [];
+    }
+    const [r]=await mc([{to:SLOW,data:cd(SEL.wardsOf,['address'],[S.account])}]);
+    if(!r) return [];
+    const d=strip(r), n=parseInt(d.slice(64,128),16);
+    const out=[];
+    for(let i=0;i<n;i++) out.push('0x'+d.slice(128+i*64+24,128+(i+1)*64));
+    return out;
+  } catch(e){ return []; }
+}
+// Tier 2: logs, if the endpoint will serve them. Failure is expected and quiet.
+async function wardsFromLogs(){
+  const c=cfg();
+  try {
+    const logs=await rpc('eth_getLogs',[{
+      address:SLOW,
+      topics:[TOPIC_GUARDIAN_SET, null, '0x'+word(S.account)],
+      fromBlock:'0x'+(c.deployBlock||0).toString(16),
+      toBlock:'latest',
+    }],c.id);
+    if(!Array.isArray(logs)) return [];
+    return logs.map(l=>'0x'+String(l.topics?.[1]||'').slice(-40)).filter(isAddr);
+  } catch(e){ return []; }
+}
+async function scanWards(){
+  if(!S.account) return;
+  S.guard.scanning=true; renderGuard();
+  try {
+    const [a,b]=await Promise.all([wardsFromIndex(),wardsFromLogs()]);
+    const found=[...a,...b].map(x=>x.toLowerCase()).filter(isAddr);
+    const before=loadWards();
+    const merged=[...new Set([...before,...found])];
+    saveWards(merged);
+    const added=merged.length-before.length;
+    toast(added ? `Found ${added} more.` : (found.length ? 'Nothing new.' : 'Nothing found — add an address instead.'));
+  } finally { S.guard.scanning=false; await loadGuard(); }
 }
 async function loadGuard(){
   if(!S.account) return;
@@ -2229,7 +2310,8 @@ function openApprove(w){
 }
 function renderGuard(){
   const g=S.guard;
-  el.gHint.textContent = g.loading ? 'reading…' : '';
+  el.gHint.textContent = g.scanning ? 'scanning…' : g.loading ? 'reading…' : '';
+  el.gScan.disabled = !!(g.loading||g.scanning);
 
   const cur=el.gCurrent;
   cur.replaceChildren();
@@ -2688,6 +2770,7 @@ el.segGuard.onclick=async()=>{ setView('guard'); if(!S.account) await connect(tr
 el.gSet.onclick=()=>openGuardModal('set');
 el.gRemove.onclick=()=>openGuardModal('remove');
 el.gAddWard.onclick=()=>openGuardModal('ward');
+el.gScan.onclick=scanWards;
 el.gCommit.onclick=commitGuardianTx;
 el.gCancel.onclick=cancelGuardianTx;
 el.guardApply.onclick=applyGuardModal;

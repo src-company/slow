@@ -51,6 +51,7 @@ const captured = {};
 globalThis.__capture = captured;
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{
   CHAINS, CHAIN_IDS, SLOW, ZERO, MC3, ENS_REG, WNS, SEL, MAINNET, TOKEN_COLORS,
+  TOPIC_GUARDIAN_SET, word,
   encAggregate3, decAggregate3, decode, cd, decodeStringLoose,
 });`)();
 const C = captured;
@@ -135,6 +136,30 @@ for (const id of C.CHAIN_IDS) {
   const deployed = codeSize(slowCode) > 0;
   console.log(`  info  SLOW at ${C.SLOW}: ${deployed ? `${codeSize(slowCode).toLocaleString()} B` : 'not deployed'}`);
   if (id === C.MAINNET) ok(deployed, 'mainnet: SLOW is deployed');
+
+  // Can this chain's pool serve the ward-discovery log query at all?
+  //
+  // Not a pass/fail: the answer decides whether the interface can offer a scan,
+  // and it is why user input is the primary mechanism rather than a fallback.
+  // On the mainnet pool exactly one of five endpoints serves it — publicnode
+  // refuses getLogs outright, 1rpc caps the range at fifty blocks, pokt rejects
+  // 50k as too large.
+  if (c.deployBlock !== undefined) {
+    let served = 0;
+    for (const url of c.rpcs) {
+      try {
+        const r = await post(url, 'eth_getLogs', [{
+          address: C.SLOW,
+          topics: [C.TOPIC_GUARDIAN_SET],
+          fromBlock: '0x' + (c.deployBlock || 0).toString(16),
+          toBlock: 'latest',
+        }]);
+        if (Array.isArray(r)) served++;
+      } catch (e) { /* expected on most */ }
+    }
+    console.log(`  info  eth_getLogs over full history: ${served}/${c.rpcs.length} endpoints`);
+    ok(true, `${c.short}: log availability measured, not assumed`);
+  }
 
   // Name resolution is pinned to mainnet, and this is the check that says why.
   //
