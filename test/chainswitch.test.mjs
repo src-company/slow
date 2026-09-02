@@ -1,5 +1,5 @@
 /**
- * Two chains, one canonical address — the state that must not survive a switch.
+ * Three chains, one canonical address — the state that must not survive a switch.
  *
  * SLOW sits at the same address on every chain, which is exactly what makes
  * stale state dangerous: nothing about a leftover value LOOKS wrong after a
@@ -11,7 +11,7 @@
  * This dirties every field of the state object, switches chain, and asserts the
  * per-chain ones came back to their initial values. It runs offline.
  *
- *   node test/twochain.test.mjs
+ *   node test/chainswitch.test.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -159,6 +159,28 @@ for (const f of NOT_PER_CHAIN) {
 eq(C.S.ens['vitalik.eth'], '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
   'the name cache survives: names are read on mainnet whatever is active');
 
+// ─── And in every direction, not just the one ──────────────────────────────
+// Three chains is six ordered pairs. A reset that only works leaving mainnet is
+// not a reset.
+for (const from of C.CHAIN_IDS) {
+  for (const to of C.CHAIN_IDS) {
+    if (from === to) continue;
+    C.S.chain = from;
+    C.S.guard = {guardian: '0x00000000000000000000000000000000000000Ff', pending: {guardian: '0x0', at: 1},
+      wards: [{addr: '0xabc'}], open: '0xabc', loading: false, scanning: false};
+    C.S.out = [{id: '9'}]; C.S.balance = 7n; C.S.token = '0xabc'; C.S.detail = {t: {id: '9'}};
+    C.S.view = 'take';
+    C.switchChain(to);
+    eq(C.S.chain, to, `${from} -> ${to}: the switch took effect`);
+    eq(C.S.guard.guardian, null, `${from} -> ${to}: guardian cleared`);
+    eq(C.S.guard.wards.length, 0, `${from} -> ${to}: wards cleared`);
+    eq(C.S.out.length, 0, `${from} -> ${to}: transfers cleared`);
+    eq(C.S.balance, null, `${from} -> ${to}: balance cleared`);
+    eq(C.S.token, null, `${from} -> ${to}: asset cleared`);
+    eq(C.S.detail, null, `${from} -> ${to}: open detail cleared`);
+  }
+}
+
 // ─── The ward list is keyed by chain and account ───────────────────────────
 {
   C.S.chain = 1; C.S.account = '0x000000000000000000000000000000000000dEaD';
@@ -167,6 +189,9 @@ eq(C.S.ens['vitalik.eth'], '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
   const b = C.wardsKey();
   ok(a !== b, 'wards are stored per chain, so one chain cannot show the other');
   ok(a.includes('1') && b.includes('4663'), 'the key names its chain');
+  // All three must be distinct, or one chain's wards would show on another.
+  const keys = C.CHAIN_IDS.map((id) => { C.S.chain = id; return C.wardsKey(); });
+  eq(new Set(keys).size, keys.length, 'every chain gets its own ward list');
 }
 
 // ─── Pending deployment degrades honestly ──────────────────────────────────

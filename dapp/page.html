@@ -657,6 +657,39 @@ const CHAINS = {
       {symbol:'BOLD',  address:'0x6440f144b7e50d6a8439336510312d2f54beb01d', decimals:18},
     ],
   },
+  8453: {
+    id:8453, hex:'0x2105', name:'Base', short:'Base',
+    explorer:'https://basescan.org',
+    deployBlock:0,
+    // Base gas is roughly a fortieth of mainnet's, so the floors are lower.
+    minGasPrice:1_000_000n, fallbackGasPrice:50_000_000n, minTip:2_000_000_000_000n,
+    rpcs:[
+      'https://base-rpc.publicnode.com',
+      'https://mainnet.base.org',
+      'https://base.drpc.org',
+      'https://1rpc.io/base',
+    ],
+    // Verified on chain: every symbol and every decimal read back through the
+    // page's own multicall encoder. USDe sits at the same address here as on
+    // Robinhood Chain, and cbBTC at the same address as on mainnet — both were
+    // deployed deterministically, which is why the slots line up so cleanly.
+    tokens:[
+      {symbol:'ETH',   address:'0x0000000000000000000000000000000000000000', decimals:18},
+      {symbol:'USDC',  address:'0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', decimals:6},
+      {symbol:'USDe',  address:'0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', decimals:18},
+      {symbol:'cbBTC', address:'0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', decimals:8},
+      {symbol:'wstETH',address:'0xc1cba3fcea344f92d9239c08c0568f6f2f0ee452', decimals:18},
+      {symbol:'cbETH', address:'0x2ae3f1ec7f1f5012cfeab0185bfc7aa3cf0dec22', decimals:18},
+      {symbol:'USDT',  address:'0xfde4c96c8593536e31f229ea8f37b2ada2699bb2', decimals:6},
+      {symbol:'AERO',  address:'0x940181a94a35a4569e4529a3cdfb74e38fd98631', decimals:18},
+    ],
+    addChain:{
+      chainId:'0x2105', chainName:'Base',
+      nativeCurrency:{name:'Ether', symbol:'ETH', decimals:18},
+      rpcUrls:['https://mainnet.base.org'],
+      blockExplorerUrls:['https://basescan.org'],
+    },
+  },
   4663: {
     id:4663, hex:'0x1237', name:'Robinhood Chain', short:'Robinhood',
     explorer:'https://robinscan.io',
@@ -687,7 +720,9 @@ const CHAINS = {
     },
   },
 };
-const CHAIN_IDS = Object.keys(CHAINS).map(Number);
+// Explicit, because Object.keys sorts integer-like keys numerically and would
+// decide the picker's order for us.
+const CHAIN_IDS = [1, 8453, 4663];
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
 
 const SEL = {
@@ -727,7 +762,7 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
 const TOKEN_COLORS = {
   ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#c026d3',
   USDe:'#6d28d9', USDG:'#ccff00', NVDA:'#4d7c0f',
-  wstETH:'#38bdf8', WBTC:'#a0522d',
+  wstETH:'#38bdf8', WBTC:'#a0522d', cbETH:'#71f26d', AERO:'#5d7222',
   // The four tokenized equities have no brand colour anyone would recognise on
   // a 100px square, so they are assigned for legibility instead — except GME,
   // where the red IS the association. SPY moves off red to make room for it: an
@@ -769,7 +804,8 @@ const inkOn = hex =>
 const PRESETS = {
   ETH:['0.01','0.1','1'], WETH:['0.01','0.1','1'],
   cbBTC:['0.001','0.01','0.1'], WBTC:['0.001','0.01','0.1'],
-  wstETH:['0.01','0.1','1'],
+  wstETH:['0.01','0.1','1'], cbETH:['0.01','0.1','1'],
+  AERO:['1','10','100'],
   NVDA:['0.1','1','10'], SPY:['0.1','1','10'], SPCX:['0.1','1','10'], GME:['0.1','1','10'],
   default:['10','100','1000'],
 };
@@ -1193,7 +1229,7 @@ async function reverseAny(addr){
 const S = {
   chain:MAINNET, theme:'system',
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
-  slowDeployed:{},
+  slowDeployed:{}, slowMismatch:null,
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
   resolved:null, resolvedName:null, resolveSeq:0,
@@ -1394,15 +1430,31 @@ function switchChain(id){
   if(S.view==='take') loadTransfers(true);
   if(S.view==='guard') loadGuard();
 }
-// SLOW is at the same address everywhere it is deployed, but "deployed" is not
-// a given: telling someone their transfer list is empty when the contract is
-// not there at all would be a lie.
+/*
+   Is SLOW deployed here — and is it THIS SLOW?
+
+   Presence of code is not the question, and Base is why. Before it was
+   redeployed, the canonical address on Base held a genuine but OLDER SLOW:
+   name() answered "SLOW", depositTo and reverse and guardians were all there,
+   and getOutboundTransfers, gate() and html() were not. A page that checked
+   only for code would have found 13,386 bytes, believed it, called an
+   entrypoint that did not exist, and shown an empty transfer list to someone
+   who had transfers.
+
+   So the check is that the runtime carries the selectors this page actually
+   calls. That also covers the cases a code check never could: an address
+   squatted through CREATE2, a half-finished deploy, or the right contract on
+   the wrong chain.
+*/
+const REQUIRED_SELECTORS = [SEL.depositTo, SEL.getOut, SEL.getIn, SEL.pendingTransfers, SEL.guardians];
 async function checkDeployed(){
   const id=S.chain;
   if(S.slowDeployed[id]!==undefined){ paintDeployed(); return; }
   try {
     const code=await rpc('eth_getCode',[SLOW,'latest'],id);
-    S.slowDeployed[id]= typeof code==='string' && code.length>4;
+    const present = typeof code==='string' && code.length>4;
+    S.slowDeployed[id] = present && REQUIRED_SELECTORS.every(x=>code.includes(x.slice(2)));
+    if(present && !S.slowDeployed[id]) S.slowMismatch=id;
   } catch(e){ S.slowDeployed[id]=undefined; }
   if(S.chain===id) paintDeployed();
 }
@@ -2012,7 +2064,9 @@ function paintWallet(){
 function paintDeployed(){
   const live=S.slowDeployed[S.chain];
   el.chainWarn.hidden = live!==false;
-  if(live===false) el.chainWarn.textContent=`SLOW is not deployed on ${cfg().name} yet.`;
+  if(live===false) el.chainWarn.textContent = S.slowMismatch===S.chain
+    ? `The contract at this address on ${cfg().name} is not the build this page speaks to.`
+    : `SLOW is not deployed on ${cfg().name} yet.`;
   render();
 }
 function render(){

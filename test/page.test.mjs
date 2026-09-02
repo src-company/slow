@@ -540,7 +540,11 @@ eq(C.MAINNET, 1, 'mainnet is chain 1');
 // ─── Chains ────────────────────────────────────────────────────────────────
 // SLOW is at one canonical address everywhere; what differs per chain is the
 // code at it, the token set, and whether the name registries exist at all.
-eq(C.CHAIN_IDS.join(','), '1,4663', 'the page knows mainnet and Robinhood Chain');
+eq(C.CHAIN_IDS.join(','), '1,8453,4663', 'the page knows mainnet, Base and Robinhood Chain');
+eq(C.CHAINS[8453].hex, '0x2105', 'Base is 8453 == 0x2105');
+eq(parseInt(C.CHAINS[8453].hex, 16), 8453, 'Base hex and decimal agree');
+eq(C.CHAIN_IDS.every((id) => C.CHAINS[id]), true, 'every listed id has a registry entry');
+eq(Object.keys(C.CHAINS).length, C.CHAIN_IDS.length, 'no chain is defined but unlisted');
 eq(C.CHAINS[1].hex, '0x1', 'mainnet chain id hex');
 eq(C.CHAINS[4663].hex, '0x1237', 'Robinhood Chain is 4663 == 0x1237');
 eq(parseInt(C.CHAINS[4663].hex, 16), 4663, 'the hex and decimal chain ids agree');
@@ -552,6 +556,27 @@ eq(C.CHAINS[4663].addChain.nativeCurrency.symbol, 'ETH', 'gas on 4663 is paid in
 eq(C.CHAINS[4663].addChain.rpcUrls[0], C.CHAINS[4663].rpcs[0],
   'the RPC offered to the wallet is the one the page reads from');
 ok(!C.CHAINS[1].addChain, 'mainnet needs no add-chain fallback');
+
+// Base, verified on chain.
+{
+  const b = C.CHAINS[8453].tokens;
+  eq(b.map((t) => t.symbol).join(','), 'ETH,USDC,USDe,cbBTC,wstETH,cbETH,USDT,AERO', 'Base lists its own assets');
+  eq(b.length % 4, 0, 'Base fills whole rows of four');
+  eq(b.find((t) => t.symbol === 'USDC').address, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 'native USDC on Base');
+  eq(b.find((t) => t.symbol === 'USDC').decimals, 6, 'Base USDC has 6 decimals');
+  eq(b.find((t) => t.symbol === 'cbBTC').decimals, 8, 'Base cbBTC has 8 decimals');
+  eq(b.find((t) => t.symbol === 'AERO').address, '0x940181a94a35a4569e4529a3cdfb74e38fd98631', 'AERO on Base');
+  // Deterministic deployments mean two of the aligned slots are literally the
+  // same address across chains, which is worth pinning.
+  eq(b.find((t) => t.symbol === 'USDe').address,
+    C.CHAINS[4663].tokens.find((t) => t.symbol === 'USDe').address,
+    'USDe is at one address on Base and Robinhood Chain');
+  eq(b.find((t) => t.symbol === 'cbBTC').address,
+    C.CHAINS[1].tokens.find((t) => t.symbol === 'cbBTC').address,
+    'cbBTC is at one address on Base and mainnet');
+  eq(C.presetsFor('AERO').join(','), '1,10,100', 'AERO gets its own ladder');
+  eq(C.presetsFor('cbETH').join(','), C.presetsFor('wstETH').join(','), 'cbETH ladders at ether scale');
+}
 
 for (const id of C.CHAIN_IDS) {
   const c = C.CHAINS[id];
@@ -579,9 +604,16 @@ eq(C.CHAINS[1].tokens.length % 4, 0, 'mainnet fills whole rows of four');
 // slots 1, 3 and 4 are literally the same asset.
 {
   const m = C.CHAINS[1].tokens, r = C.CHAINS[4663].tokens;
+  const b = C.CHAINS[8453].tokens;
   for (const slot of [0, 2, 3]) {
-    eq(m[slot].symbol, r[slot].symbol, `slot ${slot + 1} is the same asset on both chains`);
-    eq(m[slot].decimals, r[slot].decimals, `slot ${slot + 1} has the same decimals on both`);
+    eq(m[slot].symbol, r[slot].symbol, `slot ${slot + 1} is the same asset on mainnet and Robinhood`);
+    eq(m[slot].symbol, b[slot].symbol, `slot ${slot + 1} is the same asset on mainnet and Base`);
+    eq(m[slot].decimals, r[slot].decimals, `slot ${slot + 1} has the same decimals on mainnet and Robinhood`);
+    eq(m[slot].decimals, b[slot].decimals, `slot ${slot + 1} has the same decimals on mainnet and Base`);
+  }
+  // Base shares more than the aligned four: mainnet's 2, 5 and 7 too.
+  for (const slot of [1, 4, 6]) {
+    eq(m[slot].symbol, b[slot].symbol, `slot ${slot + 1} matches mainnet on Base`);
   }
   // Slot 2 is each chain's own primary stable, so it differs by design.
   ok(m[1].symbol !== r[1].symbol, 'slot 2 is the chain\'s own primary stable');

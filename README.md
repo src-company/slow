@@ -26,14 +26,19 @@ The dapp is a portal, not a single-chain page. SLOW sits at the same canonical
 address on every chain it is deployed to, so the address is not per-chain — what
 differs is the code at it, the token set, and the surrounding infrastructure.
 
-| | Ethereum | Robinhood Chain |
-| --- | --- | --- |
-| chain id | 1 | 4663 (`0x1237`) |
-| SLOW | deployed, 21,648 B | not deployed yet |
-| Multicall3 | canonical | canonical |
-| Permit2 | canonical | canonical |
-| `.eth` / `.wei` / `.gwei` | resolves | **does not** |
-| tokens | ETH · USDC · USDe · cbBTC<br>wstETH · WBTC · USDT · BOLD | ETH · USDG · USDe · cbBTC<br>NVDA · SPY · SPCX · GME |
+| | Ethereum | Base | Robinhood Chain |
+| --- | --- | --- | --- |
+| chain id | 1 | 8453 | 4663 (`0x1237`) |
+| Multicall3 | canonical | canonical | canonical |
+| Permit2 | canonical | canonical | canonical |
+| CreateX | canonical | canonical | canonical |
+| `.eth` / `.wei` / `.gwei` | resolves | **does not** | **does not** |
+| assets | ETH · USDC · USDe · cbBTC<br>wstETH · WBTC · USDT · BOLD | ETH · USDC · USDe · cbBTC<br>wstETH · cbETH · USDT · AERO | ETH · USDG · USDe · cbBTC<br>NVDA · SPY · SPCX · GME |
+
+Slots 1, 3 and 4 hold literally the same asset on all three chains — ETH, USDe,
+cbBTC — and Base matches mainnet on 2, 5 and 7 as well. USDe is at one address
+on Base and Robinhood Chain, cbBTC at one address on Base and mainnet: both were
+deployed deterministically.
 
 Two consequences are baked into the page:
 
@@ -43,11 +48,6 @@ returns the zero address rather than reverting. A dapp that resolved against the
 active chain would not fail loudly there; it would tell the reader that a valid
 name does not exist. So ENS and WNS reads are pinned to chain 1 unconditionally,
 whichever chain is being spent on.
-
-**The first row means the same thing on either chain.** Slots 1, 3 and 4 are
-literally the same asset — ETH, USDe, cbBTC — at whatever address that chain
-holds them, with the same colour and the same decimals. Slot 2 is each chain's
-own primary stable. The rest is chain-specific.
 
 **Reads never go to a wallet parked elsewhere.** A wallet on mainnet asked to
 `eth_call` chain 4663 answers with mainnet's state, silently and wrongly. The
@@ -297,7 +297,7 @@ forge test
 Dapp tests run on vanilla Node — no NPM:
 
 - `node test/page.test.mjs` — unit tests for `dapp/page.html`: keccak256, namehash, the ABI codec, the Multicall3 `aggregate3` encoder and decoder, exact-decimal units, EIP-712 domain separators, EIP-5792 capability probing, the chain registry, transfer status, and every selector.
-- `node test/twochain.test.mjs` — the state that must not survive a chain switch. Dirties every field, switches chain, and asserts the per-chain ones cleared while the chain-independent ones (the name cache, the connected account) survive. Offline.
+- `node test/chainswitch.test.mjs` — the state that must not survive a chain switch. Dirties every field, switches across all six ordered chain pairs, and asserts the per-chain ones cleared while the chain-independent ones (the name cache, the connected account) survive. Offline.
 - `node test/names.live.mjs` — name resolution against mainnet, and what it costs: forward resolution per TLD, reverse across all three registries, and a count of the JSON-RPC round trips each takes. Also asserts that name reads stay on mainnet while another chain is active.
 - `node test/chains.live.mjs` — the chain registry against real nodes: each chain answers with the id it claims, Multicall3 is at the canonical address, every listed token reports the symbol and decimals the registry pins, and `.eth` resolves only on mainnet. Needs network; skips a chain cleanly if its RPCs are unreachable.
 - `node test/slow_html.test.mjs` — the same for the frozen v1 artifact `SLOW.html`.

@@ -129,13 +129,27 @@ for (const id of C.CHAIN_IDS) {
     ok(C.TOKEN_COLORS[t.symbol] || t.address === C.ZERO, `${c.short}: ${t.symbol} has a tile colour`);
   }
 
-  // SLOW's address is canonical; its presence is not. The page checks this at
-  // runtime so it never shows an empty transfer list for a chain that has no
-  // contract on it.
+  // SLOW's address is canonical; the BUILD at it is not.
+  //
+  // Base is the reason this checks selectors rather than code length. Before it
+  // was redeployed, the canonical address there held a genuine but older SLOW —
+  // name() answered "SLOW", depositTo and guardians were present, and the
+  // transfer enumeration the page depends on was not. Code length alone says
+  // "deployed" and means nothing.
   const slowCode = await post(rpcUrl, 'eth_getCode', [C.SLOW, 'latest']);
-  const deployed = codeSize(slowCode) > 0;
-  console.log(`  info  SLOW at ${C.SLOW}: ${deployed ? `${codeSize(slowCode).toLocaleString()} B` : 'not deployed'}`);
-  if (id === C.MAINNET) ok(deployed, 'mainnet: SLOW is deployed');
+  const size = codeSize(slowCode);
+  const NEEDED = {
+    depositTo: C.SEL.depositTo, getOutbound: C.SEL.getOut, getInbound: C.SEL.getIn,
+    pendingTransfers: C.SEL.pendingTransfers, guardians: C.SEL.guardians,
+  };
+  const missing = Object.entries(NEEDED)
+    .filter(([, sel]) => !slowCode.includes(sel.slice(2))).map(([n]) => n);
+  console.log(`  info  SLOW at ${C.SLOW}: ${size ? `${size.toLocaleString()} B` : 'not deployed'}` +
+    (size && missing.length ? ` — WRONG BUILD, missing ${missing.join(', ')}` : size ? ' — speaks this page\'s ABI' : ''));
+  if (id === C.MAINNET) {
+    ok(size > 0, 'mainnet: SLOW is deployed');
+    eq(missing.join(','), '', 'mainnet: SLOW carries every selector the page calls');
+  }
 
   // Can this chain's pool serve the ward-discovery log query at all?
   //
