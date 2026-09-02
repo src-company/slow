@@ -337,8 +337,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
 .pick .lbl2{grid-column:2;min-width:0}
 .pick .lbl2 b{display:block;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pick small{
-  display:block;color:var(--dim);font-size:10px;letter-spacing:.1em;
-  text-transform:uppercase;margin-top:3px;
+  display:block;color:var(--dim);font-size:10px;letter-spacing:.06em;
+  margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .pick .tick{grid-column:3;color:var(--fg);font-size:13px}
 @media (max-width:520px){
@@ -402,7 +402,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
       </div>
 
       <div class="field">
-        <span class="flabel">Asset</span>
+        <span class="flabel">Asset <em id="assetHint"></em></span>
         <div class="grid" id="cryptoGrid" role="group" aria-label="Asset"></div>
         <button class="link" id="customTokenOpt">+ Custom token</button>
       </div>
@@ -1861,7 +1861,8 @@ const ICONS = {
    ══════════════════════════════════════════════════════════════════ */
 const tokenBg = t => TOKEN_COLORS[t.symbol] || tokenColor(t.address);
 function buildTokenGrid(){
-  const g=el.cryptoGrid;
+  const g=el.cryptoGrid, c=cfg();
+  el.assetHint.textContent=`${c.tokens.length} on ${c.name}`;
   g.replaceChildren();
   for(const t of cfg().tokens){
     const b=document.createElement('button');
@@ -2907,7 +2908,10 @@ el.themeCancel.onclick=()=>el.themeModal.__cancel?.();
 
 el.chainBtn.onclick=async()=>{
   const id=await openPicker(el.chainModal, el.chainList,
-    CHAIN_IDS.map(id=>({key:id,label:CHAINS[id].name,sub:`chain ${id}`,icon:ICONS[id]})), S.chain);
+    CHAIN_IDS.map(id=>({
+      key:id, label:CHAINS[id].name, icon:ICONS[id],
+      sub:CHAINS[id].tokens.map(t=>t.symbol).join(' · '),
+    })), S.chain);
   if(id) switchChain(id);
 };
 el.chainCancel.onclick=()=>el.chainModal.__cancel?.();
