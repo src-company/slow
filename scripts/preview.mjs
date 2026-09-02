@@ -26,13 +26,13 @@ const tree = execFileSync('git', ['mktree'], {
   input: `100644 blob ${blob}\tindex.html\n100644 blob ${nojekyll}\t.nojekyll\n`,
 }).trim();
 const head = git('rev-parse', '--short', 'HEAD');
-const commit = git('commit-tree', tree, '-m', `preview: ${m.page} @ ${head} (${bytes} B)`);
+const commit = git('commit-tree', tree, '-m', `preview: ${m.page} @ ${head} (${bytes.length} B)`);
 git('push', remote, `${commit}:refs/heads/gh-pages`, '--force');
 
 const url = git('remote', 'get-url', remote);
 const slug = (url.match(/github\.com[/:]([^/]+\/[^/.]+)/) || [])[1];
 
-console.log(`published ${bytes.toLocaleString()} B  sha256 ${sha256.slice(0, 16)}…`);
+console.log(`published ${bytes.length.toLocaleString()} B  sha256 ${sha256.slice(0, 16)}…`);
 if (slug) {
   console.log(`\n  https://raw.githack.com/${slug}/gh-pages/index.html   (uncached — reflects each push)`);
   console.log(`  https://${slug.split('/')[0]}.github.io/${slug.split('/')[1]}/   (once Pages is enabled on gh-pages)`);
