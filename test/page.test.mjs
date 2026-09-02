@@ -286,11 +286,28 @@ ok(/Not enough ETH/.test(C.errText({message: 'insufficient funds for gas'})), 'i
 
 // ─── Transfer status ───────────────────────────────────────────────────────
 const now = Math.floor(Date.now() / 1000);
-const mk = o => ({timestamp: now - 100, delay: 200, unlockTime: now + 100, amountRaw: 1n, ...o});
+// Only pendingTransfers[id].from may reverse or recover, so a status is only
+// actionable when the connected account IS that address.
+const ME = '0x000000000000000000000000000000000000A11c';
+C.S.account = ME;
+const mk = o => ({timestamp: now - 100, delay: 200, unlockTime: now + 100, amountRaw: 1n, from: ME, ...o});
 C.S.tab = 'outbound';
 eq(C.statusOf(mk()).key, 'pending', 'outbound before expiry is pending');
 eq(C.statusOf(mk({unlockTime: now - 10})).key, 'settling', 'outbound after expiry awaits the recipient');
 eq(C.statusOf(mk({unlockTime: now - C.GRACE - 10})).key, 'recover', 'outbound past the grace window is recoverable');
+// A transfer bridged in from L1 is recorded against the ALIAS of your address,
+// so SLOW will reject a reverse from you. It is listed, and it offers nothing.
+{
+  const via = mk({from: C.aliasOf(ME), unlockTime: now - C.GRACE - 10});
+  eq(C.statusOf(via).act, null, 'a bridged-in transfer offers no action');
+  ok(/bridged in/i.test(C.statusOf(mk({from: C.aliasOf(ME)})).text), 'and says why');
+  eq(C.statusOf(mk({from: '0x000000000000000000000000000000000000bEEF'})).act, null,
+    'nor does a third party\u2019s transfer opened from a link');
+  const noWallet = C.S.account; C.S.account = null;
+  eq(C.statusOf(mk({unlockTime: now - C.GRACE - 10})).act, null,
+    'and a reader with no wallet is offered nothing');
+  C.S.account = noWallet;
+}
 C.S.tab = 'inbound';
 eq(C.statusOf(mk({unlockTime: now - 10})).key, 'ready', 'inbound after expiry is claimable');
 eq(C.statusOf(mk()).key, 'pending', 'inbound before expiry is pending');
@@ -472,6 +489,62 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   C.S.dest = 8453;
   eq(C.depositRecipe().chainId, 8453, 'a destination retargets the recipe');
   Object.assign(C.S, snap);
+}
+
+// ─── What the second hunt found ────────────────────────────────────────────
+
+// The `el` map is built last-wins from every [id]. A dead modal carrying the
+// same ids as the live Send pane bound el.amountInput to an input nobody could
+// see, so the listeners attached there and typing an amount did nothing.
+{
+  const doc = html.split('</style>')[1];
+  const ids = [...doc.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+  const dupes = ids.filter((x, i) => ids.indexOf(x) !== i);
+  eq([...new Set(dupes)].join(','), '', 'no id appears twice in the document');
+}
+
+// `hidden` is styled only by the UA sheet, and ANY author `display` outranks it
+// whatever the specificity — so a class that sets display defeated the
+// attribute on every panel toggled from JS.
+{
+  const css = html.split('<style>')[1].split('</style>')[0];
+  ok(/\[hidden\]\{display:none!important\}/.test(css), 'the hidden attribute wins over author display');
+  const doc = html.split('</style>')[1];
+  const hidden = [...doc.matchAll(/<\w+[^>]*\bclass="([^"]+)"[^>]*\bhidden\b/g)].map((m) => m[1]);
+  ok(hidden.length > 0, 'there are elements hidden by attribute');
+}
+
+// A tapped selection must keep its selected styling. Every hover rule is now
+// behind (hover:hover), so on touch there is nothing to out-specify it.
+{
+  const css = html.split('<style>')[1].split('</style>')[0];
+  const bare = css
+    .replace(/\/\*[\s\S]*?\*\//g, '')                              // comments mention :hover too
+    .replace(/@media \(hover:hover\)\{[^{}]*\{[^{}]*\}\}/g, '');   // the gated ones
+  const stray = [...bare.matchAll(/(^|[};])([^{};@]*:hover[^{};]*)\{/g)].map((m) => m[2].trim());
+  eq(stray.join(' | '), '', `every :hover rule is gated on (hover:hover) (stray: ${stray.join(', ') || 'none'})`);
+  ok(!/transition-duration:0!important/.test(css), 'reduced motion uses a valid <time>, not a bare 0');
+  ok(/\.modal\.on\{align-items:flex-end\}/.test(css), 'the bottom sheet matches .modal.on, which sets align-items');
+}
+
+// A destination is only correct for native ETH: the bridge sends the amount as
+// msg.value with depositTo(ZERO, ...) as the inner call.
+{
+  const snap = {...C.S};
+  C.S.chain = 1; C.S.token = C.ZERO;
+  ok(C.destinations().length > 0, 'ETH on mainnet has destinations');
+  C.S.token = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+  eq(C.destinations().length, 0, 'an ERC-20 has none');
+  Object.assign(C.S, snap);
+}
+
+// Every chain the destination row can offer has to be probed, or the buttons
+// stay disabled and captioned "awaiting deployment" whatever is really live.
+{
+  const bridged = C.CHAIN_IDS.filter((id) => C.BRIDGES[id]);
+  ok(bridged.length > 0, 'there are bridge destinations to probe');
+  ok(html.includes('CHAIN_IDS.filter(x => x!==id && BRIDGES[x])'),
+    'checkDeployed probes the destination chains too, not just the active one');
 }
 
 // ─── RPC failover ──────────────────────────────────────────────────────────

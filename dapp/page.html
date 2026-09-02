@@ -28,6 +28,7 @@ body.light{
   --ok:#0a7f3f;--warn:#9a5b00;--err:#c62828;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{
   min-height:100dvh;background:var(--bg);color:var(--fg);
@@ -37,7 +38,7 @@ body{
 }
 button,input{font:inherit;color:inherit;border-radius:0}
 :focus-visible{outline:2px solid var(--fg);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:0!important;animation-duration:.001ms!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.001ms!important;animation-duration:.001ms!important}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
@@ -54,7 +55,7 @@ button,input{font:inherit;color:inherit;border-radius:0}
   letter-spacing:.02em;white-space:nowrap;
   transition:border-color var(--t),background var(--t);
 }
-.chip:hover{border-color:var(--fg);background:var(--bg2)}
+@media (hover:hover){.chip:hover{border-color:var(--fg);background:var(--bg2)}}
 .chip svg{width:17px;height:17px;flex:0 0 auto;display:block}
 .chip .lbl{overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 #themeBtn,#helpBtn{width:34px;padding:0;justify-content:center;font-size:14px}
@@ -64,10 +65,9 @@ button,input{font:inherit;color:inherit;border-radius:0}
   font-size:15px;font-weight:700;letter-spacing:.26em;padding:0 2px;
 }
 .wordmark .mk{width:26px;height:26px;flex:0 0 auto}
-.wordmark:hover{opacity:.65}
+@media (hover:hover){.wordmark:hover{opacity:.65}}
 #walletBtn.on{border-color:var(--fg)}
 #netDot{width:6px;height:6px;background:var(--err);flex:0 0 auto}
-#netDot[hidden]{display:none}
 .warn{
   flex:0 0 auto;width:100%;max-width:420px;margin:0 auto 14px;padding:8px 11px;
   font-size:12.5px;border:1px solid var(--warn);color:var(--fg);background:var(--bg2);
@@ -88,9 +88,9 @@ body.v-home .home{display:flex}
   font-weight:700;font-size:22px;letter-spacing:.14em;cursor:pointer;width:100%;border:none;
   background:var(--bg);color:var(--fg);transition:background var(--t),color var(--t);
 }
-.box:hover{background:var(--fg);color:var(--bg)}
+@media (hover:hover){.box:hover{background:var(--fg);color:var(--bg)}}
 #sendBox{background:var(--fg);color:var(--bg)}
-#sendBox:hover{background:var(--bg);color:var(--fg)}
+@media (hover:hover){#sendBox:hover{background:var(--bg);color:var(--fg)}}
 .divider{height:2px;background:var(--fg);flex:0 0 auto}
 .tag{font-size:12.5px;color:var(--dim);text-align:center;max-width:230px}
 
@@ -108,7 +108,7 @@ body.v-take .panel{max-width:640px}
   transition:background var(--t),color var(--t);
 }
 .seg button + button{border-left:1px solid var(--bd)}
-.seg button:hover{color:var(--fg)}
+@media (hover:hover){.seg button:hover{color:var(--fg)}}
 .seg button[aria-selected=true]{background:var(--fg);color:var(--bg)}
 
 /* ── send flow ───────────────────────────────────────────── */
@@ -142,7 +142,7 @@ body.v-send .sendPane{display:flex}
   transition:border-color var(--t),background var(--t),color var(--t);
   white-space:nowrap;overflow:hidden;padding:0 4px;
 }
-.opt:hover:not(:disabled){border-color:var(--fg)}
+@media (hover:hover){.opt:hover:not(:disabled){border-color:var(--fg)}}
 .opt[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .opt:disabled{opacity:.25;cursor:not-allowed}
 /* amount: a field you type in, with the presets as quick fills */
@@ -176,7 +176,6 @@ body.v-send .sendPane{display:flex}
   background:var(--fg);color:var(--bg);padding:11px 14px;
   max-width:min(94vw,520px);font-size:12.5px;
 }
-.txbar[hidden]{display:none}
 .txbar .txmsg{display:flex;flex-direction:column;min-width:0}
 .txbar b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .txbar em{font-style:normal;font-size:10.5px;opacity:.7;letter-spacing:.1em;text-transform:uppercase}
@@ -193,7 +192,7 @@ body.light .spinner.sm{border-color:rgba(255,255,255,.3);border-top-color:var(--
   letter-spacing:.14em;text-transform:uppercase;border:1px dashed var(--bd);
   height:34px;transition:color var(--t),border-color var(--t);
 }
-.link:hover{color:var(--fg);border-color:var(--fg)}
+@media (hover:hover){.link:hover{color:var(--fg);border-color:var(--fg)}}
 .link[aria-pressed=true]{color:#fff;border:2px solid var(--fg);border-style:solid;font-weight:700}
 
 /* ── take: one row per transfer ──────────────────────────── */
@@ -215,7 +214,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   padding:12px 13px;background:transparent;border:none;cursor:pointer;
   font-family:var(--mono);font-size:12.5px;color:var(--fg);text-align:left;
 }
-.ward-h:hover{background:var(--bg2)}
+@media (hover:hover){.ward-h:hover{background:var(--bg2)}}
 .ward-h .cnt{font-size:11px;color:var(--dim)}
 .ward-b{border-top:1px solid var(--bd);display:flex;flex-direction:column}
 .wtx{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 13px;align-items:center}
@@ -227,7 +226,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
   padding:7px 12px;white-space:nowrap;
 }
-.wtx button:hover{border-color:var(--fg)}
+@media (hover:hover){.wtx button:hover{border-color:var(--fg)}}
 .wtx button.on{background:var(--ok);border-color:var(--ok);color:#000}
 .tabs{display:flex;gap:0;flex:0 0 auto;border:1px solid var(--bd)}
 .tab{
@@ -236,7 +235,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   transition:background var(--t),color var(--t);
 }
 .tab + .tab{border-left:1px solid var(--bd)}
-.tab:hover{color:var(--fg)}
+@media (hover:hover){.tab:hover{color:var(--fg)}}
 .tab[aria-selected=true]{background:var(--fg);color:var(--bg)}
 .list{
   flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:1px;
@@ -251,7 +250,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   display:flex;flex-direction:column;gap:7px;padding:11px 13px;
   background:transparent;border:none;cursor:pointer;text-align:left;min-width:0;
 }
-.tx-open:hover{background:var(--bg2)}
+@media (hover:hover){.tx-open:hover{background:var(--bg2)}}
 .tx-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px;min-width:0}
 .tx-amt{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tx-party{font-family:var(--mono);font-size:11.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
@@ -266,7 +265,7 @@ body.v-guard .panel,body.v-take .panel{display:flex}
   cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--fg);
   transition:background var(--t),color var(--t);white-space:nowrap;
 }
-.tx-act:hover{background:var(--fg);color:var(--bg)}
+@media (hover:hover){.tx-act:hover{background:var(--fg);color:var(--bg)}}
 .tx.act .tx-act{border-left-color:var(--fg)}
 .empty{
   display:flex;flex-direction:column;align-items:center;gap:16px;
@@ -294,10 +293,10 @@ body.light .modal{background:rgba(0,0,0,.4)}
   height:44px;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
   cursor:pointer;width:100%;transition:opacity var(--t);
 }
-.btn:hover:not(:disabled){opacity:.82}
+@media (hover:hover){.btn:hover:not(:disabled){opacity:.82}}
 .btn:disabled{opacity:.3;cursor:not-allowed}
 .btn.alt{background:transparent;color:var(--fg);border-color:var(--bd)}
-.btn.alt:hover{border-color:var(--fg);opacity:1}
+@media (hover:hover){.btn.alt:hover{border-color:var(--fg);opacity:1}}
 .btn.danger{background:var(--warn);border-color:var(--warn);color:#000}
 .note{font-size:12px;line-height:1.5;color:var(--dim);min-height:16px}
 .note.ok{color:var(--ok)}
@@ -321,7 +320,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
   font-size:13.5px;color:var(--fg);
   transition:border-color var(--t),background var(--t);
 }
-.pick:hover{border-color:var(--fg);background:var(--bg2)}
+@media (hover:hover){.pick:hover{border-color:var(--fg);background:var(--bg2)}}
 .pick[aria-current=true]{border-color:var(--fg);background:var(--bg2)}
 /* The icon cell is fixed and its contents are clamped. Wallet icons arrive from
    the extension as an arbitrary data URI — any size, any aspect — so this is a
@@ -341,7 +340,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
 }
 .pick .tick{grid-column:3;color:var(--fg);font-size:13px}
 @media (max-width:520px){
-  .modal{align-items:flex-end;padding:0}
+  .modal.on{align-items:flex-end}
+  .modal{padding:0}
   .card{width:100%;margin:0;border-width:2px 0 0;padding-bottom:max(22px,env(safe-area-inset-bottom))}
 }
 .spinner{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--fg);animation:sp .8s linear infinite}
@@ -381,17 +381,6 @@ body.light .modal{background:rgba(0,0,0,.4)}
    is no such state on a touchscreen; remove it rather than approximate it.
    :active below gives the press its own feedback instead. */
 @media (hover:none){
-  .box:hover,#sendBox:hover,.chip:hover,.link:hover,.opt:hover:not(:disabled),
-  .pick:hover,.seg button:hover,.tab:hover,.tx-act:hover,.tx-open:hover,
-  .ward-h:hover,.wtx button:hover,.btn:hover:not(:disabled),.btn.alt:hover{
-    background:inherit;color:inherit;border-color:inherit;opacity:inherit;
-  }
-  .box:hover{background:var(--bg);color:var(--fg)}
-  #sendBox:hover{background:var(--fg);color:var(--bg)}
-  .btn:hover:not(:disabled){background:var(--fg);color:var(--bg);border-color:var(--fg);opacity:1}
-  .btn.alt:hover{background:transparent;color:var(--fg);border-color:var(--bd)}
-  .tx-act:hover{background:transparent;color:var(--fg)}
-  .wordmark:hover{opacity:1}
   .box:active{background:var(--fg);color:var(--bg)}
   #sendBox:active{background:var(--bg);color:var(--fg)}
   .btn:active:not(:disabled){opacity:.75}
@@ -613,13 +602,6 @@ body{overscroll-behavior:none}
   <h3 id="walletTitle">Wallet</h3>
   <div class="picks" id="walletList"></div>
   <button class="btn alt" id="walletCancel">Cancel</button>
-</div></div>
-
-<div class="modal" id="amountModal" role="dialog" aria-modal="true" aria-labelledby="amountTitle"><div class="card">
-  <h3 id="amountTitle">Amount</h3>
-  <input type="text" class="input" id="amountInput" inputmode="decimal" placeholder="0" autocomplete="off">
-  <p class="note" id="amountNote"></p>
-  <button class="btn" id="amountApply">Apply</button>
 </div></div>
 
 <div class="modal" id="timeModal" role="dialog" aria-modal="true" aria-labelledby="timeTitle"><div class="card">
@@ -1365,7 +1347,7 @@ async function httpRead(url, method, params){
       r = await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:ac.signal});
     } catch(e){ throw rpcErr('Could not reach the read node', true); }
-    if(!r.ok) throw rpcErr(`A read node answered ${r.status}`, r.status===429||r.status>=500, r.status);
+    if(!r.ok) throw rpcErr(`A read node answered ${r.status}`, true, r.status);
     let j;
     try { j = await r.json(); } catch(e){ throw rpcErr('A read node sent an unreadable answer', true); }
     if(j && j.error){
@@ -1393,7 +1375,10 @@ async function nodeRead(method, params, chainId){
         return result;
       } catch(e){
         last=e;
-        if(!e.retry) throw e;          // the chain's answer, not this node's
+        if(!e.retry){                  // the chain's answer, not this node's
+          if(c.id===S.chain){ S.readOk=false; paintNet(); }
+          throw e;
+        }
       }
     }
     if(pass===0) await sleep(400);
@@ -1607,7 +1592,7 @@ const S = {
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
   guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
-  unlocked:[], exit:null, exitPlan:null,
+  unlocked:[], exit:null, exitPlan:null, guardUnknown:false,
   dest:null, routesLoaded:false,
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
@@ -1764,12 +1749,20 @@ async function ensureChain(){
         await rpc('wallet_addEthereumChain',[c.addChain]);
         // Adding is not switching. Several wallets add and stay put, and a
         // deposit submitted on the assumption lands on the wrong chain.
-        let now;
-        try { now = parseInt(await rpc('eth_chainId',[]),16); } catch(e3){ now = null; }
+        // Straight to the provider. Through rpc() this would fall to the
+        // public pool for the chain we are trying to switch TO, which always
+        // answers with that chain id, so the check could never fail.
+        const walletChain = async () => {
+          const w = walletProv();
+          if(!w) return null;
+          try { return parseInt(await w.request({method:'eth_chainId',params:[]}),16); }
+          catch(e0){ return null; }
+        };
+        let now = await walletChain();
         if(now !== c.id){
           try { await rpc('wallet_switchEthereumChain',[{chainId:c.hex}]); }
           catch(e4){ if(isRejection(e4)) return false; }
-          try { now = parseInt(await rpc('eth_chainId',[]),16); } catch(e5){ now = null; }
+          now = await walletChain();
         }
         if(now !== c.id){ toast(`Switch your wallet to ${c.name} to send here`); return false; }
         S.chainId=c.id; render();
@@ -1832,26 +1825,38 @@ function switchChain(id){
    the wrong chain.
 */
 const REQUIRED_SELECTORS = [SEL.depositTo, SEL.getOut, SEL.getIn, SEL.pendingTransfers, SEL.guardians];
-async function checkDeployed(){
-  const id=S.chain;
-  if(S.slowDeployed[id]!==undefined){ paintDeployed(); return; }
+async function probeDeployed(id){
+  if(S.slowDeployed[id]!==undefined) return;
   try {
     const code=await rpc('eth_getCode',[SLOW,'latest'],id);
     const present = typeof code==='string' && code.length>4;
     S.slowDeployed[id] = present && REQUIRED_SELECTORS.every(x=>code.includes(x.slice(2)));
-    if(present && !S.slowDeployed[id]) S.slowMismatch=id;
+    if(present && !S.slowDeployed[id] && id===S.chain) S.slowMismatch=id;
   } catch(e){
     // Leave it unknown, but say so — the guards test for `=== false`, so an
     // unknown would otherwise pass as deployed.
     delete S.slowDeployed[id];
-    S.slowUnknown = id;
+    if(id===S.chain) S.slowUnknown = id;
   }
-  if(S.chain===id) paintDeployed();
+}
+// The active chain AND every chain the destination row can offer. Gating those
+// buttons on slowDeployed while probing only the active chain left them
+// disabled and captioned "awaiting deployment" no matter what was live.
+async function checkDeployed(){
+  const id=S.chain;
+  const also = CHAIN_IDS.filter(x => x!==id && BRIDGES[x]);
+  await Promise.all([probeDeployed(id), ...also.map(x=>probeDeployed(x).catch(()=>{}))]);
+  if(S.chain===id){ paintDeployed(); buildDestRow(); }
 }
 function setAccount(a){
   const acct=a;
   S.account=acct; S.ensName=null; S.balance=null;
   S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  // Everything below is per-account, and an account change invalidates it
+  // exactly as a chain change does.
+  S.unlocked=[]; S.exit=null; S.exitPlan=null; S.detail=null;
+  S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
+  hideAllModals();
   paintWallet(); paintNet();
   reverseAny(acct).then(n=>{ if(S.account===acct){ S.ensName=n; paintWallet(); } }).catch(()=>{});
   if(S.view==='take') loadTransfers(true);
@@ -1861,6 +1866,11 @@ function setAccount(a){
 function disconnect(silent){
   S.account=S.ensName=S.balance=null;
   S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  // Everything below is per-account, and an account change invalidates it
+  // exactly as a chain change does.
+  S.unlocked=[]; S.exit=null; S.exitPlan=null; S.detail=null;
+  S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
+  hideAllModals();
   stopTimer(); setView('home'); paintWallet(); paintNet();
   if(!silent) toast('Disconnected from this page — your wallet is still connected');
 }
@@ -2138,6 +2148,11 @@ async function deposit(){
   // One L1 transaction that bridges the ETH and lands inside depositTo on the
   // far side, rather than bridging and then depositing.
   if(S.dest){
+    // innerDepositCalldata wraps depositTo(ZERO, …) and the amount rides as
+    // msg.value, so a bridge route is only ever correct for native ETH. If
+    // anything left S.dest set across an asset change, stop here rather than
+    // send ether in place of the token on screen.
+    if(S.token!==ZERO) throw new Error(`${S.symbol} cannot be bridged — send it on ${cfg().name}`);
     const b = await bridgePlan(S.dest, S.resolved, S.delay, wei);
     txShow(`Sending to ${cfg(S.dest).short}`, 'Confirm in your wallet');
     const h = await sendTx({from:S.account, to:b.to, data:b.data, value:'0x'+b.value.toString(16)});
@@ -2268,7 +2283,15 @@ async function loadTransfers(force){
     S.aliasHasTransfers = viaBridge.length>0;
     const oIds = [...own, ...viaBridge];
     const iIds = ih ? decode(['uint256[]'],ih)[0] : [];
-    const gAddr = (gh && strip(gh).length>=40) ? '0x'+gh.slice(-40) : ZERO;
+    if(gh==null){
+      // Do not guess. Every write path branches on this, and guessing wrong
+      // sends a transaction that cannot succeed.
+      S.loading=false; S.guardUnknown=true; renderList();
+      toast('Could not read your guardian setting — reload before sending');
+      return;
+    }
+    S.guardUnknown=false;
+    const gAddr = strip(gh).length>=40 ? '0x'+gh.slice(-40) : ZERO;
     const hasGuardian = isAddr(gAddr) && gAddr.toLowerCase()!==ZERO;
 
     const all=[...new Map([...oIds,...iIds].map(id=>[id.toString(),id])).values()];
@@ -2355,9 +2378,9 @@ async function loadTransfers(force){
    shown, so a stale note can never invent a balance.
    ══════════════════════════════════════════════════════════════════ */
 const unlockedKey = () => `slow.unlocked.${S.chain}.${(S.account||'').toLowerCase()}`;
-function rememberUnlocked(t){
+function rememberUnlocked(t, key){
   try {
-    const k=unlockedKey();
+    const k=key||unlockedKey();
     const cur=JSON.parse(localStorage.getItem(k)||'[]');
     if(!cur.some(x=>x.id===t.tokenId)){
       cur.push({id:t.tokenId, token:t.token, symbol:t.symbol, decimals:t.decimals});
@@ -2386,10 +2409,19 @@ async function loadUnlocked(){
     if(!res[i]) return;
     let bal=0n;
     try { bal=decode(['uint256'],res[i])[0]; } catch(e){ return; }
-    if(bal>0n) live.push({...n, raw:bal, amount:fmtAmt(bal,n.decimals)});
-    else forgetUnlocked(n.id);          // settled elsewhere; drop the note
+    if(bal>0n){ live.push({...n, raw:bal, amount:fmtAmt(bal,n.decimals), zero:0}); return; }
+    // Zero once is not proof. A lagging node, a reorg, or a note written
+    // optimistically a block early all read zero, and this note is the only
+    // pointer there is. Forget it only after it has read zero three times.
+    const seen=(n.zero||0)+1;
+    if(seen<3) live.push({...n, zero:seen, raw:0n, amount:'0', pending:true});
+    else forgetUnlocked(n.id);
   });
-  S.unlocked=live;
+  // Persist the zero counters so they survive a reload, and drop the ones the
+  // list no longer carries.
+  try { localStorage.setItem(unlockedKey(), JSON.stringify(
+    live.map(({id,token,symbol,decimals,zero})=>({id,token,symbol,decimals,zero})))); } catch(e){}
+  S.unlocked=live.filter(u=>!u.pending);
 }
 async function doWithdraw(u, to){
   if(!guardWritable()) return;
@@ -2408,7 +2440,6 @@ async function doWithdraw(u, to){
     }
     await slowTx(cd(SEL.withdrawFrom,['address','address','uint256','uint256'],
       [S.account,to,BigInt(u.id),u.raw]), `Withdrawing ${u.amount} ${u.symbol}`, 'Confirm in your wallet');
-    forgetUnlocked(u.id);
     toast(`Withdrew ${u.amount} ${u.symbol}.`);
     await loadUnlocked(); renderList();
   } catch(e){ fail(e); }
@@ -2423,6 +2454,8 @@ async function withdrawOpId(u, to){
 }
 function showApprovalNeeded(u, opId, to){
   to = to || S.account;
+  S.detail=null;
+  el.detailShare.hidden=true;   // an unlocked position has no transfer to link to
   el.detailTitle.textContent='Guardian approval needed';
   el.detailRows.replaceChildren();
   const rows=[
@@ -2573,6 +2606,7 @@ async function doExit(){
         return;
       }
     }
+    if(!await ensureChain()) throw new Error(`Switch to ${cfg().name}`);
     hideModal(el.exitModal);
     txShow(`Withdrawing ${u.amount} ${u.symbol}`,'Confirm in your wallet');
     const h=await sendBatch(r.calls.map(c=>({to:c.to,data:c.data,value:'0x'+c.value.toString(16)})));
@@ -2603,37 +2637,39 @@ async function refundTipIfAny(t){
 }
 async function doClaim(t){
   if(nw()<t.unlockTime){ toast(`${fmtTime(t.unlockTime-nw())} remaining`); return; }
-  const guardian=S.hasGuardian;
+  const guardian=S.hasGuardian, key=unlockedKey();
   try {
+    if(guardian) rememberUnlocked(t, key);   // before the send: this note is the only record there will be
     await slowTx(c1(guardian?SEL.unlock:SEL.claim,t.id),
       guardian?'Unlocking…':'Claiming…','Confirm in your wallet');
-    if(guardian) rememberUnlocked(t);
     toast(guardian ? 'Unlocked. It is now in Unlocked, awaiting a guardian-approved withdrawal.' : 'Claimed.', 6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
 async function doReverse(t){
   if(nw()>=t.unlockTime){ toast("The timelock expired — this can no longer be reversed"); return; }
+  const guarded=S.hasGuardian, key=unlockedKey();
   try {
-    const data = S.hasGuardian ? c1(SEL.reverse,t.id)
+    const data = guarded ? c1(SEL.reverse,t.id)
       : cd(SEL.multicall,['bytes[]'],[[c1(SEL.reverse,t.id),wfCall(t)]]);
+    if(guarded) rememberUnlocked(t, key);
     await slowTx(data,'Reversing the transfer…','Confirm in your wallet');
-    if(S.hasGuardian) rememberUnlocked(t);
     const tip=await refundTipIfAny(t);
-    toast((S.hasGuardian?'Reversed. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Reversed and returned.')+tip,6000);
+    toast((guarded?'Reversed. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Reversed and returned.')+tip,6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
 async function doClawback(t){
   const ready=t.unlockTime+GRACE;
   if(nw()<ready){ toast(`Recovery available in ${fmtTime(ready-nw())}`); return; }
+  const guarded=S.hasGuardian, key=unlockedKey();
   try {
-    const data = S.hasGuardian ? c1(SEL.clawback,t.id)
+    const data = guarded ? c1(SEL.clawback,t.id)
       : cd(SEL.multicall,['bytes[]'],[[c1(SEL.clawback,t.id),wfCall(t)]]);
+    if(guarded) rememberUnlocked(t, key);
     await slowTx(data,'Recovering…','Confirm in your wallet');
-    if(S.hasGuardian) rememberUnlocked(t);
     const tip=await refundTipIfAny(t);
-    toast((S.hasGuardian?'Recovered. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Recovered.')+tip,6000);
+    toast((guarded?'Recovered. It is now in Unlocked, awaiting a guardian-approved withdrawal.':'Recovered.')+tip,6000);
     loadTransfers(true);
   } catch(e){ fail(e); }
 }
@@ -2848,6 +2884,10 @@ function setView(v){
 /* ══════════════════════════════════════════════════════════════════
    Transfers — one row each, actionable first
    ══════════════════════════════════════════════════════════════════ */
+// Only pendingTransfers[id].from may reverse or recover. Everyone else — the
+// alias a bridged deposit arrives under, a third party following a link, a
+// reader with no wallet — gets the status without the button.
+const isSender = t => !!S.account && !!t.from && t.from.toLowerCase()===S.account.toLowerCase();
 function statusOf(t){
   const n=nw();
   const expired = n>=t.unlockTime;
@@ -2855,6 +2895,12 @@ function statusOf(t){
   if(inbound) return expired
     ? {key:'ready', text:'Ready to claim', act:'Claim'}
     : {key:'pending', text:`Unlocks in ${fmtTime(t.unlockTime-n)}`, act:null};
+  if(!isSender(t)){
+    const via = S.account && t.from && t.from.toLowerCase()===aliasOf(S.account).toLowerCase();
+    return expired
+      ? {key:'settling', text: via ? 'Bridged in — awaiting the recipient' : 'Awaiting the recipient', act:null}
+      : {key:'pending', text:`Unlocks in ${fmtTime(t.unlockTime-n)}`+(via?' · bridged in':''), act:null};
+  }
   if(!expired) return {key:'pending', text:`Unlocks in ${fmtTime(t.unlockTime-n)}`, act:'Reverse'};
   if(n>=t.unlockTime+GRACE) return {key:'recover', text:'Unclaimed — recoverable', act:'Recover'};
   return {key:'settling', text:`Awaiting recipient · recoverable in ${fmtTime(t.unlockTime+GRACE-n)}`, act:null};
@@ -2866,9 +2912,11 @@ function renderList(){
   const c = el.list;
   el.tabUnlocked.hidden = !S.unlocked.length;
   if(S.tab==='unlocked' && !S.unlocked.length) S.tab='inbound';
-  if(S.tab==='unlocked'){ renderUnlocked(); return; }
   const list = S.tab==='outbound' ? S.out : S.inb;
   c.replaceChildren();
+  // Before the tab branch: an unlocked list is meaningless with no account, and
+  // the connect prompt belongs on every tab.
+  if(S.account && S.tab==='unlocked'){ renderUnlocked(); return; }
   if(!S.account){ c.appendChild(emptyState('Connect a wallet to see your transfers.','Connect',()=>connect(true))); return; }
   if(S.loading){
     const w=document.createElement('div'); w.className='empty';
@@ -3006,6 +3054,7 @@ function detailRows(t,sym){
 }
 function openDetail(t,sym){
   S.detail={t,sym};
+  el.detailShare.hidden=false;
   el.detailTitle.textContent = S.tab==='outbound'?'Outbound':'Inbound';
   el.detailRows.replaceChildren();
   for(const [k,v] of detailRows(t,sym)){
@@ -3937,7 +3986,7 @@ el.tokenApply.onclick=async()=>{
   S.token=addr.toLowerCase(); S.symbol=meta.symbol; S.decimals=meta.decimals;
   S.step=Math.max(S.step,1);
   hideModal(el.tokenModal);
-  paintPresets(); refreshBalance();
+  paintPresets(); refreshBalance(); buildDestRow();
   if(S.amount) validateAmount();
 };
 el.tokenInput.addEventListener('keydown',e=>{ if(e.key==='Enter') el.tokenApply.click(); });

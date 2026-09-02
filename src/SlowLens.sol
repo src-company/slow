@@ -30,6 +30,10 @@ interface ISlow {
     function guardians(address user) external view returns (address);
     function pendingGuardian(address user) external view returns (address guardian, uint96 effectiveAt);
     function guardianApproved(address user, uint256 transferId) external view returns (bool);
+    function predictWithdrawalId(address from, address to, uint256 id, uint256 amount)
+        external
+        view
+        returns (uint256);
     function unlockedBalances(address user, uint256 id) external view returns (uint256);
     function decodeId(uint256 id) external pure returns (address token, uint256 delay);
 }
@@ -183,9 +187,13 @@ contract SlowLens {
         t.token = token;
         t.delay = uint96(delay);
         t.unlockAt = uint256(ts) + delay;
-        // Only meaningful on the sender's own side; an inbound transfer is gated
-        // by the RECIPIENT's guardian at withdrawal, not here.
-        t.guardianApproved = outbound && SLOW.guardianApproved(user, tid);
+        // `guardianApproved` is keyed on an OPERATION id from predictTransferId
+        // / predictWithdrawalId, never on a transfer id — so reading it with
+        // `tid` was structurally always false, and consumers read that as
+        // "your guardian has not approved this" no matter what they had
+        // approved. Ask the question the operation is actually keyed on.
+        t.guardianApproved = outbound
+            && SLOW.guardianApproved(user, SLOW.predictWithdrawalId(user, to, id, amount));
         live = true;
     }
 
@@ -227,7 +235,14 @@ contract SlowLens {
 
     /// @dev Handles both the string and the bytes32 shapes, and never reverts.
     function _symbol(address token) private view returns (string memory, bool) {
-        (bool ok, bytes memory ret) = token.staticcall(abi.encodeWithSelector(0x95d89b41));
+        // Capped. `token` is attacker-chosen — depositTo accepts any address as
+        // a "token", to anyone, with a delay the victim cannot outlast — so an
+        // uncapped probe lets one dust deposit burn the whole call's gas and
+        // take viewOf down for that account permanently. That is the same DoS
+        // the hand-rolled decode below exists to prevent; a bounds check is no
+        // use if the call never returns. Exhaustion surfaces as ok == false,
+        // which is already handled.
+        (bool ok, bytes memory ret) = token.staticcall{gas: 50000}(abi.encodeWithSelector(0x95d89b41));
         if (!ok || ret.length == 0) return ("", false);
         if (ret.length == 32) {
             // bytes32: trim the trailing zero padding.

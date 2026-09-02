@@ -66,11 +66,15 @@ abstract contract SlowGuardianIndex {
         address[] storage all = _wards[guardian];
         uint256 len = all.length;
         if (start >= len) return new address[](0);
+        // Clamped BEFORE the add, and outside unchecked: `start + count` with a
+        // large count wraps, and the wrapped value can land below `len`, which
+        // turns the documented "pass a big count for the rest of the list" into
+        // an underflowed length.
+        uint256 room = len - start;
+        uint256 take = count < room ? count : room;
         unchecked {
-            uint256 end = start + count;
-            if (end > len) end = len;
-            page = new address[](end - start);
-            for (uint256 i; i != page.length; ++i) {
+            page = new address[](take);
+            for (uint256 i; i != take; ++i) {
                 page[i] = all[start + i];
             }
         }
