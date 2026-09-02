@@ -102,6 +102,10 @@ const PER_CHAIN = [
   // across a switch it is either a large overpayment or below the destination's
   // keeper floor, in which case nobody settles and the sender paid for nothing.
   'autoClaim', 'tip', 'unlocked',
+  // An exit plan names a position id, and the same id means a different
+  // position on a different chain. Carried across, the Withdraw dialog would
+  // offer a withdrawal that cannot exist.
+  'exit', 'exitPlan',
 ];
 // `guard` is checked field by field: its transient flags are expected to be
 // true straight after a switch, because the switch starts the reload.

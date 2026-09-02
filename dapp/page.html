@@ -571,6 +571,17 @@ body.light .modal{background:rgba(0,0,0,.4)}
   <button class="btn alt" id="detailClose">Close</button>
 </div></div>
 
+<div class="modal" id="exitModal" role="dialog" aria-modal="true" aria-labelledby="exitTitle"><div class="card">
+  <h3 id="exitTitle">Withdraw</h3>
+  <p class="note" id="exitAmt"></p>
+  <input type="text" class="input" id="exitTo" placeholder="Destination \u2014 blank means yourself" autocomplete="off" spellcheck="false" aria-label="Destination">
+  <input type="text" class="input" id="exitData" placeholder="Then call it with this data (optional, 0x\u2026)" autocomplete="off" spellcheck="false" aria-label="Call data">
+  <p class="note" id="exitNote" aria-live="polite"></p>
+  <button class="btn" id="exitSend">Withdraw</button>
+  <button class="btn alt" id="exitCopy">Copy the calls</button>
+  <button class="btn alt" id="exitClose">Close</button>
+</div></div>
+
 <div class="modal" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><div class="card">
   <h3 id="helpTitle">How SLOW works</h3>
   <dl class="rows">
@@ -1441,7 +1452,7 @@ const S = {
   out:[], inb:[], loading:false, hasGuardian:false,
   detail:null,
   guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
-  unlocked:[],
+  unlocked:[], exit:null, exitPlan:null,
   dest:null, routesLoaded:false,
   ens:{}, meta:{}, permitCache:{},
   batchCap:null, slowPermit:null,
@@ -1636,7 +1647,7 @@ function switchChain(id){
   // keyed by chain. A detail sheet holds a transfer that only exists on the
   // chain it was read from.
   S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
-  S.detail=null; S.dest=null; S.unlocked=[];
+  S.detail=null; S.dest=null; S.unlocked=[]; S.exit=null; S.exitPlan=null;
   // Priced from cfg().minGasPrice/minTip, so inherently per-chain.
   S.autoClaim=false; S.tip=0n;
   if(el.autoClaimChk) el.autoClaimChk.checked=false;
@@ -2225,37 +2236,43 @@ async function loadUnlocked(){
   });
   S.unlocked=live;
 }
-async function doWithdraw(u){
+async function doWithdraw(u, to){
   if(!guardWritable()) return;
+  to = to || S.account;
   try {
     if(S.hasGuardian){
       // withdrawFrom recomputes the operation id and consumes the approval, so
       // the guardian has to have approved THIS exact withdrawal already.
       const [r]=await mc([{to:SLOW,
         data:cd(SEL.isWithdrawalApprovalNeeded,['address','address','uint256','uint256'],
-          [S.account,S.account,BigInt(u.id),u.raw])}]);
+          [S.account,to,BigInt(u.id),u.raw])}]);
       if(r && decode(['uint256'],r)[0]!==0n){
-        const [p]=await mc([{to:SLOW,
-          data:cd(SEL.predictWithdrawalId,['address','address','uint256','uint256'],
-            [S.account,S.account,BigInt(u.id),u.raw])}]);
-        const opId = p ? decode(['uint256'],p)[0].toString() : '(could not derive)';
-        showApprovalNeeded(u, opId);
+        showApprovalNeeded(u, await withdrawOpId(u, to), to);
         return;
       }
     }
     await slowTx(cd(SEL.withdrawFrom,['address','address','uint256','uint256'],
-      [S.account,S.account,BigInt(u.id),u.raw]), `Withdrawing ${u.amount} ${u.symbol}`, 'Confirm in your wallet');
+      [S.account,to,BigInt(u.id),u.raw]), `Withdrawing ${u.amount} ${u.symbol}`, 'Confirm in your wallet');
     forgetUnlocked(u.id);
     toast(`Withdrew ${u.amount} ${u.symbol}.`);
     await loadUnlocked(); renderList();
   } catch(e){ fail(e); }
 }
-function showApprovalNeeded(u, opId){
+async function withdrawOpId(u, to){
+  try {
+    const [p]=await mc([{to:SLOW,
+      data:cd(SEL.predictWithdrawalId,['address','address','uint256','uint256'],
+        [S.account,to,BigInt(u.id),u.raw])}]);
+    return p ? decode(['uint256'],p)[0].toString() : '(could not derive)';
+  } catch(e){ return '(could not derive)'; }
+}
+function showApprovalNeeded(u, opId, to){
+  to = to || S.account;
   el.detailTitle.textContent='Guardian approval needed';
   el.detailRows.replaceChildren();
   const rows=[
     ['Amount', `${u.amount} ${u.symbol}`],
-    ['To', S.account],
+    ['To', to],
     ['Position id', u.id],
     ['Operation id', opId],
     ['Guardian', S.guard.guardian || '(unknown)'],
@@ -2270,9 +2287,147 @@ function showApprovalNeeded(u, opId){
   btn.textContent='Copy the details for your guardian';
   btn.onclick=()=>copyLink(
     `SLOW withdrawal awaiting your approval\nchain: ${cfg().name} (${S.chain})\n`+
-    `account: ${S.account}\nto: ${S.account}\nposition id: ${u.id}\namount: ${u.raw}\n`+
+    `account: ${S.account}\nto: ${to}\nposition id: ${u.id}\namount: ${u.raw}\n`+
     `operation id: ${opId}\napprove with: approveTransfer(${S.account}, ${opId})`, 'Details');
   showModal(el.detailModal);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Unwrap and call
+   ══════════════════════════════════════════════════════════════════
+   The mirror of the deposit recipe, and a different animal.
+
+   Nothing had to be added to SLOW for this. `withdrawFrom(from, to, id,
+   amount)` already takes an arbitrary `to` — the exact opposite of the deposit
+   side, where `pt.from = msg.sender` forced the permit work inside the
+   contract. What SLOW must never grow is a method that makes SLOW ITSELF call
+   an arbitrary target: it holds every user's underlying in one pool, so
+   `target.call(data)` with target = USDC drains everyone at once. The call here
+   therefore runs from the USER's account, after the exit, never from SLOW's.
+
+   Two shapes, because ETH and ERC-20 arrive differently:
+
+     ETH      withdrawFrom(me, me, …) then dest.call{value: amount}(data)
+              The ETH rides WITH the call, which is what a payable entrypoint —
+              a bridge, a router — actually wants.
+     ERC-20   withdrawFrom(me, dest, …) then dest.call(data)
+              A push: safeTransfer does not notify, so the token lands first and
+              the call tells the destination it is there.
+
+   The ERC-20 shape has a gap the ETH shape does not. Between the transfer and
+   the call the tokens sit at the destination unattributed, and anyone who can
+   reach its entrypoint can take them. So that pair is offered as a button only
+   when the wallet does EIP-5792 and the two are atomic; otherwise it is a
+   recipe with the gap stated, not a button.
+
+   Under a guardian it is stronger than it looks: withdrawFrom's operation id is
+   keyed on `to`, so approving one of these approves THAT destination and no
+   other. The guardian is the backstop atomicity cannot be — which is why the
+   recipe has to be visible before approval, not after.
+
+   And two things already work, so they are not rebuilt here: transferring the
+   still-locked position with `safeTransferFrom(…, data)` fires
+   `onERC1155Received`, and Solady's `safeTransferETH` uses `call(gas(), …)`, so
+   an ETH exit already wakes a contract — with all the gas, but no calldata, so
+   it can be woken and not instructed. The gap is unwrapped ERC-20 plus a
+   notification, and that is what this fills.
+*/
+const HEXDATA = /^0x([0-9a-fA-F]{2})*$/;
+function exitRecipe(u, toRaw, dataRaw){
+  // A bare '0x' is no calldata at all, not a call with an empty body: it would
+  // only reach the destination's receive/fallback, which a plain exit already
+  // does. Treated as absent so it does not buy a needless second call.
+  const raw=(dataRaw||'').trim();
+  const data = raw==='0x' ? '' : raw;
+  const to=((toRaw||'').trim())||S.account;
+  if(!isAddr(to)) return {error:'Enter a destination address'};
+  if(to.toLowerCase()===SLOW.toLowerCase()) return {error:'SLOW itself cannot be the destination'};
+  if(to===ZERO) return {error:'The zero address cannot be the destination'};
+  if(data && !HEXDATA.test(data)) return {error:'Call data must be 0x followed by whole bytes'};
+  const isETH=u.token===ZERO;
+  const wf = dest => ({to:SLOW, value:0n,
+    data:cd(SEL.withdrawFrom,['address','address','uint256','uint256'],[S.account,dest,BigInt(u.id),u.raw])});
+  // For ETH with a call the value has to ride with the call, so the exit lands
+  // on the account first. Everything else exits straight to the destination.
+  const ethCall = !!data && isETH;
+  const settleTo = ethCall ? S.account : to;
+  const calls=[wf(settleTo)];
+  if(data) calls.push({to, data, value: ethCall ? u.raw : 0n});
+  return {chainId:S.chain, chainName:cfg().name, calls, settleTo, target:to,
+    needsAtomic:calls.length>1, gap: !!data && !isETH};
+}
+function exitText(r, u){
+  const lines=[`# SLOW withdrawal — ${r.chainName} (chain ${r.chainId})`,
+    `# ${u.amount} ${u.symbol} · position ${u.id}`, ''];
+  r.calls.forEach((c,i)=>lines.push(`call ${i+1}`, `  to:    ${c.to}`,
+    `  value: ${c.value} wei`, `  data:  ${c.data}`, ''));
+  if(r.needsAtomic) lines.push('note:  send these as one atomic batch. Run apart, the funds sit at the',
+    '       destination between them and anyone who can call it may take them.');
+  return lines.join('\n');
+}
+function showExit(u){
+  S.exit=u;
+  el.exitTitle.textContent='Withdraw';
+  el.exitAmt.textContent=`${u.amount} ${u.symbol==='???'?shortAddr(u.token):u.symbol} · position ${u.id}`;
+  el.exitTo.value=''; el.exitData.value='';
+  updateExit();
+  showModal(el.exitModal);
+}
+async function updateExit(){
+  const u=S.exit; if(!u) return;
+  const r=exitRecipe(u, el.exitTo.value, el.exitData.value);
+  S.exitPlan=r;
+  if(r.error){
+    setNote(el.exitNote, r.error, 'err');
+    el.exitSend.disabled=true; el.exitCopy.disabled=true;
+    return;
+  }
+  el.exitCopy.disabled=false;
+  const dest = r.target.toLowerCase()===(S.account||'').toLowerCase() ? 'yourself' : shortAddr(r.target);
+  if(!r.needsAtomic){
+    setNote(el.exitNote, `One transaction: the underlying goes to ${dest}.`,'ok');
+    el.exitSend.disabled=false; el.exitSend.textContent='Withdraw';
+    return;
+  }
+  const batch=await canBatch();
+  if(S.exitPlan!==r) return;                       // a keystroke overtook us
+  el.exitSend.disabled=!batch;
+  el.exitSend.textContent = batch?'Withdraw and call':'Withdraw';
+  if(batch){
+    setNote(el.exitNote, r.gap
+      ? `One confirmation: the token lands at ${dest} and the call runs in the same batch.`
+      : `One confirmation: you receive the ETH and it is forwarded to ${dest} with your call.`,'ok');
+  } else {
+    setNote(el.exitNote, 'Your wallet cannot batch, so these two calls would run apart — '
+      +'the funds would sit at the destination unattributed in between. Copy them and send them atomically.','err');
+  }
+}
+async function doExit(){
+  const u=S.exit, r=S.exitPlan;
+  if(!u||!r||r.error) return;
+  if(!guardWritable()) return;
+  if(!r.needsAtomic){ hideModal(el.exitModal); await doWithdraw(u, r.settleTo); return; }
+  try {
+    if(S.hasGuardian){
+      const [q]=await mc([{to:SLOW,
+        data:cd(SEL.isWithdrawalApprovalNeeded,['address','address','uint256','uint256'],
+          [S.account,r.settleTo,BigInt(u.id),u.raw])}]);
+      if(q && decode(['uint256'],q)[0]!==0n){
+        hideModal(el.exitModal);
+        showApprovalNeeded(u, await withdrawOpId(u, r.settleTo), r.settleTo);
+        return;
+      }
+    }
+    hideModal(el.exitModal);
+    txShow(`Withdrawing ${u.amount} ${u.symbol}`,'Confirm in your wallet');
+    const h=await sendBatch(r.calls.map(c=>({to:c.to,data:c.data,value:'0x'+c.value.toString(16)})));
+    S.lastHash=h;
+    txShow(`Withdrawing ${u.amount} ${u.symbol}`,'Waiting for confirmation',h);
+    await waitTx(h);
+    forgetUnlocked(u.id);
+    toast(`Withdrew ${u.amount} ${u.symbol}.`);
+    await loadUnlocked(); renderList();
+  } catch(e){ fail(e); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2609,7 +2764,7 @@ function renderUnlocked(){
     st.textContent = S.hasGuardian ? 'Needs a guardian-approved withdrawal' : 'Ready to withdraw';
     meta.appendChild(st);
     open.append(l1,meta);
-    open.onclick=()=>doWithdraw(u);
+    open.onclick=()=>showExit(u);
     const act=document.createElement('button');
     act.type='button'; act.className='tx-act'; act.textContent='Withdraw';
     act.onclick=e=>{ e.stopPropagation(); doWithdraw(u); };
@@ -3652,6 +3807,10 @@ el.recipientInput.addEventListener('keydown',e=>{
 });
 el.confirmBtn.onclick=handleConfirm;
 el.detailClose.onclick=()=>hideModal(el.detailModal);
+el.exitClose.onclick=()=>hideModal(el.exitModal);
+el.exitTo.oninput=el.exitData.oninput=updateExit;
+el.exitSend.onclick=doExit;
+el.exitCopy.onclick=()=>{ if(S.exitPlan&&!S.exitPlan.error) copyLink(exitText(S.exitPlan,S.exit),'Calls'); };
 el.detailShare.onclick=()=>{ if(S.detail) copyLink(txLink(S.detail.t.id),'Link'); };
 el.shareBtn.onclick=()=>copyLink(payLink(),'Request link');
 el.recipeBtn.onclick=()=>{

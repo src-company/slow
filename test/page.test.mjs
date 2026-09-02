@@ -71,7 +71,7 @@ const EXPORTS = [
   'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
-  'depositRecipe', 'recipeText', 'unlockedKey',
+  'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
 const C = captured;
@@ -470,6 +470,83 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   // A destination overrides the chain the recipe is for.
   C.S.dest = 8453;
   eq(C.depositRecipe().chainId, 8453, 'a destination retargets the recipe');
+  Object.assign(C.S, snap);
+}
+
+// ─── Unwrap and call ───────────────────────────────────────────────────────
+
+{
+  const snap = {...C.S};
+  C.S.chain = 1;
+  C.S.account = '0x000000000000000000000000000000000000A11c';
+  const ETH = {id: '0', token: C.ZERO, raw: 1000000000000000000n, amount: '1', symbol: 'ETH'};
+  const ERC = {id: '1', token: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    raw: 25000000n, amount: '25', symbol: 'USDC'};
+  const DEST = '0x000000000000000000000000000000000000bEEF';
+  const wTo = (call) => '0x' + call.data.slice(10 + 64 + 24, 10 + 128);
+
+  // A bare withdrawal is one call, to yourself, and needs no batching.
+  {
+    const r = C.exitRecipe(ERC, '', '');
+    eq(r.calls.length, 1, 'no destination and no data is a single call');
+    eq(r.needsAtomic, false, 'so nothing has to be atomic');
+    eq(wTo(r.calls[0]).toLowerCase(), C.S.account.toLowerCase(), 'and it settles to you');
+  }
+
+  // A third-party destination is still ONE call: withdrawFrom takes an
+  // arbitrary `to`, which is why none of this needed a contract change.
+  {
+    const r = C.exitRecipe(ERC, DEST, '');
+    eq(r.calls.length, 1, 'exiting straight to someone else is still one call');
+    eq(wTo(r.calls[0]).toLowerCase(), DEST.toLowerCase(), 'settling at the destination');
+    eq(r.calls[0].to, C.SLOW, 'through SLOW');
+    eq(r.settleTo.toLowerCase(), DEST.toLowerCase(), 'and that is what the guardian would approve');
+  }
+
+  // ERC-20 plus a call: push, then notify. The token lands at the destination
+  // BEFORE the call, which is the gap the atomic requirement exists for.
+  {
+    const r = C.exitRecipe(ERC, DEST, '0xdeadbeef');
+    eq(r.calls.length, 2, 'a call adds a second step');
+    eq(wTo(r.calls[0]).toLowerCase(), DEST.toLowerCase(), 'the token goes to the destination first');
+    eq(r.calls[1].to, DEST, 'then the destination is called');
+    eq(r.calls[1].data, '0xdeadbeef', 'with the data given');
+    eq(r.calls[1].value, 0n, 'and no value, since the asset is an ERC-20');
+    eq(r.gap, true, 'the unattributed gap is flagged');
+    eq(r.needsAtomic, true, 'so the pair may only be sent atomically');
+  }
+
+  // ETH plus a call is the other shape: the value rides WITH the call, so the
+  // exit lands on the account first and nothing is ever unattributed.
+  {
+    const r = C.exitRecipe(ETH, DEST, '0xc0ffee');
+    eq(r.calls.length, 2, 'still two calls');
+    eq(wTo(r.calls[0]).toLowerCase(), C.S.account.toLowerCase(),
+      'but the ETH comes to you, not to the destination');
+    eq(r.calls[1].value, ETH.raw, 'and rides with the call');
+    eq(r.gap, false, 'so there is no unattributed window');
+    eq(r.settleTo.toLowerCase(), C.S.account.toLowerCase(),
+      'and the guardian approves a withdrawal to you');
+  }
+
+  // SLOW must never be the destination: it is the one address where a call
+  // would run with the whole pool behind it.
+  ok(C.exitRecipe(ERC, C.SLOW, '0xdeadbeef').error, 'SLOW is rejected as a destination');
+  ok(C.exitRecipe(ERC, C.ZERO, '').error, 'so is the zero address');
+  ok(C.exitRecipe(ERC, '0xnope', '').error, 'a malformed destination is rejected');
+  ok(C.exitRecipe(ERC, DEST, '0xabc').error, 'half a byte of call data is rejected');
+  ok(!C.exitRecipe(ERC, DEST, '0x').error, 'an empty 0x is not call data, and is fine');
+  eq(C.exitRecipe(ERC, DEST, '0x').calls.length, 1, 'and adds no second call');
+
+  // The copyable form carries every call, and says why they belong together.
+  {
+    const t = C.exitText(C.exitRecipe(ERC, DEST, '0xdeadbeef'), ERC);
+    ok(t.includes('call 1') && t.includes('call 2'), 'both calls are written out');
+    ok(t.includes(C.SLOW) && t.includes(DEST), 'with both targets');
+    ok(/atomic/i.test(t), 'and the atomicity requirement stated');
+    ok(!/atomic/i.test(C.exitText(C.exitRecipe(ERC, DEST, ''), ERC)),
+      'which a single call does not claim');
+  }
   Object.assign(C.S, snap);
 }
 
