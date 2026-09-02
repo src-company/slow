@@ -196,6 +196,38 @@ cannot be forged by anything outside that function. The steward that may append
 is two-step transferable and renounceable; renouncing freezes the lineage
 permanently.
 
+## The next protocol build
+
+`src/SLOWNext.sol` is `SLOW.sol` with both extensions folded in, for the
+redeployment that puts one identical build on every chain. It is a separate file
+so the deployed source stays byte-reproducible: compiling `src/SLOW.sol` under
+solc 0.8.34, via-IR, 200 runs, prague still yields the **21,648-byte** runtime
+that is live on mainnet today — which is how the settings above were confirmed
+rather than assumed.
+
+| build | runtime | under EIP-170 |
+| --- | --- | --- |
+| `SLOW.sol` as deployed | 21,648 B | 2,928 |
+| `SLOWNext.sol`, both extensions | **24,144 B** | **432** |
+| `SLOWNext.sol`, EIP-2612 only | 23,268 B | 1,308 |
+
+432 bytes is enough to deploy and not much else. Dropping the DAI-style and
+Permit2 entrypoints buys back 876 — worth taking if this contract is expected to
+grow again, and worth skipping if it is not.
+
+Two things the integration makes true that are easy to miss:
+
+- **Storage is not compatible with the deployed build.** Base contracts lay out
+  first, so the guardian index's two mappings take slots 0 and 1 and push
+  everything `SLOW` declares down by two. Harmless at a fresh address, fatal
+  behind a proxy. There is no proxy here, and that is the reason there should
+  not be one.
+- **The ward index is written only where `guardians[...]` is.** Two sites,
+  both wired: the immediate first-set path in `setGuardian`, and `commitGuardian`
+  where a staged rotation lands. Proposing a rotation deliberately does not touch
+  it — until it commits, the old guardian is still the guardian and still the one
+  who can veto.
+
 ## The permit extension
 
 `src/SlowPermit.sol` is for the **next protocol version**, not for this page

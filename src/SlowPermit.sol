@@ -42,7 +42,7 @@ abstract contract SlowPermit {
 
     error PermitFailed();
     error InsufficientPermit();
-    error InvalidDeposit();
+    error InvalidPermitDeposit();
 
     // ─────────────────────────────────────────────────────── HOST HOOKS
     //
@@ -86,7 +86,7 @@ abstract contract SlowPermit {
         bytes32 r,
         bytes32 s
     ) public returns (uint256 transferId) {
-        if (token == address(0) || amount == 0) revert InvalidDeposit();
+        if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);
         return _finishDeposit(token, to, amount, delay, 0, data);
@@ -106,8 +106,8 @@ abstract contract SlowPermit {
         bytes32 r,
         bytes32 s
     ) public payable returns (uint256 transferId) {
-        if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidDeposit();
-        if (msg.value != tip) revert InvalidDeposit();
+        if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidPermitDeposit();
+        if (msg.value != tip) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);
         return _finishDeposit(token, to, amount, delay, tip, data);
@@ -156,7 +156,7 @@ abstract contract SlowPermit {
         bytes32 r,
         bytes32 s
     ) public returns (uint256 transferId) {
-        if (token == address(0) || amount == 0) revert InvalidDeposit();
+        if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
         (bool ok,) = token.call(
             abi.encodeWithSelector(
                 bytes4(0x8fcbaf0c), msg.sender, address(this), nonce, expiry, true, v, r, s
@@ -189,7 +189,7 @@ abstract contract SlowPermit {
         uint256 deadline,
         bytes calldata signature
     ) public returns (uint256 transferId) {
-        if (token == address(0) || amount == 0) revert InvalidDeposit();
+        if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
         _permit2Transfer(token, amount, nonce, deadline, signature);
         return _finishDeposit(token, to, amount, delay, 0, data);
     }
@@ -206,8 +206,8 @@ abstract contract SlowPermit {
         uint256 deadline,
         bytes calldata signature
     ) public payable returns (uint256 transferId) {
-        if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidDeposit();
-        if (msg.value != tip) revert InvalidDeposit();
+        if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidPermitDeposit();
+        if (msg.value != tip) revert InvalidPermitDeposit();
         _permit2Transfer(token, amount, nonce, deadline, signature);
         return _finishDeposit(token, to, amount, delay, tip, data);
     }
