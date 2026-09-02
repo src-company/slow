@@ -368,27 +368,39 @@ for (const id of C.CHAIN_IDS) {
     `chain ${id} lists no token twice`);
 }
 
-// Bridged addresses, each confirmed on chain 4663 to have code and a symbol.
+// Chain-native assets, each confirmed on chain 4663 to have code and to report
+// this symbol and these decimals.
 const rh = C.CHAINS[4663].tokens;
-eq(rh.find(t => t.symbol === 'USDC').address, '0x80e0e24718dbfcad49ecaa6f1e6c89a190586ca8', 'USDC on 4663');
-eq(rh.find(t => t.symbol === 'USDC').decimals, 6, 'USDC on 4663 has 6 decimals');
-eq(rh.find(t => t.symbol === 'USDT').address, '0xe246bc49b0598d7cd9f0ead48b885034f1254380', 'USDT on 4663');
-eq(rh.find(t => t.symbol === 'WETH').address, '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 'WETH on 4663');
-ok(!rh.some(t => t.symbol === 'BOLD'), 'BOLD is absent from 4663 — it has not been bridged');
-// The bridged addresses are genuinely different from their L1 originals.
-for (const sym of ['USDC', 'USDT']) {
-  const l1 = C.CHAINS[1].tokens.find(t => t.symbol === sym);
-  const l2 = rh.find(t => t.symbol === sym);
-  ok(l1.address !== l2.address, `${sym} is at a different address on 4663 than on mainnet`);
-  eq(l1.decimals, l2.decimals, `${sym} keeps its decimals across the bridge`);
+eq(rh.map(t => t.symbol).join(','), 'ETH,USDe,USDG,NVDA', '4663 lists its own assets');
+eq(rh.find(t => t.symbol === 'USDe').address, '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', 'USDe on 4663');
+eq(rh.find(t => t.symbol === 'USDe').decimals, 18, 'USDe has 18 decimals, not 6');
+eq(rh.find(t => t.symbol === 'USDG').address, '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG on 4663');
+eq(rh.find(t => t.symbol === 'USDG').decimals, 6, 'USDG has 6 decimals');
+eq(rh.find(t => t.symbol === 'NVDA').address, '0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', 'NVDA on 4663');
+eq(rh.find(t => t.symbol === 'NVDA').decimals, 18, 'NVDA has 18 decimals');
+// None of the mainnet four appears on 4663, and nothing shares an address.
+for (const sym of ['USDC', 'USDT', 'BOLD']) {
+  ok(!rh.some(t => t.symbol === sym), `${sym} is not offered on 4663`);
 }
+const mainAddrs = new Set(C.CHAINS[1].tokens.filter(t => t.address !== C.ZERO).map(t => t.address));
+ok(rh.filter(t => t.address !== C.ZERO).every(t => !mainAddrs.has(t.address)),
+  'no 4663 asset reuses a mainnet address');
+
+// A tokenized share must not be laddered like a dollar: 10/100/1000 NVDA would
+// offer roughly $1.8k to $180k as the three default amounts.
+eq(C.presetsFor('NVDA').join(','), '0.1,1,10', 'NVDA gets a share-scale ladder');
+ok(C.presetsFor('NVDA').join(',') !== C.PRESETS.default.join(','),
+  'NVDA does not inherit the stablecoin ladder');
+ok(C.TOKEN_COLORS.NVDA && C.TOKEN_COLORS.USDe && C.TOKEN_COLORS.USDG,
+  'every 4663 asset has a tile colour');
+eq(new Set(rh.map(t => C.TOKEN_COLORS[t.symbol])).size, rh.length,
+  'the four 4663 tiles are four different colours');
 
 eq(C.cfg(4663).name, 'Robinhood Chain', 'cfg() resolves by id');
 eq(C.cfg(999999).id, 1, 'cfg() falls back to mainnet for an unknown chain');
 
 // Presets follow the asset, and WETH is an ether-scale asset like ETH.
 eq(C.presetsFor('WETH').join(','), C.presetsFor('ETH').join(','), 'WETH shares the ETH ladder');
-eq(C.tokSym('WETH'), 'WETH', 'WETH has its own colour');
 ok(C.TOKEN_COLORS.WETH === C.TOKEN_COLORS.ETH, 'WETH is painted as ether');
 
 // ─── Report ────────────────────────────────────────────────────────────────

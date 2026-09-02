@@ -50,7 +50,7 @@ globalThis.innerWidth = 1024;
 const captured = {};
 globalThis.__capture = captured;
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{
-  CHAINS, CHAIN_IDS, SLOW, ZERO, MC3, ENS_REG, WNS, SEL, MAINNET,
+  CHAINS, CHAIN_IDS, SLOW, ZERO, MC3, ENS_REG, WNS, SEL, MAINNET, TOKEN_COLORS,
   encAggregate3, decAggregate3, decode, cd, decodeStringLoose,
 });`)();
 const C = captured;
@@ -122,6 +122,11 @@ for (const id of C.CHAIN_IDS) {
     eq(sym, t.symbol, `${c.short}: ${t.symbol} at ${t.address} reports its symbol`);
     eq(dec, t.decimals, `${c.short}: ${t.symbol} reports ${t.decimals} decimals`);
   });
+
+  // A tile colour and a ladder for every asset the chain offers.
+  for (const t of c.tokens) {
+    ok(C.TOKEN_COLORS[t.symbol] || t.address === C.ZERO, `${c.short}: ${t.symbol} has a tile colour`);
+  }
 
   // SLOW's address is canonical; its presence is not. The page checks this at
   // runtime so it never shows an empty transfer list for a chain that has no
