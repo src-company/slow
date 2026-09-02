@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23110E08'/%3E%3Cpath d='M4 4h56v56H4z' fill='none' stroke='%23CCFF00' stroke-opacity='.45' stroke-width='1.6' stroke-dasharray='3 2.4'/%3E%3Cpath d='M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z' fill='%23CCFF00'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23110E08'/%3E%3Cpath d='M4 4h56v56H4z' fill='none' stroke='%23CCFF00' stroke-opacity='.45' stroke-width='1.6' stroke-dasharray='3 2.4'/%3E%3Cpath d='M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z' fill='%23CCFF00'/%3E%3C/svg%3E">
 <title>SLOW</title>
 <style>
 /* ─────────────────────────────────────────────────────────────
@@ -58,10 +58,12 @@ button,input{font:inherit;color:inherit;border-radius:0}
 .chip .lbl{overflow:hidden;text-overflow:ellipsis;max-width:34vw}
 #themeBtn{width:34px;padding:0;justify-content:center;font-size:14px}
 .wordmark{
+  display:inline-flex;align-items:center;gap:10px;
   background:transparent;border:none;cursor:pointer;color:var(--fg);
   font-size:15px;font-weight:700;letter-spacing:.26em;padding:0 2px;
 }
-.wordmark:hover{opacity:.6}
+.wordmark .mk{width:26px;height:26px;flex:0 0 auto}
+.wordmark:hover{opacity:.65}
 #walletBtn.on{border-color:var(--fg)}
 #netDot{width:6px;height:6px;background:var(--err);flex:0 0 auto}
 #netDot[hidden]{display:none}
@@ -296,7 +298,13 @@ body.light .loading{background:rgba(255,255,255,.92)}
 <body>
 
 <div class="bar">
-  <button class="wordmark" id="homeBtn" aria-label="Home">SLOW</button>
+  <button class="wordmark" id="homeBtn" aria-label="Home">
+    <svg class="mk" viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" fill="#110E08"/>
+      <path d="M4 4h56v56H4z" fill="none" stroke="#CCFF00" stroke-opacity=".45" stroke-width="2.4" stroke-dasharray="3 2.4"/>
+      <path d="M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z" fill="#CCFF00"/>
+    </svg><span>SLOW</span>
+  </button>
   <div class="bar-r">
     <button class="chip" id="themeBtn" aria-label="Appearance"></button>
     <button class="chip" id="chainBtn" aria-label="Network">
@@ -1655,23 +1663,16 @@ async function doClawback(t){
    Chain marks
    ══════════════════════════════════════════════════════════════════
    Inline, because the document has to work forever from bytecode and
-   cannot fetch an asset. The Ethereum diamond is drawn to its real
-   four-facet geometry. The Robinhood mark is a PLACEHOLDER: tracing a
-   trademark from memory produces something subtly wrong, which reads
-   worse than an honest abstract glyph. Swap in the official asset.
+   cannot fetch an asset. Both are the simple-icons glyphs (CC0-1.0),
+   which is what makes them sit together: one 24 grid, one optical
+   weight, drawn to read at 15px. The hand-drawn feather they replace
+   did not.
    ══════════════════════════════════════════════════════════════════ */
 const ICONS = {
-  1:'<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">'
-   +'<path d="M16 3 8.5 16.2 16 20.6l7.5-4.4L16 3Z" opacity=".45"/><path d="M16 3v17.6l7.5-4.4L16 3Z"/>'
-   +'<path d="M8.5 17.7 16 22.1l7.5-4.4L16 29 8.5 17.7Z" opacity=".45"/><path d="M16 22.1V29l7.5-11.3L16 22.1Z"/></svg>',
-  // The Robinhood feather: blade and quill as one outline, with the arrow
-  // knocked out through fill-rule="evenodd" so the notch shows the ground
-  // rather than a second colour — which is what lets one path sit on either
-  // theme. Redrawn from the mark, not the official file.
-  4663:'<svg viewBox="0 0 32 32" fill="currentColor" fill-rule="evenodd" aria-hidden="true">'
-   +'<path d="M5.6 26.9 6.9 28.2 13.1 21.6c2.5.4 5.1 0 7.4-1.1 4.7-2.2 7.6-7.1 7.8-13.6 0-1.5-1.2-2.7-2.7-2.6-6.4.4-11.2 3.4-13.4 8.2-1.1 2.5-1.4 5.3-.8 7.9Z'
-   +'M14.8 8.8v1.5h4.9L11 18.9 12.1 20l8.7-8.7v5h1.5V8.8Z"/>'
-   +'</svg>',
+  1:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+   +'<path d="M11.944 17.97 4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0 4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>',
+  4663:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+   +'<path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852"/></svg>',
 };
 
 /* ══════════════════════════════════════════════════════════════════
