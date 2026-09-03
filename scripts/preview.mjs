@@ -27,7 +27,7 @@ const nojekyll = execFileSync('git', ['hash-object', '-w', '--stdin'], {cwd: ROO
 // not a source file, so it is not committed — but it belongs next to the page it
 // documents, on the same pinned commit, so the two can never disagree.
 const entries = [`100644 blob ${blob}\tindex.html`, `100644 blob ${nojekyll}\t.nojekyll`];
-const galleryPath = path.join(ROOT, 'out/gallery.html');
+const galleryPath = path.join(ROOT, 'preview/gallery.html');
 let gallery = false;
 if (fs.existsSync(galleryPath)) {
   entries.push(`100644 blob ${git('hash-object', '-w', galleryPath)}\tgallery.html`);

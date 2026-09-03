@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const rows = fs.readFileSync(path.join(ROOT, 'out/gallery.tsv'), 'utf8').trim().split('\n');
+const rows = fs.readFileSync(path.join(ROOT, 'preview/gallery.tsv'), 'utf8').trim().split('\n');
 
 const b64 = (s) => Buffer.from(s, 'base64').toString('utf8');
 const items = rows.map((line) => {
@@ -97,7 +97,7 @@ document.getElementById('bar').addEventListener('click', (e) => {
 });
 </script>`;
 
-fs.writeFileSync(path.join(ROOT, 'out/gallery.html'), html);
+fs.writeFileSync(path.join(ROOT, 'preview/gallery.html'), html);
 const total = items.reduce((a, i) => a + i.bytes, 0);
 console.log(`${items.length} renders · largest ${Math.max(...items.map((i) => i.bytes)).toLocaleString()} B` +
   ` · mean ${Math.round(total / items.length).toLocaleString()} B`);

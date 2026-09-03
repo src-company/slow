@@ -547,6 +547,25 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
     'checkDeployed probes the destination chains too, not just the active one');
 }
 
+// ─── The mark ──────────────────────────────────────────────────────────────
+
+// The favicon and the header wordmark are necessarily two copies — one is a
+// data URI, one is inline — so assert they are the same geometry rather than
+// trusting that they were edited together.
+{
+  const icon = decodeURIComponent(/href="data:image\/svg\+xml,([^"]+)"/.exec(html)[1]);
+  const mark = /<svg class="mk"[\s\S]*?<\/svg>/.exec(html)[0];
+  const plate = (x) => /<path d="(M0 [^"]+Z)"/.exec(x)[1];
+  eq(plate(icon), plate(mark), 'the favicon and the wordmark carry the same plate');
+  ok(/fill="#0000FF"/.test(icon) && /fill="#0000FF"/.test(mark), 'both are the supplied blue');
+  const glyph = (x) => /<path d="(M48,16[^"]+)"/.exec(x)[1];
+  eq(glyph(icon), glyph(mark), 'and the same glyph');
+  ok(!/#0A0A0A/.test(html), 'nothing is left on the old black plate');
+  // The corners are the supplied superellipse, not an rx approximation, which
+  // at this radius differs by 3.6px on a 300px render.
+  ok(/C/.test(plate(mark)) && !/<rect[^>]*rx="5"/.test(mark), 'the plate is a curve, not a rounded rect');
+}
+
 // ─── RPC failover ──────────────────────────────────────────────────────────
 
 // Only ask a different node about failures a different node might not have.

@@ -950,7 +950,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         string memory secondsRow = delay > 60
             ? string(
                 abi.encodePacked(
-                    '<text x="150" y="232" font-size="8" fill="#8A8A8A">',
+                    '<text x="150" y="232" font-size="8" fill="#CCC">',
                     delay.toString(),
                     " seconds</text>"
                 )
@@ -964,8 +964,13 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             unicode" · ",
             delayLabel,
             "</title>",
-            '<rect width="300" height="300" fill="#0A0A0A"/>',
-            '<rect x="1" y="1" width="298" height="298" fill="none" stroke="#fff"/>',
+            // The base plate. The supplied art's corners are continuous
+            // (superelliptical), not circular: an rx rounded rect of the same
+            // radius departs from it by 3.6px at this size, which is visible.
+            // Coordinates are rounded to 0.1, which costs 0.03px and 56 bytes.
+            // The old inset border is gone — it existed to find the edge against
+            // a page, and a blue plate finds its own.
+            '<path d="M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z" fill="#00F"/>',
             '<line x1="20" y1="50" x2="280" y2="50" stroke="#fff"/>',
             '<text x="20" y="35" font-family="Helvetica,Arial,sans-serif" font-size="24" fill="#fff">SLOW</text>',
             '<g font-family="monospace" text-anchor="middle" fill="#fff">',
@@ -979,7 +984,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         bytes memory tail = abi.encodePacked(
             '<text x="150" y="186" font-size="',
             _fit(bytes(dispName).length, 250, 13, 7).toString(),
-            '" fill="#8A8A8A">',
+            '" fill="#CCC">',
             dispName,
             '</text><text x="150" y="218" font-size="',
             _fit(bytes(delayLabel).length, 230, 20, 10).toString(),

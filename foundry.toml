@@ -12,7 +12,7 @@ remappings = [
 
 via_ir = true
 
-fs_permissions = [{ access = "read-write", path = "./out"}, { access = "read", path = "./SLOW.html"}, { access = "read", path = "./deploy_artifacts"}]
+fs_permissions = [{ access = "read-write", path = "./preview"}, { access = "read", path = "./SLOW.html"}, { access = "read", path = "./deploy_artifacts"}]
 
 [fmt]
 line_length = 100

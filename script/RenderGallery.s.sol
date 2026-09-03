@@ -61,6 +61,6 @@ contract RenderGallery is Script {
                 out = string.concat(out, assets[a][1], "\t", vm.toString(delays[d]), "\t", slow.uri(id), "\n");
             }
         }
-        vm.writeFile("out/gallery.tsv", out);
+        vm.writeFile("preview/gallery.tsv", out);
     }
 }
