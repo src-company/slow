@@ -1,0 +1,6 @@
+{
+  "name": "slow-tools",
+  "private": true,
+  "description": "Dev-only tooling. Kept out of the repo root so the project itself stays dependency-free — nothing that ships needs npm.",
+  "dependencies": { "playwright": "^1.49.0" }
+}
