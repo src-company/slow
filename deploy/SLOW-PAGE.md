@@ -228,6 +228,58 @@ past the limit, so something has to give, and the numbers say which:
 
 Recommendation: EIP-2612 only, `html()` kept — 726 bytes clear.
 
+As actually built today that recommendation lands at **24,356 B, 220 clear**,
+not 726: the permit entrypoints carry `nonReentrant` and the two recipient
+guards `depositTo` has, which the estimate above did not include. Re-measure
+with `forge build --sizes` rather than planning against the table.
+
+### Where the canonical address actually stands
+
+Read off the three chains directly, not assumed:
+
+| chain | `0x0000…AaBC` | what is there |
+| --- | --- | --- |
+| 1 | **21,648 B** | `SLOW.sol` byte-for-byte; `html()` answers; no permit, no `wardsOf` |
+| 8453 | **13,386 B** | a genuine but OLDER SLOW — `name()` says `SLOW`, and `depositTo` / `reverse` / `unlock` / `guardians` / `pendingTransfers` are there, but `getOutboundTransfers`, `getInboundTransfers`, `gate()`, `clawback` and `html()` are NOT |
+| 4663 | **0 B** | free |
+
+**The canonical address is occupied on Base.** A CREATE3 deploy to an address
+that already holds code fails, so `SLOWNext` cannot land at `0x0000…AaBC` on
+8453 — which means the address cannot be the one canonical address across all
+three chains. Either the new build goes to a freshly mined address on all three
+(and the page's `SLOW` constant moves with it, leaving mainnet's existing
+positions at the old address), or Base is dropped from the "same address
+everywhere" claim. This is a decision, not a detail: the address gets baked into
+an immutable page.
+
+The page already fails loudly here rather than silently — `probeDeployed`
+(`dapp/page.html:1824`) requires all five of `depositTo`, `getOutboundTransfers`,
+`getInboundTransfers`, `pendingTransfers` and `guardians` in the runtime, and
+Base's build is missing two, so it reports a mismatch instead of calling an
+entrypoint that is not there. The comment above that probe describes Base's old
+build in the past tense, as something fixed by a redeployment; that redeployment
+has not happened, and the old build is still live there today.
+
+### If the deployer is CreateX
+
+CreateX is present at `0xba5Ed0…ba5Ed` on all three chains (11,838 B on each),
+and both of its salt rules were confirmed against the live contract:
+
+- **Byte 20 of the salt is the redeploy-protection flag, and it must be `0x00`.**
+  Setting it mixes `block.chainid` into the guarded salt. Simulating
+  `deployCreate3` with one salt across all three chains gives `0x72B1B286…`
+  everywhere with the flag clear, and `0x8ee45838…` / `0xfA7E5660…` /
+  `0x2DcD713A…` with it set. The protected form is the one that sounds safer and
+  is the one that quietly breaks the premise the portal rests on.
+- **`scripts/address.mjs` derives from the raw salt and CreateX does not.**
+  `deployCreate3` runs the salt through `_guard()` first, so the script's answer
+  is right only when fed the already-guarded salt. Same deployer and salt:
+  the script says `0x038aC3b9…`, CreateX actually deploys to `0x72B1B286…`.
+
+`manifest.json` still carries `deployment.contract`, `deployment.salt` and
+`deployment.create3Deployer` as `null`, and `protocol.note` still reads "It is
+not redeployed" — none of the above has been decided or recorded yet.
+
 Two things the integration makes true that are easy to miss:
 
 - **Storage is not compatible with the deployed build.** Base contracts lay out

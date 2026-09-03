@@ -13,6 +13,28 @@
  * So the salt is mined once, before any content exists, and the page is written
  * around an address that is already known.
  *
+ * TWO TRAPS IF THE DEPLOYER IS CreateX, WHICH IS WHAT IS PRESENT ON ALL THREE
+ * CHAINS (0xba5Ed0…ba5Ed, 11,838 bytes on 1, 8453 and 4663 alike).
+ *
+ *   1. CreateX DOES NOT USE YOUR SALT DIRECTLY. `deployCreate3` runs it through
+ *      `_guard()` first, so the derivation below is correct only when fed the
+ *      GUARDED salt. Verified against the live contract: deployer CreateX with
+ *      salt 0x00…01 derives 0x038aC3b9… here and actually deploys to
+ *      0x72B1B286…, which are not the same address. Mine a vanity salt with
+ *      this script, hand that salt to CreateX, and you land somewhere else.
+ *
+ *   2. BYTE 20 OF THE SALT IS CreateX'S REDEPLOY-PROTECTION FLAG, and turning
+ *      it on mixes `block.chainid` into the guarded salt. It must be 0x00 for a
+ *      deployment that wants one address everywhere. Verified by simulating
+ *      `deployCreate3` on all three chains with the same salt:
+ *
+ *        byte20 = 0x00  ->  0x72B1B286…  on 1, 8453 and 4663 alike
+ *        byte20 = 0x01  ->  0x8ee45838… on 1, 0xfA7E5660… on 8453,
+ *                           0x2DcD713A… on 4663
+ *
+ *      The protected form is the one that sounds safer and is the one that
+ *      silently breaks the premise the whole portal rests on.
+ *
  * Usage:
  *   node scripts/address.mjs <deployer> <salt>          # derive one address
  *   node scripts/address.mjs <deployer> --mine 0x000000 # search for a prefix
