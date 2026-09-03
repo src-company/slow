@@ -11,6 +11,7 @@
  */
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import {ROOT, loadManifest, readPage} from './lib.mjs';
 
 const git = (...a) => execFileSync('git', a, {cwd: ROOT, encoding: 'utf8'}).trim();
@@ -21,9 +22,19 @@ const {bytes, sha256} = readPage(m);
 
 const blob = git('hash-object', '-w', path.join(ROOT, m.page));
 const nojekyll = execFileSync('git', ['hash-object', '-w', '--stdin'], {cwd: ROOT, input: '', encoding: 'utf8'}).trim();
+
+// The render gallery rides along when it has been built. It is a build product,
+// not a source file, so it is not committed — but it belongs next to the page it
+// documents, on the same pinned commit, so the two can never disagree.
+const entries = [`100644 blob ${blob}\tindex.html`, `100644 blob ${nojekyll}\t.nojekyll`];
+const galleryPath = path.join(ROOT, 'out/gallery.html');
+let gallery = false;
+if (fs.existsSync(galleryPath)) {
+  entries.push(`100644 blob ${git('hash-object', '-w', galleryPath)}\tgallery.html`);
+  gallery = true;
+}
 const tree = execFileSync('git', ['mktree'], {
-  cwd: ROOT, encoding: 'utf8',
-  input: `100644 blob ${blob}\tindex.html\n100644 blob ${nojekyll}\t.nojekyll\n`,
+  cwd: ROOT, encoding: 'utf8', input: entries.join('\n') + '\n',
 }).trim();
 const head = git('rev-parse', '--short', 'HEAD');
 const commit = git('commit-tree', tree, '-m', `preview: ${m.page} @ ${head} (${bytes.length} B)`);
@@ -43,6 +54,10 @@ if (slug) {
   // right trade while iterating.
   console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/index.html`);
   console.log(`  \u2514 pinned to this commit, cannot serve a stale copy`);
+  if (gallery) {
+    console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/gallery.html`);
+    console.log(`  \u2514 every uri() render, decoded from the contract's own output`);
+  }
   const [owner, repo] = slug.split('/');
   console.log(`\n  https://${owner}.github.io/${repo}/`);
   console.log(`  \u2514 stable URL, updates on push \u2014 needs Pages enabled on gh-pages`);
