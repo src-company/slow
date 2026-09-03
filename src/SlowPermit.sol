@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.30;
 
+import {ReentrancyGuardTransient} from "@solady/src/utils/ReentrancyGuardTransient.sol";
+
 /// @title SLOW permit extension
 /// @notice Signature-authorised deposits: one transaction instead of two, for
 ///         tokens that support EIP-2612.
@@ -45,8 +47,7 @@ pragma solidity ^0.8.30;
 ///      allowance it wanted now exists. Every permit here is therefore
 ///      attempted, and its failure tolerated when the resulting allowance is
 ///      already sufficient.
-abstract contract SlowPermit {
-    /// @dev Canonical Permit2, at the same address on every chain it is on.
+abstract contract SlowPermit is ReentrancyGuardTransient {
     error PermitFailed();
     error InsufficientPermit();
     error InvalidPermitDeposit();
@@ -92,8 +93,9 @@ abstract contract SlowPermit {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public returns (uint256 transferId) {
+    ) public nonReentrant returns (uint256 transferId) {
         if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
+        if (to == address(0) || to == address(this)) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);
         return _finishDeposit(token, to, amount, delay, 0, data);
@@ -112,8 +114,9 @@ abstract contract SlowPermit {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) public payable returns (uint256 transferId) {
+    ) public payable nonReentrant returns (uint256 transferId) {
         if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidPermitDeposit();
+        if (to == address(0) || to == address(this)) revert InvalidPermitDeposit();
         if (msg.value != tip) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);

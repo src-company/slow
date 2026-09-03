@@ -38,10 +38,12 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///                            shown the accounts it guards instead of being
 ///                            asked to type them in.
 ///
-/// @dev SIZE. 24,144 bytes of runtime against EIP-170's 24,576 — 432 to spare,
-///      up from 21,648. Dropping the DAI-style and Permit2 entrypoints and
-///      keeping only EIP-2612 brings it to 23,268, which is 1,308 to spare. That
-///      is the trade if this contract is expected to grow again.
+/// @dev SIZE. 24,356 bytes of runtime against EIP-170's 24,576 — 220 to spare,
+///      up from 21,648. The DAI-style and Permit2 entrypoints were already
+///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
+///      spent: anything added from here has to come out of those 220 bytes, or
+///      out of something this contract currently does. Re-measure with
+///      `forge build --sizes` after any change here or in the extensions.
 ///
 /// @dev STORAGE IS NOT COMPATIBLE WITH THE DEPLOYED BUILD, and does not need to
 ///      be. Base contracts are laid out first, so the index's two mappings take
