@@ -61,7 +61,7 @@ const captured = {};
 globalThis.__capture = captured;
 const EXPORTS = [
   'SLOW', 'ZERO', 'ENS_REG', 'WNS', 'MC3', 'MAINNET', 'GRACE', 'SEL', 'TYPEHASH_2612', 'PRESETS',
-  'CHAINS', 'CHAIN_IDS', 'cfg',
+  'CHAINS', 'CHAIN_IDS', 'cfg', 'TOKEN_COLORS', 'railOf', 'tokenColor',
   'keccak256', 'namehash', 'encode', 'decode', 'cd', 'word', 'strip',
   'encAggregate3', 'decAggregate3', 'chunk',
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
@@ -72,6 +72,7 @@ const EXPORTS = [
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
   'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
+  'renderNFT', 'formatDelay', 'fit', 'clipForDisplay',
   'RETRY_CODES', 'rpcErr', 'rpcPool',
 ];
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{${EXPORTS.join(',')}});`)();
@@ -563,10 +564,13 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   const mark = /<svg class="mk"[\s\S]*?<\/svg>/.exec(html)[0];
   const plate = (x) => /<path d="(M0 [^"]+Z)"/.exec(x)[1];
   eq(plate(icon), plate(mark), 'the favicon and the wordmark carry the same plate');
-  ok(/fill="#0000FF"/.test(icon) && /fill="#0000FF"/.test(mark), 'both are the supplied blue');
+  // Black and white, not blue. #0000FF is a chain's colour, and a mark that
+  // stands for three chains should take no side.
+  ok(/fill="#0A0A0A"/.test(icon) && /fill="#0A0A0A"/.test(mark), 'the plate is neutral');
+  ok(/stroke="#FFFFFF"/.test(mark), 'with a white inset, because a black plate on a dark ground is 1.05:1');
+  ok(!/0000FF/.test(html), 'no blue survives anywhere in the page');
   const glyph = (x) => /<path d="(M48,16[^"]+)"/.exec(x)[1];
   eq(glyph(icon), glyph(mark), 'and the same glyph');
-  ok(!/#0A0A0A/.test(html), 'nothing is left on the old black plate');
   // The corners are the supplied superellipse, not an rx approximation, which
   // at this radius differs by 3.6px on a 300px render.
   ok(/C/.test(plate(mark)) && !/<rect[^>]*rx="5"/.test(mark), 'the plate is a curve, not a rounded rect');
@@ -855,6 +859,59 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
   ok(/\.note\.err\{color:var\(--err\)\}/.test(CSS2), 'but failure still is');
 }
 
+// ─── The preview is the contract, or it is a lie ───────────────────────────
+//
+// renderNFT is a port of SLOWNext._createImage. A port that drifts is worse
+// than no preview: it shows a picture the contract will never draw, and it does
+// so silently. So it is pinned to the real thing — preview/gallery.tsv is the
+// verbatim uri() output of a deployed SLOWNext, straight out of the EVM, and
+// every row of it has to come back byte for byte.
+{
+  const tsv = path.join(ROOT, 'preview/gallery.tsv');
+  if (!fs.existsSync(tsv)) {
+    ok(false, 'preview/gallery.tsv is missing — run scripts/render.sh');
+  } else {
+    const b64 = (u) => Buffer.from(u.split(',')[1], 'base64').toString('utf8');
+    const rows = fs.readFileSync(tsv, 'utf8').trim().split('\n');
+    let checked = 0, bad = null;
+    for (const row of rows) {
+      const [symbol, delay, uri] = row.split('\t');
+      const meta = JSON.parse(b64(uri));
+      const want = b64(meta.image);
+      // The name has to be recovered from the render, and the render is
+      // escaped — so unescape it before feeding it back, or the port escapes
+      // twice and every ampersand diverges. (It did.)
+      const unesc = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+      const name = unesc(/y="185"[^>]*>([^<]*)</.exec(want)[1]);
+      const got = C.renderNFT(null, delay, symbol, name);
+      if (got !== want && !bad) bad = {symbol, delay, want, got};
+      checked++;
+    }
+    if (bad) {
+      const i = [...bad.want].findIndex((c, k) => c !== bad.got[k]);
+      ok(false, `renderNFT diverges at ${bad.symbol}/${bad.delay}, byte ${i}:\n` +
+        `    contract: …${bad.want.slice(Math.max(0, i - 40), i + 40)}…\n` +
+        `    page:     …${bad.got.slice(Math.max(0, i - 40), i + 40)}…`);
+    } else {
+      ok(checked > 100, `renderNFT matches the contract on all ${checked} renders, byte for byte`);
+    }
+  }
+}
+
+// The lossy parts have to be lossy identically, so check them head-on.
+{
+  eq(C.formatDelay(90), '1 minute', '1m30s truncates to the minute');
+  eq(C.formatDelay(59), '59 seconds', 'under a minute stays in seconds');
+  eq(C.formatDelay(1), '1 second', 'and singular is singular');
+  eq(C.formatDelay(86399), '23 hours', '23h59m is not a day');
+  eq(C.formatDelay(59616000), '1 year', '23 months truncates to one year — an 11-month understatement');
+  eq(C.fit(0, 240, 44, 14), 44, 'an empty string gets the maximum');
+  eq(C.fit(100, 240, 44, 14), 14, 'a long one is floored, not shrunk away');
+  eq(C.clipForDisplay('abc', 28), 'abc', 'a short name is untouched');
+  eq(C.clipForDisplay('x'.repeat(40), 28), 'x'.repeat(28) + '...', 'a long one is cut at the byte count');
+}
+
 // ─── The design system, in numbers ─────────────────────────────────────────
 
 // A helper, so the assertions below test the values that actually ship rather
@@ -885,12 +942,21 @@ const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lu
 // The token grid carries no colour of its own any more: identity is the symbol,
 // selection is inversion, exactly as .tab and .seg button already do it.
 {
-  ok(!/TOKEN_COLORS/.test(html), 'the per-asset palette is gone');
-  ok(!/inkOn|INK_DARK|INK_LIGHT/.test(html), 'and the ink-contrast machinery with it');
+  // Colour is a 5px rail, not a 52px field: a code you learn once, not the
+  // loudest thing on the page. Nothing is set in white on it, so there is no
+  // ink-contrast question to answer.
+  ok(!/inkOn|INK_DARK|INK_LIGHT/.test(html), 'the ink-contrast machinery is gone with the filled tile');
   ok(!/\.crypto\{[^}]*aspect-ratio/.test(CSS), 'the tile is no longer a square canvas for a hue');
+  ok(/\.crypto\{[^}]*border-left-width:5px/.test(CSS), 'the tile carries its colour as a rail');
   ok(/\.crypto\[aria-pressed=true\]\{background:var\(--fg\);color:var\(--bg\)/.test(CSS),
-    'a selected token inverts');
-  ok(!/b\.style\.background=/.test(html.split('</style>')[1]), 'no tile paints itself from JS');
+    'a selected token still inverts');
+  ok(!/b\.style\.background=/.test(html.split('</style>')[1]), 'no tile paints its whole face');
+  // Every asset on every chain resolves to a rail, named or derived.
+  for (const id of C.CHAIN_IDS) {
+    for (const t of C.CHAINS[id].tokens) {
+      ok(/^(#[0-9a-f]{6}|hsl\()/i.test(C.railOf(t.symbol, t.address)), `${t.symbol} has a rail`);
+    }
+  }
 }
 
 // Disabled must not be opacity alone, and opacities must not multiply: .locked

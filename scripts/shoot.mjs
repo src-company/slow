@@ -66,6 +66,8 @@ for (const [vp, size] of Object.entries(VIEWPORTS)) {
     await page.fill('#recipientInput', 'vitalik.eth').catch(() => {});
     await page.click('.crypto[data-token]:nth-of-type(2)').catch(() => {});
     await page.fill('#amountInput', '25').catch(() => {});
+    // A delay too, so the on-chain preview has something to draw.
+    await page.click('#timeRow [data-time="86400"]').catch(() => {});
     await page.waitForTimeout(900);
     await shoot(page, `${vp}-${theme}-send-filled`);
 

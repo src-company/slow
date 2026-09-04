@@ -106,6 +106,17 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     }
 
     uint256 internal constant _GUARDIAN_CHANGE_DELAY = 1 days; // Veto window for guardian rotation.
+    /// @dev Ceiling on a deposit's timelock, matching what the interface offers.
+    ///      WITHOUT IT the delay is a full uint96, and at `type(uint96).max` the
+    ///      entry is not slow, it is permanent: `unlock`, `claim` and `clawback`
+    ///      all gate on `pt.timestamp + delay`, which never arrives, while
+    ///      `reverse` stays with the sender. Anyone could pin an unremovable row
+    ///      — and an unspendable wrapper — into a stranger's account for the
+    ///      cost of a dust deposit, which is what made the lens denial-of-service
+    ///      permanent rather than a nuisance. A hundred years is past any real
+    ///      use and still leaves the id's high 96 bits alone.
+    uint256 internal constant _MAX_DELAY = 3155760000; // 100 years, as the dapp offers.
+
     uint256 internal constant _CLAWBACK_GRACE = 30 days; // Wait after expiry before sender can clawback.
 
     // Op-type byte mixed into guardian-approval preimages. Distinguishes wrapper
@@ -129,6 +140,19 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     mapping(address user => PendingGuardian) public pendingGuardian;
 
     mapping(address user => address) public guardians;
+
+    /// @notice Freshness counter for guardian approval preimages.
+    /// @dev SEPARATE FROM `nonces` ON PURPOSE. Approvals used to be keyed on
+    ///      `nonces[from]`, which `_finishDeposit` also advances — and deposits
+    ///      are not guardian-gated. So the compromised key the guardian exists
+    ///      to defend against could void every standing approval for 1 wei plus
+    ///      gas, repeatedly, and batch ten of them per transaction through
+    ///      `multicall`. The guardian survived; the rescue it existed to
+    ///      authorise could never land. Worse, the victim could not escape by
+    ///      removing the guardian either — that path stages a window and the
+    ///      thief, still holding the key, takes the balance the moment it
+    ///      clears. Only operations a guardian actually gates move this one.
+    mapping(address user => uint256) public guardianNonces;
 
     mapping(address user => uint256) public nonces;
 
@@ -180,7 +204,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return uint256(
             keccak256(
                 abi.encodePacked(
-                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_TRANSFER
+                    from, to, id, amount, guardianNonces[from], lastGuardianChange[from], _OP_TRANSFER
                 )
             )
         );
@@ -197,7 +221,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return uint256(
             keccak256(
                 abi.encodePacked(
-                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_WITHDRAW
+                    from, to, id, amount, guardianNonces[from], lastGuardianChange[from], _OP_WITHDRAW
                 )
             )
         );
@@ -246,7 +270,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            nonces[user],
+                            guardianNonces[user],
                             lastGuardianChange[user],
                             _OP_TRANSFER
                         )
@@ -274,7 +298,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            nonces[user],
+                            guardianNonces[user],
                             lastGuardianChange[user],
                             _OP_WITHDRAW
                         )
@@ -370,6 +394,16 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         PendingGuardian memory p = pendingGuardian[user];
         require(p.effectiveAt != 0, NoGuardianChangePending());
         require(block.timestamp >= p.effectiveAt, GuardianChangeNotReady());
+        // NOT PERMISSIONLESS. The natspec above offers a late abort — propose
+        // someone else, then cancel inside the new window — and a permissionless
+        // commit defeats it: the guardian being installed watches the mempool,
+        // front-runs that abort with this call, and is then the sitting guardian
+        // with a legitimate veto over every later rotation. The user cannot even
+        // name themselves (`InvalidGuardian`), so the position is permanent and
+        // the balance is frozen behind a co-signer they were trying to refuse.
+        // Restricting it to the two parties the change is actually between costs
+        // nothing: either of them can still land it once the window has passed.
+        require(msg.sender == user || msg.sender == guardians[user], Unauthorized());
         delete pendingGuardian[user];
         lastGuardianChange[user] = block.timestamp;
         // Only here, never when the rotation is PROPOSED: until it commits the
@@ -552,6 +586,9 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         uint256 tip,
         bytes calldata data
     ) internal override returns (uint256 transferId) {
+        // Bounded here rather than at each entrypoint: all four deposit paths
+        // land in this function, so one check covers them and cannot drift.
+        require(delay <= _MAX_DELAY, InvalidDeposit());
         uint256 id = encodeId(token, delay);
 
         unchecked {
@@ -610,7 +647,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            nonces[from]++,
+                            guardianNonces[from]++,
                             lastGuardianChange[from],
                             _OP_WITHDRAW
                         )
@@ -661,26 +698,45 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             bool requiresDelayOrGuardian = guardian != address(0) || delay != 0;
 
             if (requiresDelayOrGuardian) {
-                uint256 transferId = uint256(
-                    keccak256(
-                        abi.encodePacked(
-                            from,
-                            to,
-                            id,
-                            amount,
-                            nonces[from]++,
-                            lastGuardianChange[from],
-                            _OP_TRANSFER
-                        )
-                    )
-                );
-
+                // TWO IDS, TWO COUNTERS, and they must not be merged back. The
+                // approval id is keyed on `guardianNonces` so that a deposit
+                // cannot advance it; the pending-transfer id stays on `nonces`,
+                // which is what has always guaranteed pending entries do not
+                // overwrite each other. Keying both on one counter would put a
+                // deposit's id and a transfer's id in the same space — same op
+                // byte, same fields — and let one silently overwrite the other.
                 if (guardian != address(0)) {
-                    require(guardianApproved[from][transferId], GuardianApprovalRequired());
-                    delete guardianApproved[from][transferId];
+                    uint256 approvalId = uint256(
+                        keccak256(
+                            abi.encodePacked(
+                                from,
+                                to,
+                                id,
+                                amount,
+                                guardianNonces[from]++,
+                                lastGuardianChange[from],
+                                _OP_TRANSFER
+                            )
+                        )
+                    );
+                    require(guardianApproved[from][approvalId], GuardianApprovalRequired());
+                    delete guardianApproved[from][approvalId];
                 }
 
                 if (delay != 0) {
+                    uint256 transferId = uint256(
+                        keccak256(
+                            abi.encodePacked(
+                                from,
+                                to,
+                                id,
+                                amount,
+                                nonces[from]++,
+                                lastGuardianChange[from],
+                                _OP_TRANSFER
+                            )
+                        )
+                    );
                     pendingTransfers[transferId] =
                         PendingTransfer(uint96(block.timestamp), from, to, id, amount);
 
@@ -952,7 +1008,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             // Coordinates are rounded to 0.1, which costs 0.03px and 56 bytes.
             // The old inset border is gone — it existed to find the edge against
             // a page, and a blue plate finds its own.
-            '<path d="M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z" fill="#00F"/>',
+            '<path d="M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z" fill="#0A0A0A" stroke="#fff" stroke-width="4"/>',
             // The rule needs a stated width: unstated it is 1 user unit, which at
             // 300 lands on a half-pixel and greys out at small sizes.
             '<line x1="20" y1="60" x2="280" y2="60" stroke="#fff" stroke-width="2"/>',
@@ -967,10 +1023,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         bytes memory tail = abi.encodePacked(
             '<text x="150" y="185" font-size="',
             _fit(bytes(dispName).length, 250, 14, 8).toString(),
-            // Neutral grey on a saturated blue reads as dirt however well it
-            // scores: #CCC is 5.35:1 and still looks like a smudge. A tint of
-            // the plate's own hue sits in the same light.
-            '" fill="#B9C4FF">',
+            '" fill="#8A8A8A">',
             dispName,
             '</text><text x="150" y="240" font-size="',
             _fit(bytes(delayLabel).length, 250, 22, 11).toString(),
@@ -1048,7 +1101,16 @@ contract SLOWGateNext {
     /// Keepers must filter ids off-chain (timelock-expired, no guardian on `pt.to`).
     function claimMany(uint256[] calldata transferIds) public {
         for (uint256 i; i != transferIds.length; ++i) {
-            _claimAndPay(transferIds[i]);
+            // PER-ID ISOLATION, because the failure is not hypothetical. Every
+            // id in the batch belongs to a recipient who may `unlock` it at any
+            // moment, and that is ordinary, honest behaviour — not an attack.
+            // Settled ids make `claimTipped` revert `TransferDoesNotExist`, and
+            // with a bare loop that one revert took the whole batch with it: a
+            // 20-id batch cost the keeper 1,375,690 gas and one 77,602-gas
+            // `unlock` destroyed it, ~18x leverage that scales with batch size.
+            // Filtering off-chain, which the note above prescribes, cannot fix
+            // it — the kill is a front-run, so no pre-flight read can see it.
+            try this.claim(transferIds[i]) {} catch {}
         }
     }
 

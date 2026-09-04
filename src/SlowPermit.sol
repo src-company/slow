@@ -95,7 +95,6 @@ abstract contract SlowPermit is ReentrancyGuardTransient {
         bytes32 s
     ) public nonReentrant returns (uint256 transferId) {
         if (token == address(0) || amount == 0) revert InvalidPermitDeposit();
-        if (to == address(0) || to == address(this)) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);
         return _finishDeposit(token, to, amount, delay, 0, data);
@@ -116,7 +115,7 @@ abstract contract SlowPermit is ReentrancyGuardTransient {
         bytes32 s
     ) public payable nonReentrant returns (uint256 transferId) {
         if (token == address(0) || amount == 0 || tip == 0 || delay == 0) revert InvalidPermitDeposit();
-        if (to == address(0) || to == address(this)) revert InvalidPermitDeposit();
+        if (tip > type(uint96).max) revert InvalidPermitDeposit();
         if (msg.value != tip) revert InvalidPermitDeposit();
         _permit2612(token, amount, deadline, v, r, s);
         _pull(token, msg.sender, amount);
@@ -130,8 +129,18 @@ abstract contract SlowPermit is ReentrancyGuardTransient {
     ///      `msg.sender`. `multicall` rejects a non-zero `msg.value`, so this
     ///      route covers ERC-20 deposits without a tip; the tipped path needs
     ///      `depositToWithTipAndPermit` above.
+    ///
+    /// @dev GUARDED, like its siblings. This was briefly left unguarded on the
+    ///      theory that `multicall([permitSelf, depositTo])` would deadlock on
+    ///      the transient slot. It does not: Solady clears the slot at modifier
+    ///      exit and `multicall` is itself unguarded, so sequential
+    ///      delegatecalls each take and release it. Tested. Nothing was
+    ///      exploitable through the gap, but it was the one entrypoint reaching
+    ///      the same arbitrary `token.call` without the guard, and the reason
+    ///      for the exception was simply wrong.
     function permitSelf(address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
         public
+        nonReentrant
     {
         _permit2612(token, amount, deadline, v, r, s);
     }

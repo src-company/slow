@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.30;
 
+import {MetadataReaderLib} from "@solady/src/utils/MetadataReaderLib.sol";
+
 /// @title SLOW lens
 /// @notice Read helper for the SLOW dapp. Turns the N+1 read the interface has
 ///         to do today into a single `eth_call`.
@@ -56,7 +58,6 @@ contract SlowLens {
         address token;
         uint96 delay;
         uint256 unlockAt;
-        bool guardianApproved;
     }
 
     /// @notice One entry per distinct token in a result, so the interface does
@@ -96,8 +97,8 @@ contract SlowLens {
         account.guardian = SLOW.guardians(user);
         (account.pendingGuardian, account.pendingEffectiveAt) = SLOW.pendingGuardian(user);
 
-        outbound = _load(user, SLOW.getOutboundTransfers(user), true);
-        inbound = _load(user, SLOW.getInboundTransfers(user), false);
+        outbound = _load(SLOW.getOutboundTransfers(user));
+        inbound = _load(SLOW.getInboundTransfers(user));
         account.outboundCount = outbound.length;
         account.inboundCount = inbound.length;
 
@@ -106,12 +107,68 @@ contract SlowLens {
 
     /// @notice Outbound only, for a caller that wants one side.
     function outboundOf(address user) external view returns (Transfer[] memory) {
-        return _load(user, SLOW.getOutboundTransfers(user), true);
+        return _load(SLOW.getOutboundTransfers(user));
     }
 
     /// @notice Inbound only.
     function inboundOf(address user) external view returns (Transfer[] memory) {
-        return _load(user, SLOW.getInboundTransfers(user), false);
+        return _load(SLOW.getInboundTransfers(user));
+    }
+
+    /// @notice `viewOf` over a window of each list, for an account whose sets
+    ///         are too large to read whole.
+    /// @dev SLOW's own note on the array getters says it plainly: the inbound
+    ///      set "can be expanded by anyone via dust deposits", and consumers
+    ///      that iterate it can run out of gas. This lens is that consumer, and
+    ///      until now it offered no way out — a griefer who plants enough dust
+    ///      entries, at a delay the victim can never outlast, takes the whole
+    ///      account view down permanently. The window is the escape: the caller
+    ///      pages instead of asking for everything.
+    ///
+    ///      `outboundCount` / `inboundCount` here are the sizes of the RETURNED
+    ///      windows after stale ids are dropped, not the set sizes. Use
+    ///      `counts` for the raw lengths to page against.
+    function viewOfAt(address user, uint256 start, uint256 count)
+        external
+        view
+        returns (Account memory account, Transfer[] memory outbound, Transfer[] memory inbound, TokenInfo[] memory tokens)
+    {
+        account.guardian = SLOW.guardians(user);
+        (account.pendingGuardian, account.pendingEffectiveAt) = SLOW.pendingGuardian(user);
+
+        outbound = _loadRange(SLOW.getOutboundTransfers(user), start, count);
+        inbound = _loadRange(SLOW.getInboundTransfers(user), start, count);
+        account.outboundCount = outbound.length;
+        account.inboundCount = inbound.length;
+
+        tokens = _tokens(outbound, inbound);
+    }
+
+    /// @notice Outbound window.
+    function outboundOfAt(address user, uint256 start, uint256 count)
+        external
+        view
+        returns (Transfer[] memory)
+    {
+        return _loadRange(SLOW.getOutboundTransfers(user), start, count);
+    }
+
+    /// @notice Inbound window.
+    function inboundOfAt(address user, uint256 start, uint256 count)
+        external
+        view
+        returns (Transfer[] memory)
+    {
+        return _loadRange(SLOW.getInboundTransfers(user), start, count);
+    }
+
+    /// @notice Raw set lengths, so a caller knows how far to page. These are
+    ///         the unfiltered lengths SLOW keeps, unlike the counts in
+    ///         `Account`, which describe a returned window after stale ids are
+    ///         dropped.
+    function counts(address user) external view returns (uint256 outbound, uint256 inbound) {
+        outbound = SLOW.getOutboundTransfers(user).length;
+        inbound = SLOW.getInboundTransfers(user).length;
     }
 
     /// @notice Confirm, in one call, which of `candidates` this account guards.
@@ -139,7 +196,7 @@ contract SlowLens {
         view
         returns (Transfer[] memory transfers, TokenInfo[] memory tokens)
     {
-        transfers = _load(ward, SLOW.getOutboundTransfers(ward), true);
+        transfers = _load(SLOW.getOutboundTransfers(ward));
         tokens = _tokens(transfers, new Transfer[](0));
     }
 
@@ -149,15 +206,30 @@ contract SlowLens {
     ///      or clawed back — and those read as `timestamp == 0`. They are
     ///      dropped here so the interface never has to filter, and the array is
     ///      shortened in place rather than copied.
-    function _load(address user, uint256[] memory ids, bool outbound)
+    function _load(uint256[] memory ids) internal view returns (Transfer[] memory out) {
+        return _loadRange(ids, 0, ids.length);
+    }
+
+    /// @dev The windowed form every public read is built on. `start` past the
+    ///      end returns empty and `count` is clamped to what remains, so a
+    ///      caller can walk a list it cannot size in advance without ever
+    ///      reverting. The clamp is computed BEFORE the add, outside
+    ///      `unchecked`: `start + count` with a large count wraps, and the
+    ///      wrapped value can land below `len`, which would turn "pass a big
+    ///      count for the rest" into an underflowed length.
+    function _loadRange(uint256[] memory ids, uint256 start, uint256 count)
         internal
         view
         returns (Transfer[] memory out)
     {
-        out = new Transfer[](ids.length);
+        uint256 len = ids.length;
+        if (start >= len) return new Transfer[](0);
+        uint256 room = len - start;
+        uint256 take = count < room ? count : room;
+        out = new Transfer[](take);
         uint256 n;
-        for (uint256 i; i != ids.length; ++i) {
-            (Transfer memory t, bool live) = _one(user, ids[i], outbound);
+        for (uint256 i; i != take; ++i) {
+            (Transfer memory t, bool live) = _one(ids[start + i]);
             if (live) out[n++] = t;
         }
         assembly ("memory-safe") {
@@ -170,7 +242,7 @@ contract SlowLens {
     ///      past what the legacy codegen can reach — and reaching for `--via-ir`
     ///      to hold a loop body together is a worse trade than a function call
     ///      in a view nobody pays for.
-    function _one(address user, uint256 tid, bool outbound)
+    function _one(uint256 tid)
         private
         view
         returns (Transfer memory t, bool live)
@@ -187,13 +259,18 @@ contract SlowLens {
         t.token = token;
         t.delay = uint96(delay);
         t.unlockAt = uint256(ts) + delay;
-        // `guardianApproved` is keyed on an OPERATION id from predictTransferId
-        // / predictWithdrawalId, never on a transfer id — so reading it with
-        // `tid` was structurally always false, and consumers read that as
-        // "your guardian has not approved this" no matter what they had
-        // approved. Ask the question the operation is actually keyed on.
-        t.guardianApproved = outbound
-            && SLOW.guardianApproved(user, SLOW.predictWithdrawalId(user, to, id, amount));
+        // NO PER-ROW GUARDIAN FLAG, deliberately. A pending transfer has no
+        // outstanding guardian decision: the approval that authorised its
+        // creation was consumed and deleted at `safeTransferFrom`, under
+        // `_OP_TRANSFER`. Settling it needs none — `unlock` consults no
+        // guardian and `_doClaim` gates on `guardians[pt.to]`, not on an
+        // approval. An earlier version asked `guardianApproved(user,
+        // predictWithdrawalId(user, to, id, amount))`, which is a DIFFERENT
+        // operation read at the live nonce, so it was false in the normal case,
+        // true by coincidence, and flipped between blocks with no change to the
+        // transfer. Two external calls per outbound row for an answer that did
+        // not describe the row. A caller that wants the recipient's guardian
+        // should read `guardians(to)` for the one row it is rendering.
         live = true;
     }
 
@@ -234,55 +311,38 @@ contract SlowLens {
     }
 
     /// @dev Handles both the string and the bytes32 shapes, and never reverts.
+    /// @dev BOTH PROBES GO THROUGH `MetadataReaderLib`, AND THAT IS THE POINT.
+    ///      `token` is attacker-chosen: `depositTo` accepts any address as a
+    ///      "token", to anyone, at a delay the recipient cannot outlast, and
+    ///      nothing lets them drop the entry. So every read here is a call into
+    ///      hostile code, and it has to be bounded on BOTH axes.
+    ///
+    ///      A gas cap alone is not enough, which is the trap the hand-rolled
+    ///      version fell into. It capped the callee at 50k and still wrote the
+    ///      answer into `bytes memory`, and that form copies the FULL
+    ///      `returndatasize()` into this frame — memory expansion is quadratic
+    ///      and it accumulates across the loop in `_tokens`. A token returning
+    ///      134,400 bytes from `symbol()` fits inside a 50k budget comfortably,
+    ///      so the cap bounded nothing that mattered: sixteen dust deposits
+    ///      still took the account view down for good.
+    ///
+    ///      `MetadataReaderLib` bounds both — `min(returndatasize(), limit)` on
+    ///      the copy, plus `GAS_STIPEND_NO_GRIEF` on the callee — and it is
+    ///      already what `SLOWNext.uri()` uses, which is exactly why `uri()`
+    ///      was never griefable while this contract was.
     function _symbol(address token) private view returns (string memory, bool) {
-        // Capped. `token` is attacker-chosen — depositTo accepts any address as
-        // a "token", to anyone, with a delay the victim cannot outlast — so an
-        // uncapped probe lets one dust deposit burn the whole call's gas and
-        // take viewOf down for that account permanently. That is the same DoS
-        // the hand-rolled decode below exists to prevent; a bounds check is no
-        // use if the call never returns. Exhaustion surfaces as ok == false,
-        // which is already handled.
-        (bool ok, bytes memory ret) = token.staticcall{gas: 50000}(abi.encodeWithSelector(0x95d89b41));
-        if (!ok || ret.length == 0) return ("", false);
-        if (ret.length == 32) {
-            // bytes32: trim the trailing zero padding.
-            bytes32 raw = abi.decode(ret, (bytes32));
-            uint256 len;
-            while (len < 32 && raw[len] != 0) ++len;
-            bytes memory s = new bytes(len);
-            for (uint256 i; i != len; ++i) s[i] = raw[i];
-            return (string(s), len != 0);
-        }
-        if (ret.length < 64) return ("", false);
-        // Decoded by hand, with bounds checks, because abi.decode is the CHECKED
-        // decoder: an out-of-range head offset makes it revert, and a token's
-        // return data is entirely attacker-chosen. A revert here does not fail
-        // one token — it propagates out of _tokens and takes down viewOf for the
-        // whole account, which anyone can trigger by depositing a hostile token
-        // to a victim with a delay they cannot outlast.
-        uint256 off;
-        assembly ("memory-safe") {
-            off := mload(add(ret, 0x20))
-        }
-        // Room for the offset word plus a length word at it.
-        if (off > ret.length - 64 || off % 32 != 0) return ("", false);
-        uint256 len;
-        assembly ("memory-safe") {
-            len := mload(add(add(ret, 0x20), off))
-        }
-        if (len > 64 || off + 64 + len > ret.length + 32) return ("", false);
-        bytes memory str = new bytes(len);
-        for (uint256 i; i != len; ++i) {
-            str[i] = ret[off + 32 + i];
-        }
-        return (string(str), len != 0);
+        // 64 bytes: longer than any real ticker, and the same clip `uri()` takes.
+        string memory sym = MetadataReaderLib.readSymbol(token, 64, 50000);
+        return (sym, bytes(sym).length != 0);
     }
 
+    /// @dev `readDecimals` returns 0 for a token that does not answer, which is
+    ///      indistinguishable from a real 0-decimal token — so the fallback to
+    ///      18 and the `ok` flag are decided here rather than inferred by the
+    ///      caller. Anything above 36 is not a decimals value.
     function _decimals(address token) private view returns (uint8, bool) {
-        (bool ok, bytes memory ret) = token.staticcall(abi.encodeWithSelector(0x313ce567));
-        if (!ok || ret.length < 32) return (18, false);
-        uint256 d = abi.decode(ret, (uint256));
-        if (d > 36) return (18, false);
+        uint256 d = MetadataReaderLib.readDecimals(token, 50000);
+        if (d == 0 || d > 36) return (18, false);
         return (uint8(d), true);
     }
 }

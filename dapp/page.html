@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
-<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cpath%20d%3D%22M0%205.06C0%203.32%200%202.46%20.33%201.79C.64%201.15%201.15%20.64%201.79%20.33C2.46%200%203.32%200%205.06%200H58.94C6.68%200%2061.54%200%2062.21%20.33C62.85%20.64%2063.36%201.15%2063.67%201.79C64%202.46%2064%203.32%2064%205.06V58.94C64%206.68%2064%2061.54%2063.67%2062.21C63.36%2062.85%2062.85%2063.36%2062.21%2063.67C61.54%2064%206.68%2064%2058.94%2064H5.06C3.32%2064%202.46%2064%201.79%2063.67C1.15%2063.36%20.64%2062.85%20.33%2062.21C0%2061.54%200%206.68%200%2058.94V5.06Z%22%20fill%3D%22%230000FF%22%2F%3E%3Cpath%20d%3D%22M48%2C16%20H16%20V35%20H42%20V42%20H16%20V48%20H48%20V29%20H22%20V22%20H48%20Z%22%20fill%3D%22%23FFFFFF%22%2F%3E%3C%2Fsvg%3E">
+<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cpath%20d%3D%22M0%205.06C0%203.32%200%202.46%20.33%201.79C.64%201.15%201.15%20.64%201.79%20.33C2.46%200%203.32%200%205.06%200H58.94C6.68%200%2061.54%200%2062.21%20.33C62.85%20.64%2063.36%201.15%2063.67%201.79C64%202.46%2064%203.32%2064%205.06V58.94C64%206.68%2064%2061.54%2063.67%2062.21C63.36%2062.85%2062.85%2063.36%2062.21%2063.67C61.54%2064%206.68%2064%2058.94%2064H5.06C3.32%2064%202.46%2064%201.79%2063.67C1.15%2063.36%20.64%2062.85%20.33%2062.21C0%2061.54%200%206.68%200%2058.94V5.06Z%22%20fill%3D%22%230A0A0A%22%20stroke%3D%22%23FFFFFF%22%20stroke-width%3D%222%22%2F%3E%3Cpath%20d%3D%22M48%2C16%20H16%20V35%20H42%20V42%20H16%20V48%20H48%20V29%20H22%20V22%20H48%20Z%22%20fill%3D%22%23FFFFFF%22%2F%3E%3C%2Fsvg%3E">
 <title>SLOW</title>
 <style>
 /* ─────────────────────────────────────────────────────────────
@@ -120,6 +120,14 @@ body.v-take .panel{max-width:640px}
 
 /* ── send flow ───────────────────────────────────────────── */
 .sendPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0}
+.col{display:contents}
+#colA > .field:nth-child(1){order:1}  /* To          */
+#colB > .field:nth-child(1){order:2}  /* Asset       */
+#fAmount{order:3}
+#fDest{order:4}
+#fTime{order:5}
+#fPreview{order:6}
+#fReview{order:7}
 body.v-send .sendPane{display:flex}
 .field{display:flex;flex-direction:column;gap:8px;transition:opacity var(--t)}
 .sendPane > .field + .field,
@@ -139,7 +147,8 @@ body.v-send .sendPane{display:flex}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .crypto{
   display:flex;justify-content:center;align-items:center;
-  height:52px;padding:0 4px;
+  height:52px;padding:0 4px 0 0;
+  border-left-width:5px;border-left-style:solid;
   font-family:var(--mono);font-size:13px;letter-spacing:.02em;
   background:transparent;color:var(--fg);
   cursor:pointer;border:1px solid var(--bd);
@@ -389,28 +398,19 @@ body.light .modal{background:rgba(0,0,0,.4)}
   body.v-send .panel{max-width:880px}
   body.v-send .seg{width:422px;align-self:start}
   body.v-send .sendPane{
-    display:grid;grid-template-columns:1fr 1fr;column-gap:36px;row-gap:20px;
-    align-content:start;
+    display:grid;grid-template-columns:1fr 1fr;column-gap:36px;row-gap:0;
+    align-items:start;
   }
-  .sendPane > .field{align-self:start}
-  .sendPane > .field:nth-child(1){grid-column:1;grid-row:1}   /* To            */
-  .sendPane > .field:nth-child(2){grid-column:2;grid-row:1/span 3} /* Asset    */
-  .sendPane > #fAmount{grid-column:1;grid-row:2}
-  .sendPane > #fTime{grid-column:1;grid-row:3}
-  .sendPane > #fDest{grid-column:2;grid-row:4}
-  .sendPane > #fReview{grid-column:1/-1;grid-row:5}
+  /* Real boxes, not grid cells: a hidden Deliver-on now costs nothing, and a
+     short Asset block does not strand what follows it. */
+  .col{display:flex;flex-direction:column;gap:20px;min-width:0}
+  #colA{grid-column:1;grid-row:1}
+  #colB{grid-column:2;grid-row:1}
+  #fReview{grid-column:1/-1;grid-row:2;padding-top:20px;border-top:1px solid var(--rule)}
   /* The rules between fields are a single-column device: adjacency in the DOM
-     is no longer adjacency on screen, so redraw them per column. */
+     is no longer adjacency on screen, so redraw them inside each column. */
   .sendPane > .field + .field{padding-top:0;border-top:0}
-  .sendPane > #fAmount,.sendPane > #fTime,
-  .sendPane > #fDest,.sendPane > #fReview{
-    padding-top:20px;border-top:1px solid var(--rule);
-  }
-  /* The mark is the whole of the home view, and at 190px in a 1280px window it
-     read as an afterthought. Same composition, sized to the room it has. */
-  .frame{width:300px}
-  .box{height:132px;font-size:30px}
-  .tag{font-size:14px;max-width:390px;text-wrap:balance}
+  .col > .field + .field{padding-top:20px;border-top:1px solid var(--rule)}
 }
 .spinner{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--fg);animation:sp .8s linear infinite}
 .loading-wrap{display:flex;align-items:center;justify-content:center}
@@ -423,6 +423,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
   opacity:0;transition:opacity .2s;max-width:min(92vw,440px);text-align:center;pointer-events:none;
 }
 .toast.on{opacity:1}
+.nftbox{width:100%;max-width:340px;aspect-ratio:1/1}
+.nftbox svg{width:100%;height:100%;display:block}
 #tipLayer{position:fixed;inset:0;pointer-events:none;z-index:30}
 
 /* ══════════════════════════════════════════════════════════════════
@@ -521,7 +523,7 @@ body{overscroll-behavior:none}
 
 <div class="bar">
   <button class="wordmark" id="homeBtn" aria-label="Home">
-    <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><path d="M0 5.06C0 3.32 0 2.46 .33 1.79C.64 1.15 1.15 .64 1.79 .33C2.46 0 3.32 0 5.06 0H58.94C6.68 0 61.54 0 62.21 .33C62.85 .64 63.36 1.15 63.67 1.79C64 2.46 64 3.32 64 5.06V58.94C64 6.68 64 61.54 63.67 62.21C63.36 62.85 62.85 63.36 62.21 63.67C61.54 64 6.68 64 58.94 64H5.06C3.32 64 2.46 64 1.79 63.67C1.15 63.36 .64 62.85 .33 62.21C0 61.54 0 6.68 0 58.94V5.06Z" fill="#0000FF"/><path d="M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z" fill="#FFFFFF"/></svg><span>SLOW</span>
+    <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><path d="M0 5.06C0 3.32 0 2.46 .33 1.79C.64 1.15 1.15 .64 1.79 .33C2.46 0 3.32 0 5.06 0H58.94C6.68 0 61.54 0 62.21 .33C62.85 .64 63.36 1.15 63.67 1.79C64 2.46 64 3.32 64 5.06V58.94C64 6.68 64 61.54 63.67 62.21C63.36 62.85 62.85 63.36 62.21 63.67C61.54 64 6.68 64 58.94 64H5.06C3.32 64 2.46 64 1.79 63.67C1.15 63.36 .64 62.85 .33 62.21C0 61.54 0 6.68 0 58.94V5.06Z" fill="#0A0A0A" stroke="#FFFFFF" stroke-width="2"/><path d="M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z" fill="#FFFFFF"/></svg><span>SLOW</span>
   </button>
   <div class="bar-r">
     <button class="chip" id="helpBtn" aria-label="How SLOW works">?</button>
@@ -552,17 +554,13 @@ body{overscroll-behavior:none}
     </div>
 
     <div class="sendPane">
+      <div class="col" id="colA">
       <div class="field">
         <span class="flabel">To</span>
         <input type="text" class="input" id="recipientInput" placeholder="Address, .eth, .wei, or .gwei" autocomplete="off" spellcheck="false" aria-describedby="ens">
         <p class="note" id="ens" aria-live="polite"></p>
       </div>
 
-      <div class="field">
-        <span class="flabel">Asset <em id="assetHint"></em></span>
-        <div class="grid" id="cryptoGrid" role="group" aria-label="Asset"></div>
-        <button class="link" id="customTokenOpt">+ Custom token</button>
-      </div>
 
       <div class="field locked" id="fAmount">
         <span class="flabel">Amount <em id="balHint"></em></span>
@@ -578,10 +576,6 @@ body{overscroll-behavior:none}
         <p class="note" id="amountNote" aria-live="polite"></p>
       </div>
 
-      <div class="field" id="fDest" hidden>
-        <span class="flabel">Deliver on <em id="destHint"></em></span>
-        <div class="row" id="destRow" role="group" aria-label="Destination chain"></div>
-      </div>
 
       <div class="field locked" id="fTime">
         <span class="flabel">Unlocks after</span>
@@ -592,6 +586,26 @@ body{overscroll-behavior:none}
           <button class="opt" id="customTimeOpt">Custom</button>
         </div>
       </div>
+      </div>
+
+      <div class="col" id="colB">
+      <div class="field">
+        <span class="flabel">Asset <em id="assetHint"></em></span>
+        <div class="grid" id="cryptoGrid" role="group" aria-label="Asset"></div>
+        <button class="link" id="customTokenOpt">+ Custom token</button>
+      </div>
+
+      <div class="field" id="fDest" hidden>
+        <span class="flabel">Deliver on <em id="destHint"></em></span>
+        <div class="row" id="destRow" role="group" aria-label="Destination chain"></div>
+      </div>
+
+      <div class="field" id="fPreview" hidden>
+        <span class="flabel">The position <em>drawn on chain</em></span>
+        <div class="nftbox" id="nftBox"></div>
+      </div>
+      </div>
+
 
       <div class="field" id="fReview" hidden>
         <span class="flabel">What happens</span>
@@ -1121,10 +1135,18 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
    rather than picked: every pair on a chain differs by more than 25 degrees of
    hue OR more than 0.25 in luminance, and every tile clears 3:1 with its ink.
    Shared assets keep one colour on both chains. */
-/* The eight-hue token palette and the ink-contrast machinery that served it
-   used to live here — a colour per asset, and a WCAG comparison to decide black
-   or white type on top. Both are gone. Identity comes from the symbol and
-   selection from inversion, so there is no colour left to choose ink for. */
+/* Asset colours. These used to fill the whole tile and be the loudest thing on
+   the page; they now paint a 5px rail down its edge. That is the difference
+   between colour as decoration and colour as a code: you learn a rail once and
+   then find the asset by it, while the type stays the identity and the grid
+   stays monochrome. Nothing is set in white on these any more, so the ink
+   contrast machinery that used to live here is not needed. */
+const TOKEN_COLORS = {
+  ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#c026d3',
+  USDe:'#6d28d9', USDG:'#ccff00', NVDA:'#4d7c0f',
+  wstETH:'#38bdf8', WBTC:'#a0522d', cbETH:'#71f26d', AERO:'#5d7222',
+  cbBTC:'#f7931a', SPY:'#0f766e', SPCX:'#b9bec7', GME:'#dc2626',
+};
 // Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
 /* Ladders follow the asset's own scale. A tokenized share is not a dollar, and
    a bitcoin is not either: 10/100/1000 cbBTC would offer eight figures as the
@@ -1319,10 +1341,10 @@ function fmtWhen(ts){
   try { return d.toLocaleString(undefined,opts); } catch(e){ return d.toISOString().slice(0,16).replace('T',' '); }
 }
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-// The list rail is the one place a per-token mark still earns its keep: it
-// distinguishes rows at a glance without competing with anything, because it is
-// 3px wide. Kept monochrome — the rail says "a different token", not "which".
-const tokenColor = () => 'var(--bd2)';
+// A custom token has no entry in the table, so its rail is derived from its
+// address: stable, distinct, and in the same mid-range as the named ones.
+const tokenColor = a => `hsl(${parseInt((a||'0x0').slice(2,8)||'0',16)%360},55%,50%)`;
+const railOf = (sym, addr) => TOKEN_COLORS[sym] || tokenColor(addr);
 
 /* ══════════════════════════════════════════════════════════════════
    Providers — EIP-6963 for wallets, a public pool for reads
@@ -1918,15 +1940,16 @@ function disconnect(silent){
 async function tokenMeta(addr){
   const k=addr.toLowerCase();
   if(S.meta[k]) return S.meta[k];
-  if(k===ZERO) return S.meta[k]={symbol:'ETH',decimals:18,ok:true};
-  const [sh,dh] = await mc([{to:addr,data:SEL.symbol},{to:addr,data:SEL.decimals}]);
+  if(k===ZERO) return S.meta[k]={symbol:'ETH',name:'Ether',decimals:18,ok:true};
+  const [sh,dh,nh] = await mc([{to:addr,data:SEL.symbol},{to:addr,data:SEL.decimals},{to:addr,data:SEL.name}]);
   const symbol = sh ? decodeStringLoose(sh) : '';
+  const name = nh ? decodeStringLoose(nh) : '';
   let decimals = 18, ok=false;
   if(dh){ try { decimals=Number(decode(['uint256'],dh)[0]); ok=true; } catch(e){} }
   if(!(decimals>=0&&decimals<=36)) { decimals=18; ok=false; }
   // Cache the miss too: a token that answers nothing should not be re-asked on
   // every render.
-  return S.meta[k]={symbol:symbol||'???', decimals, ok:ok&&!!symbol};
+  return S.meta[k]={symbol:symbol||'???', name:name||symbol||'???', decimals, ok:ok&&!!symbol};
 }
 async function refreshBalance(){
   if(!S.account||!S.token){ el.balHint.textContent=''; return; }
@@ -2806,6 +2829,7 @@ function buildTokenGrid(){
     b.dataset.symbol=t.symbol; b.dataset.token=t.address.toLowerCase();
     b.dataset.decimals=String(t.decimals);
     b.textContent=t.symbol;
+    b.style.borderLeftColor=railOf(t.symbol,t.address);
     b.setAttribute('aria-pressed','false');
     g.appendChild(b);
   }
@@ -2884,6 +2908,7 @@ function render(){
   const isCustom = S.token && !qs(`.crypto[data-token="${S.token}" i]`);
   el.customTokenOpt.setAttribute('aria-pressed',String(!!isCustom));
   el.customTokenOpt.textContent = isCustom?S.symbol:'+ Custom token';
+  el.customTokenOpt.style.borderLeft = isCustom?`5px solid ${tokenColor(S.token)}`:'';
   el.cryptoGrid.classList.toggle('dim',!!isCustom);
 
   qsa('.crypto').forEach(c=>c.setAttribute('aria-pressed',String(c.dataset.token.toLowerCase()===S.token)));
@@ -2999,7 +3024,7 @@ function renderUnlocked(){
   for(const u of S.unlocked){
     const row=document.createElement('div'); row.className='tx';
     const bar=document.createElement('span'); bar.className='tx-bar';
-    bar.style.background=tokenColor();
+    bar.style.background=railOf(u.symbol,u.token);
     const open=document.createElement('button'); open.type='button'; open.className='tx-open';
     const l1=document.createElement('span'); l1.className='tx-line';
     const amt=document.createElement('span'); amt.className='tx-amt';
@@ -3037,7 +3062,7 @@ function makeRow(t){
 
   const bar=document.createElement('span');
   bar.className='tx-bar';
-  bar.style.background=tokenColor();
+  bar.style.background=railOf(t.symbol,t.token);
   row.appendChild(bar);
 
   const open=document.createElement('button');
@@ -3587,7 +3612,73 @@ async function resolveRecipient(input){
     if(!stale()) el.confirmBtn.disabled=false;
   }
 }
-function updateSummary(){ renderReview(); }
+function updateSummary(){ renderReview(); paintPreview(); }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   The render, in the page
+   ══════════════════════════════════════════════════════════════════
+   A port of SLOWNext._createImage, so the send form can show the position
+   before it exists. Ported code that drifts is worse than no preview, so this
+   is pinned: the test suite renders every case the deployed contract produced
+   and requires the bytes to match exactly.
+   ══════════════════════════════════════════════════════════════════ */
+const PLATE_D = 'M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z';
+// Monospace advances 0.6em, so a string's width is known without measuring it.
+const fit = (len, box, max, min) => {
+  if(!len) return max;
+  const size = Math.floor((box*10)/(len*6));
+  return size>max ? max : size<min ? min : size;
+};
+// Truncating to the largest unit is what the contract does. It is lossy, and
+// the preview must be lossy in exactly the same way or it is not a preview.
+function formatDelay(d){
+  // BigInt, not Number. The delay is a uint96: at the ceiling, Number() gives
+  // 2.512308552583217e+21 where the contract prints 2512308552583217199186.
+  // The parity test caught this, which is the entire reason it exists.
+  d=BigInt(d);
+  const u=(n,w)=>`${d/n} ${w}${d/n===1n?'':'s'}`;
+  if(d>=31536000n) return u(31536000n,'year');
+  if(d>=2592000n) return u(2592000n,'month');
+  if(d>=86400n) return u(86400n,'day');
+  if(d>=3600n) return u(3600n,'hour');
+  if(d>=60n) return u(60n,'minute');
+  return `${d} second${d===1n?'':'s'}`;
+}
+// LibString.escapeHTML: the five characters, in the contract's own order.
+const escHTML = t => String(t).replace(/&/g,'&amp;').replace(/'/g,'&#39;')
+  .replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// _clipForDisplay cuts at a BYTE count, then trims a broken codepoint, then
+// appends an ellipsis of three full stops.
+function clipForDisplay(str, maxBytes){
+  const b = new TextEncoder().encode(str);
+  if(b.length<=maxBytes) return str;
+  let cut=maxBytes;
+  while(cut>0 && (b[cut]&0xc0)===0x80) cut--;
+  return new TextDecoder().decode(b.slice(0,cut))+'...';
+}
+function renderNFT(token, delay, symbol, name){
+  const sym = escHTML(symbol), nm = escHTML(clipForDisplay(name||'', 28));
+  const label = formatDelay(delay);
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">'
+    + `<title>SLOW ${sym} · ${label}</title>`
+    + `<path d="${PLATE_D}" fill="#0A0A0A" stroke="#fff" stroke-width="4"/>`
+    + '<line x1="20" y1="60" x2="280" y2="60" stroke="#fff" stroke-width="2"/>'
+    + '<text x="20" y="44" font-family="Helvetica,Arial,sans-serif" font-size="26" fill="#fff">SLOW</text>'
+    + '<g font-family="monospace" text-anchor="middle" fill="#fff">'
+    + `<text x="150" y="150" font-size="${fit(sym.length,240,44,14)}">${sym}</text>`
+    + `<text x="150" y="185" font-size="${fit(nm.length,250,14,8)}" fill="#8A8A8A">${nm}</text>`
+    + `<text x="150" y="240" font-size="${fit(label.length,250,22,11)}">${label}</text>`
+    + '</g></svg>';
+}
+function paintPreview(){
+  const show = !!(S.token!==null && S.symbol && S.delay);
+  el.fPreview.hidden = !show;
+  if(!show) return;
+  const meta = S.meta[(S.token||'').toLowerCase()];
+  const name = S.token===ZERO ? 'Ether' : (meta&&meta.name) || S.symbol;
+  el.nftBox.innerHTML = renderNFT(S.token, S.delay, S.symbol, name);
+}
 
 /* ══════════════════════════════════════════════════════════════════
    Review
@@ -3637,6 +3728,7 @@ function renderReview(){
     Object.assign(document.createElement('span'),{className:'cs',textContent:S.symbol}),
     document.createTextNode(S.dest ? ` to ${cfg(S.dest).short}` : ''));
   previewPlan();
+  paintPreview();
 }
 async function updateTipPreview(){
   if(!S.autoClaim){ el.tipPre.textContent=''; return; }
