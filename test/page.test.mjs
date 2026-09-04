@@ -65,7 +65,7 @@ const EXPORTS = [
   'keccak256', 'namehash', 'encode', 'decode', 'cd', 'word', 'strip',
   'encAggregate3', 'decAggregate3', 'chunk',
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
-  'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr',
+  'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr', 'toChecksum', 'checksumOk',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
   'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY',
   'fmtWhen', 'ready', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
@@ -827,6 +827,35 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
   Object.assign(C.S, {chain: snap.chain, token: snap.token, slowDeployed: snap.deployed});
 }
 
+// A guard nothing calls is not a guard. `canBridge` was unit-tested here in
+// full — every branch above — while the two places that decide whether a
+// bridge actually happens gated on `slowDeployed` alone, so the tests were
+// green and the Robinhood route was live with its reverse already dead. The
+// only thing those tests were missing is the one below: that the guard is
+// wired to the code paths it exists to stop.
+{
+  const src = (name) => {
+    const at = body.indexOf(`function ${name}(`);
+    ok(at >= 0, `${name} is in the page`);
+    // From the signature to the start of the next top-level function.
+    const next = body.indexOf('\nfunction ', at + 1);
+    const end = body.indexOf('\n}', at);
+    return body.slice(at, next < 0 ? end + 2 : Math.min(next, body.length));
+  };
+  ok(/canBridge\(/.test(src('buildDestRow')),
+    'buildDestRow gates the destination buttons on canBridge, not on slowDeployed alone');
+  const dep = body.slice(body.indexOf('async function deposit()'),
+                         body.indexOf('Keeper tip'));
+  ok(/canBridge\(/.test(dep),
+    'deposit() re-checks canBridge before it builds a bridge plan');
+  // The reverse of the same mistake: the guard reading a stale answer. S.dest
+  // survives an account change, and whether the reverse survives the crossing
+  // depends on the account.
+  ok(/buildDestRow\(\)/.test(body.slice(body.indexOf('function setAccount('),
+                                        body.indexOf('function disconnect('))),
+    'setAccount rebuilds the destination row once it knows if the account has code');
+}
+
 // ─── Links ─────────────────────────────────────────────────────────────────
 // Routes live in the fragment because a gateway serves this document from every
 // path on the contract and some rewrite the query; the fragment never reaches
@@ -960,15 +989,15 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
     const rows = fs.readFileSync(tsv, 'utf8').trim().split('\n');
     let checked = 0, bad = null;
     for (const row of rows) {
-      const [symbol, delay, uri] = row.split('\t');
+      const [symbol, delay, uri, name] = row.split('\t');
       const meta = JSON.parse(b64(uri));
       const want = b64(meta.image);
-      // The name has to be recovered from the render, and the render is
-      // escaped — so unescape it before feeding it back, or the port escapes
-      // twice and every ampersand diverges. (It did.)
-      const unesc = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-      const name = unesc(/y="185"[^>]*>([^<]*)</.exec(want)[1]);
+      // The name comes from the fixture's own column, not from a regex over the
+      // render. The render carries the name CLIPPED, and clipping is only
+      // idempotent while the cut lands on a byte boundary — which it always
+      // does in ASCII and does not once a codepoint straddles it. Recovering it
+      // from the output therefore fed a different string back in and drew a
+      // fourth full stop, in a check whose whole job is to notice that.
       const got = C.renderNFT(null, delay, symbol, name);
       if (got !== want && !bad) bad = {symbol, delay, want, got};
       checked++;
@@ -1281,6 +1310,69 @@ eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders l
   ok(/\.pick \.ico\{[^}]*overflow:hidden/.test(style), 'the icon cell clips anything that escapes');
   ok(/\.pick\{[^}]*grid-template-columns:24px 1fr auto/.test(style),
     'the picker row is a grid, so the icon cannot widen the label');
+}
+
+// ─── EIP-55 ────────────────────────────────────────────────────────────────
+// `isAddr` tests shape and cannot do more: most addresses on this page arrive
+// from a chain read already lowercased. A PASTED address is the one that
+// carries a checksum, and checking it is the only thing standing between a
+// corrupted character and an irreversible send.
+{
+  // The vectors from EIP-55 itself.
+  const vectors = [
+    '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+    '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359',
+    '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB',
+    '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
+    '0x52908400098527886E0F7030069857D2E4169EE7',
+    '0x8617E340B3D01FA5F11F306F4090FD50E238070D',
+    '0xde709f2102306220921060314715629080e2fb77',
+    '0x27b1fdb04752bbc536007a920d24acb045561c26',
+  ];
+  for (const v of vectors) {
+    eq(C.toChecksum(v.toLowerCase()), v, `toChecksum(${v.slice(0, 10)}…)`);
+    ok(C.checksumOk(v), `checksumOk accepts the canonical ${v.slice(0, 10)}…`);
+  }
+
+  // The hash is over the lowercase hex AS TEXT, without 0x. Hashing the bytes
+  // instead — which `keccak256` here would do for a 0x-prefixed string — gives
+  // a checksum that is wrong for every address, so this pins the distinction.
+  const a = '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed';
+  ok(C.toChecksum(a) !== C.toChecksum(a).toLowerCase(), 'a checksum actually changes case');
+  eq(C.toChecksum(C.toChecksum(a)), C.toChecksum(a), 'checksumming is idempotent');
+
+  // No case information is not a failed checksum. Both forms every explorer
+  // and every eth_call hand back have to keep working.
+  ok(C.checksumOk('0x' + 'a'.repeat(40)), 'all-lowercase carries no claim, so it passes');
+  ok(C.checksumOk('0x' + 'A'.repeat(40)), 'all-uppercase carries no claim either');
+  ok(C.checksumOk('0x' + '0'.repeat(40)), 'an address with no letters has nothing to check');
+
+  // And one wrong character in a mixed-case address is caught.
+  const good = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+  const flipped = good.slice(0, 41) + (good[41] === 'd' ? 'e' : 'd');
+  ok(!C.checksumOk(flipped), 'a corrupted mixed-case address fails');
+  ok(!C.checksumOk('0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'), 'a flipped CASE fails too');
+  // Shape still passes, which is exactly why the shape test was not enough.
+  ok(C.isAddr(flipped), 'and isAddr would have accepted it');
+}
+
+// ─── The recipient is shown in full before signing ─────────────────────────
+// The summary line says a name, or 0x1234…abcd. Ten characters is inside
+// vanity-grinding range, and the wallet does not make up the difference: the
+// recipient is an argument inside depositTo calldata, not the transaction's
+// `to`. So the full address has to be on the review screen itself.
+{
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  ok(/id="recipFull"/.test(html), 'the review has somewhere to put the address in full');
+  ok(html.indexOf('id="recipFull"') > html.indexOf('id="summary"'),
+    'and it sits under the summary, not somewhere else');
+  ok(/\.recipFull\{[^}]*overflow-wrap:anywhere/.test(style),
+    'the address wraps rather than ellipsizing — a cut address is the bug');
+  ok(!/\.recipFull\{[^}]*text-overflow:ellipsis/.test(style), 'and is never ellipsized');
+  // It is the checksummed value that is displayed, so the case a reader
+  // compares against is the case the source gave them.
+  ok(/S\.resolved=toChecksum\(/.test(html), 'the resolved address is stored checksummed');
+  ok(/full\.textContent = S\.resolved/.test(html), 'and the full value is what is rendered');
 }
 
 if (failures.length) {

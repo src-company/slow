@@ -47,11 +47,41 @@ contract MockInboxSend {
     bytes public lastData;
     uint256 public received;
 
+    /// @dev How the fee getter misbehaves. `r.entry` is a PROXY on every real
+    ///      chain, so its implementation can become any of these after
+    ///      `SlowArrival` is deployed and can never be re-pointed.
+    enum Fee {
+        NORMAL,
+        BURN_GAS, // spends everything it is given, then reverts
+        HUGE, // an answer wide enough to overflow the 3/2 scaling
+        FLOOD // returns megabytes, to bill the caller's frame for the copy
+    }
+
+    Fee public feeMode;
+
+    function setFeeMode(Fee m) external {
+        feeMode = m;
+    }
+
     function calculateRetryableSubmissionFee(uint256 dataLength, uint256)
         external
         view
         returns (uint256)
     {
+        if (feeMode == Fee.BURN_GAS) {
+            uint256 x = 1;
+            while (true) {
+                x = uint256(keccak256(abi.encode(x)));
+            }
+        }
+        if (feeMode == Fee.HUGE) return type(uint256).max;
+        if (feeMode == Fee.FLOOD) {
+            uint256 n = 524_288; // 512KB: the copy alone outweighs a real gas budget
+            bytes memory big = new bytes(n);
+            assembly {
+                return(add(big, 0x20), n)
+            }
+        }
         return dataLength * feePerByte;
     }
 
@@ -131,12 +161,43 @@ contract ArrivalForwardTest is Test {
         internal
         returns (bool ok)
     {
+        return _forwardWithGas(caller, dst, to, hint, bounty, gasleft());
+    }
+
+    /// @dev The same, on a REALISTIC gas budget.
+    ///
+    ///      Forge hands a test effectively unbounded gas, and unbounded gas
+    ///      hides every one of these bugs: 63/64 of a billion is still a
+    ///      fortune, so a probe that burns everything it is given still leaves
+    ///      the reserve intact and the assertion passes against the broken
+    ///      contract. A finalisation on a real chain is a few million. That is
+    ///      the number these have to be measured at, or they are not testing
+    ///      anything.
+    function _forwardWithGas(
+        address caller,
+        uint256 dst,
+        address to,
+        address hint,
+        uint256 bounty,
+        uint256 gasCap
+    ) internal returns (bool ok) {
         vm.deal(caller, AMOUNT * 2);
         vm.prank(caller, caller == keeper ? keeper : caller);
-        (ok,) = address(arrival).call{value: AMOUNT}(
+        (ok,) = address(arrival).call{value: AMOUNT, gas: gasCap}(
             abi.encodeCall(SlowArrival.forward, (dst, to, DELAY, hint, bounty))
         );
     }
+
+    /// @dev What an OP finalisation actually carries, near enough.
+    ///
+    ///      The number matters. An uncapped probe that burns everything leaves
+    ///      the caller 1/64 of whatever it started with, and at 2,000,000 that
+    ///      remainder — ~30,000 — still covers the one cold SSTORE `rescue`
+    ///      needs, so the broken contract SURVIVES and the test says nothing.
+    ///      At 1,000,000 the remainder is ~15,600, the rescue write runs out,
+    ///      and `forward` reverts: the actual failure, at a budget a real
+    ///      finalisation plausibly carries.
+    uint256 internal constant REAL_GAS = 1_000_000;
 
     // ────────────────────────────────────────────────── the OP Stack leg
 
@@ -299,5 +360,59 @@ contract ArrivalForwardTest is Test {
         assertEq(gasLimit, FWD_GAS);
         // No function on this contract writes routeTo outside the constructor;
         // the ABI simply has no setter to call.
+    }
+
+    // ───────────────────── the fee probe is a call to somebody else's proxy
+
+    /* `r.entry` looks like a trusted constant because it is fixed at
+       construction, but on every real chain it is a PROXY: the address is
+       frozen and the code behind it is not. So the one call this contract makes
+       into it before committing has to survive whatever it becomes — and
+       `forward` may not revert whatever happens, because on the OP leg the
+       portal has already marked the withdrawal finalised. Each of these three
+       reverted `forward` outright before the probe was bounded. */
+
+    function test_aFeeGetterThatBurnsGasIsRescuedNotReverted() public {
+        inbox.setFeeMode(MockInboxSend.Fee.BURN_GAS);
+        assertTrue(
+            _forwardWithGas(alice, 4663, bob, address(0), 0, REAL_GAS), "must not revert"
+        );
+        assertEq(inbox.received(), 0, "nothing was handed to the bridge");
+        assertEq(arrival.rescue(alice), AMOUNT, "the reserve survived the probe");
+    }
+
+    function test_aFeeWiderThanThePayloadIsRescuedNotOverflowed() public {
+        // `submission * 3 / 2` on type(uint256).max overflows, and a checked
+        // overflow is a revert — which is the one outcome forbidden here.
+        inbox.setFeeMode(MockInboxSend.Fee.HUGE);
+        assertTrue(
+            _forwardWithGas(alice, 4663, bob, address(0), 0, REAL_GAS), "must not revert"
+        );
+        assertEq(inbox.received(), 0);
+        assertEq(arrival.rescue(alice), AMOUNT);
+    }
+
+    function test_aFloodingFeeGetterIsRescuedNotReverted() public {
+        // Half a megabyte of return data. Read into `bytes memory` the copy
+        // charges THIS frame quadratic memory expansion — ~570k on its own,
+        // which is most of a real budget and more than the reserve was ever
+        // holding. Behind a gas cap the callee cannot even allocate it, and
+        // behind a fixed 32-byte window the caller would not copy it if it
+        // could. Both protections land on this one; neither is testable alone,
+        // because a callee has to pay for the memory before it can return it.
+        inbox.setFeeMode(MockInboxSend.Fee.FLOOD);
+        assertTrue(
+            _forwardWithGas(alice, 4663, bob, address(0), 0, REAL_GAS), "must not revert"
+        );
+        assertEq(inbox.received(), 0);
+        assertEq(arrival.rescue(alice), AMOUNT);
+    }
+
+    function test_aHealthyFeeGetterStillPricesAndSends() public {
+        // The guard rails must not have closed the road: the normal path is
+        // unchanged, priced live, and still reaches the inbox.
+        assertTrue(_forwardWithGas(alice, 4663, bob, address(0), 0, REAL_GAS));
+        assertEq(inbox.received(), AMOUNT);
+        assertEq(arrival.rescue(alice), 0);
     }
 }

@@ -22,7 +22,15 @@ contract RenderGallery is Script {
     function run() external {
         SLOW slow = new SLOW(address(0), address(0));
 
-        string[2][15] memory assets = [
+        // The last two are not decoration. `_fit` sizes on `bytes(s).length`,
+        // and a port that reaches for a language's own string length agrees on
+        // ASCII and diverges on everything else — a four-character CJK symbol
+        // is twelve bytes here and four in JavaScript, which drew it at 44px
+        // where this draws 33. An all-ASCII fixture cannot catch that, so the
+        // fixture is no longer all-ASCII. The second one carries an ampersand
+        // and a two-byte letter together, so escapeHTML and the byte count are
+        // exercised in the same row.
+        string[2][17] memory assets = [
             ["Ether", "ETH"],
             ["USD Coin", "USDC"],
             ["Tether USD", "USDT"],
@@ -37,7 +45,9 @@ contract RenderGallery is Script {
             ["NVIDIA Corporation", "NVDA"],
             ["SPDR S&P 500 ETF Trust", "SPY"],
             ["SpaceX", "SPCX"],
-            ["GameStop Corp.", "GME"]
+            ["GameStop Corp.", "GME"],
+            [unicode"日本円ステーブルコイン", unicode"日本円ト"],
+            [unicode"Übercoin & Company Limited", unicode"ÜBER"]
         ];
 
         // Two sets. The first is the round durations a sender actually picks.
@@ -78,7 +88,21 @@ contract RenderGallery is Script {
                 uint256 id = uint256(uint160(token)) | (delays[d] << 160);
                 vm.writeLine(
                     "preview/gallery.tsv",
-                    string.concat(assets[a][1], "\t", vm.toString(delays[d]), "\t", slow.uri(id))
+                    string.concat(
+                        assets[a][1],
+                        "\t",
+                        vm.toString(delays[d]),
+                        "\t",
+                        slow.uri(id),
+                        // The NAME, verbatim. The parity test used to recover it
+                        // by regex out of the render — but the render carries a
+                        // CLIPPED name, and clipping is not idempotent once a
+                        // codepoint straddles the cut, so feeding it back drew a
+                        // fourth full stop. Recovering an input from an output
+                        // works only while the output is lossless. Write it down.
+                        "\t",
+                        assets[a][0]
+                    )
                 );
             }
         }

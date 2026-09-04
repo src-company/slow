@@ -131,23 +131,41 @@ contract SLOWBuildTest is Test {
     function testPermitDepositRejectsZeroRecipient() public {
         (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
         vm.prank(owner);
-        vm.expectRevert(); // Solady's _mint: TransferToZeroAddress
+        vm.expectRevert(SLOW.InvalidRecipient.selector);
         slow.depositToWithPermit(
             address(token), address(0), AMOUNT, DELAY, "", block.timestamp, v, r, s
         );
     }
 
-    /// SLOW is not an ERC-1155 receiver, so `_mint` refuses it. The explicit
-    /// `to != address(this)` check that used to sit here was removed once that
-    /// was verified: it cost ~213 bytes of a ~500-byte EIP-170 margin to
-    /// re-reject something already unreachable. The PROPERTY still has to hold,
-    /// so it is still asserted — just without pinning which layer enforces it.
+    /// The explicit check is BACK, and these two now name the contract's own
+    /// errors rather than accepting any revert.
+    ///
+    /// It was dropped when it was priced per entrypoint — ~213 bytes of a
+    /// ~500-byte EIP-170 margin to re-reject something Solady's `_mint` and the
+    /// receiver hook already refuse. That was a fair trade at that price. Moved
+    /// into `_finishDeposit`, where all four deposit paths already converge for
+    /// `_MAX_DELAY`, it replaces the two copies in `depositTo` and
+    /// `depositToWithTip` and comes out 22 bytes SMALLER than leaving them
+    /// there: 24,006 against 24,028. So the property is stated by the contract
+    /// again, and these assert which layer states it, because that is now a
+    /// thing the contract promises rather than a thing a dependency happens to
+    /// do.
     function testPermitDepositRejectsContractItselfAsRecipient() public {
         (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(SLOW.InvalidDeposit.selector);
         slow.depositToWithPermit(
             address(token), address(slow), AMOUNT, 0, "", block.timestamp, v, r, s
+        );
+    }
+
+    function testTippedPermitDepositRejectsTheZeroRecipient() public {
+        uint256 tip = 0.01 ether;
+        (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
+        vm.prank(owner);
+        vm.expectRevert(SLOW.InvalidRecipient.selector);
+        slow.depositToWithTipAndPermit{value: tip}(
+            address(token), address(0), AMOUNT, DELAY, tip, "", block.timestamp, v, r, s
         );
     }
 
@@ -161,6 +179,23 @@ contract SLOWBuildTest is Test {
         vm.prank(owner);
         vm.expectRevert(SlowPermitErrors.InvalidPermitDeposit.selector);
         slow.depositToWithPermit(address(token), recipient, 0, DELAY, "", block.timestamp, v, r, s);
+    }
+
+    /// @dev `_MAX_DELAY` has no lower layer to fall to, so `_finishDeposit` has
+    ///      always stated it once for all four paths. This is the test that says
+    ///      the permit pair goes through that same door.
+    function testEveryDepositPathIsBoundedByMaxDelay() public {
+        uint96 tooLong = 3155760001; // one second past a hundred years
+        vm.deal(owner, 10 ether);
+
+        vm.prank(owner);
+        vm.expectRevert(SLOW.InvalidDeposit.selector);
+        slow.depositTo{value: 1 ether}(address(0), recipient, 0, tooLong, "");
+
+        (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
+        vm.prank(owner);
+        vm.expectRevert(SLOW.InvalidDeposit.selector);
+        slow.depositToWithPermit(address(token), recipient, AMOUNT, tooLong, "", block.timestamp, v, r, s);
     }
 
     // ────────────────────────────────────────────── SlowPermit: tipped path

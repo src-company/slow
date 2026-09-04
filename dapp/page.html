@@ -327,6 +327,11 @@ body.light .modal{background:rgba(0,0,0,.4)}
 }
 .card h3{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
 .summary{font-family:var(--mono);font-size:19px;line-height:1.35}
+/* The address in full, and it has to WRAP rather than ellipsize: an address cut
+   short is the thing this line exists to stop being the only one on screen. */
+.recipFull{font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--dim);
+  overflow-wrap:anywhere;margin:6px 0 0}
+.recipFull b{color:var(--fg);font-weight:400}
 .input{
   width:100%;background:transparent;color:var(--fg);border:1px solid var(--bd);
   padding:11px;font-family:var(--mono);font-size:14px;
@@ -606,6 +611,7 @@ body{overscroll-behavior:none}
       <div class="field" id="fReview" hidden>
         <span class="flabel">What happens</span>
         <p class="summary" id="summary"></p>
+        <p class="recipFull" id="recipFull"></p>
         <ol class="tl" id="timeline"></ol>
         <label class="check" for="autoClaimChk"><input type="checkbox" id="autoClaimChk"> Pay a keeper to auto-claim it</label>
         <p class="note" id="tipPre"></p>
@@ -1183,6 +1189,18 @@ const canBridge = (fromChain, toChain) => {
   // the review screen promises both. An EOA is unaffected and keeps bridging.
   if(S.arrivalDeployed[toChain] !== true
      && (b.kind === 'arb' || S.accountIsContract === true)) return false;
+  // A SECOND REASON TO REFUSE THE SAME ROUTE, and SlowArrival does not fix this
+  // one. `Inbox.createRetryableTicket` ALIASES both refund addresses when they
+  // hold code on L1, so a smart account named there has its excess submission
+  // fee and unused prepaid gas — and, if the ticket is never redeemed, the
+  // whole bridged amount — refunded to `applyAlias(account)` on the
+  // destination, an address nobody holds. `SlowRelay.pushProof` sidesteps it by
+  // naming `tx.origin`; the page cannot, because here the account IS the
+  // sender and there is no unaliased handle on it. Closing the route is the
+  // only honest option: the alternative is offering a send that quietly costs
+  // more than the review screen says, on a page whose whole claim is that the
+  // money comes back.
+  if(b.kind === 'arb' && S.accountIsContract === true) return false;
   return true;
 };
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
@@ -1194,6 +1212,8 @@ const SEL = {
   reverse:'0x97d15425', claim:'0x379607f5', clawback:'0xfcc36bc9', unlock:'0x6198e339',
   withdrawFrom:'0xd4fdc309', multicall:'0xac9650d8', pendingTransfers:'0x6577b86a',
   getOut:'0xd40d4bc6', getIn:'0xe3993ee7',
+  outCount:'0x73bfdce5', inCount:'0xea712c4f',
+  outAt:'0xb5f8348b', inAt:'0x8b40f4c5',
   guardians:'0x0633b14a', isWithdrawalApprovalNeeded:'0xabe616b8',
   setGuardian:'0x8a0dac4a', commitGuardian:'0xa952a15f', cancelGuardianChange:'0xdb6c927d',
   pendingGuardian:'0x3b0a6875', approveTransfer:'0xfa02c4b7', revokeApproval:'0x47d07c4c',
@@ -1208,7 +1228,7 @@ const SEL = {
   calcSubmissionFee:'0xa66b327d',
   estimateRetryableTicket:'0xc3dc5879',      // Arbitrum NodeInterface
   allRoutes:'0x71da4170',                    // SlowBridgeRegistry
-  unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00',
+  unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00', guardianNonces:'0xeac43b4a',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
   approve:'0x095ea7b3', allowance:'0xdd62ed3e', decimals:'0x313ce567',
@@ -1410,6 +1430,36 @@ function fmtAmt(raw,dec){
   return group(w)+(t?'.'+t:'');
 }
 const isAddr = a => /^0x[a-fA-F0-9]{40}$/.test(a||'');
+/* ── EIP-55 ────────────────────────────────────────────────────────────────
+   `isAddr` tests the SHAPE of an address and nothing else, which is all it can
+   do for the many addresses here that arrive from a chain read already
+   lowercased. A string a person pasted is different: if it carries mixed case
+   it carries a checksum, and a checksum that does not verify means a character
+   changed somewhere between the source and this box. That is the one cheap
+   check standing between a typo and an irreversible send, and the page was not
+   making it.
+
+   The hash is taken over the LOWERCASE HEX WITHOUT `0x`, as ASCII — which is
+   why it is passed unprefixed: `keccak256` here reads a leading `0x` as hex
+   bytes, and hashing the bytes instead of the text is the classic way to get a
+   checksum that is wrong for every address. */
+function toChecksum(a){
+  const lower = String(a).toLowerCase().slice(2);
+  const h = strip(keccak256(lower));
+  let out = '0x';
+  for(let i=0;i<40;i++) out += parseInt(h[i],16) >= 8 ? lower[i].toUpperCase() : lower[i];
+  return out;
+}
+/* True when the address is consistent with itself. An all-lowercase or
+   all-uppercase address carries NO checksum information — it is not wrong, it
+   simply has nothing to check — and rejecting those would refuse the form every
+   block explorer and every `eth_call` hands back. Only a mixed-case address
+   makes a claim, and only that claim is tested. */
+function checksumOk(a){
+  const letters = String(a).slice(2).replace(/[0-9]/g,'');
+  if(!letters || letters===letters.toLowerCase() || letters===letters.toUpperCase()) return true;
+  return toChecksum(a)===a;
+}
 const shortAddr = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
 /* A countdown, at the resolution the wait actually has.
    It used to stop at days, so a five-year lock read "1824d 23h 59m" — three
@@ -1760,7 +1810,7 @@ const S = {
   resolved:null, resolvedName:null, resolveSeq:0, resolving:false, sending:false,
   autoClaim:false, tip:0n, gate:undefined,
   view:'home', step:0, tab:'outbound',
-  out:[], inb:[], loading:false, hasGuardian:false,
+  out:[], inb:[], loading:false, hasGuardian:false, listError:null,
   detail:null,
   guard:{guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false},
   unlocked:[], exit:null, exitPlan:null, guardUnknown:false,
@@ -1964,7 +2014,7 @@ function switchChain(id){
   try { localStorage.setItem('slow.chain',String(id)); } catch(e){}
   S.meta={}; S.permitCache={}; S.gate=undefined;
   S.slowPermit=null; S.batchCap=null;
-  S.out=[]; S.inb=[]; S.hasGuardian=false; S.balance=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.balance=null; S.listError=null;
   S.token=S.symbol=null; S.amount=null; S.step=0;
   // Per-chain too: guardians is a mapping on the contract, and a ward list is
   // keyed by chain. A detail sheet holds a transfer that only exists on the
@@ -2042,7 +2092,7 @@ async function checkDeployed(){
 function setAccount(a){
   const acct=a;
   S.account=acct; S.ensName=null; S.balance=null;
-  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null; S.listError=null;
   // Everything below is per-account, and an account change invalidates it
   // exactly as a chain change does.
   S.unlocked=[]; S.exit=null; S.exitPlan=null; S.detail=null;
@@ -2056,7 +2106,13 @@ function setAccount(a){
   // an EOA lands as itself and a smart account does not. Left null on any
   // failure — the guard tests for `=== true`, so an unknown never blocks.
   rpc('eth_getCode',[acct,'latest'],S.chain).then(c=>{
-    if(S.account===acct){ S.accountIsContract = typeof c==='string' && c.length>4; render(); }
+    if(S.account!==acct) return;
+    S.accountIsContract = typeof c==='string' && c.length>4;
+    // The destination row is gated on this: a contract account loses its
+    // reverse on OP Stack too, so the row has to be rebuilt once the answer
+    // lands rather than left showing what it showed while unknown.
+    buildDestRow();
+    render();
   }).catch(()=>{});
   if(S.view==='take') loadTransfers(true);
   if(S.view==='guard') loadGuard();
@@ -2064,7 +2120,7 @@ function setAccount(a){
 }
 function disconnect(silent){
   S.account=S.ensName=S.balance=null;
-  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null;
+  S.out=[]; S.inb=[]; S.hasGuardian=false; S.batchCap=null; S.listError=null;
   // Everything below is per-account, and an account change invalidates it
   // exactly as a chain change does.
   S.unlocked=[]; S.exit=null; S.exitPlan=null; S.detail=null;
@@ -2353,6 +2409,13 @@ async function deposit(){
     // anything left S.dest set across an asset change, stop here rather than
     // send ether in place of the token on screen.
     if(S.token!==ZERO) throw new Error(`${S.symbol} cannot be bridged — send it on ${cfg().name}`);
+    // Re-checked at spend time, not just when the row was painted. S.dest
+    // outlives an account change, and whether the reverse survives the crossing
+    // depends on the account: an EOA passes through OP Stack unaliased, a smart
+    // account does not. Sending anyway would land a position under an address
+    // with no key while the review screen promised a reverse.
+    if(!canBridge(S.chain, S.dest))
+      throw new Error(`A transfer to ${cfg(S.dest).short} could not be reversed or recovered from this account`);
     const b = await bridgePlan(S.dest, S.resolved, S.delay, wei);
     txShow(`Sending to ${cfg(S.dest).short}`, 'Confirm in your wallet');
     const h = await sendTx({from:S.account, to:b.to, data:b.data, value:'0x'+b.value.toString(16)});
@@ -2455,6 +2518,60 @@ async function getGate(){
   if(S.gate===ZERO) S.gate=null;
   return S.gate;
 }
+/* ══════════════════════════════════════════════════════════════════
+   Reading a transfer list without believing an empty one
+   ══════════════════════════════════════════════════════════════════
+   `getOutboundTransfers` / `getInboundTransfers` return the whole set in one
+   word-counted array, and `_inboundTransfers[you]` is a set ANYONE can grow:
+   a dust deposit adds a row, and the recipient cannot remove it until the
+   delay expires — which the sender chooses, up to a hundred years. Past a few
+   thousand rows the getter costs more than a node will spend on an eth_call,
+   the call fails, `mc` reports null, and the old code read that null as an
+   empty list. "Nothing inbound" is then a lie told to somebody who has
+   transfers waiting, with no error anywhere on the page.
+
+   So: try the whole array, fall back to the counted reads the contract also
+   exposes, and if neither answers return null — which the caller renders as a
+   failure, never as an absence.
+
+   The fallback is paginated but not unbounded. Beyond LIST_CAP the honest
+   answer is not a longer list, it is that the set has been stuffed; the
+   caller says so and names the count. Positions from `at(i)` are swap-and-pop
+   unstable across settlement, so a row can be missed or repeated between
+   pages — the dedupe downstream handles the repeat, and this path only runs
+   when the alternative is showing nothing at all.
+   ══════════════════════════════════════════════════════════════════ */
+const LIST_PAGE = 100;
+const LIST_CAP  = 600;
+const LIST_KIND = {
+  out: {all:SEL.getOut, count:SEL.outCount, at:SEL.outAt},
+  in:  {all:SEL.getIn,  count:SEL.inCount,  at:SEL.inAt},
+};
+async function readIdList(kind, who){
+  const k = LIST_KIND[kind];
+  const [whole] = await mc([{to:SLOW, data:cd(k.all,['address'],[who])}]);
+  if(whole){ try { return decode(['uint256[]'],whole)[0]; } catch(e){} }
+  const [ch] = await mc([{to:SLOW, data:cd(k.count,['address'],[who])}]);
+  if(!ch) return null;
+  let n;
+  try { n = Number(decode(['uint256'],ch)[0]); } catch(e){ return null; }
+  if(!Number.isFinite(n) || n < 0) return null;
+  if(n === 0) return [];
+  if(n > LIST_CAP) return {overflow:n};
+  const out=[];
+  for(let i=0;i<n;i+=LIST_PAGE){
+    const calls=[];
+    for(let j=i;j<Math.min(i+LIST_PAGE,n);j++)
+      calls.push({to:SLOW, data:cd(k.at,['address','uint256'],[who,BigInt(j)])});
+    const res=await mc(calls);
+    for(const r of res){
+      if(!r) return null;              // a hole would silently drop rows
+      try { out.push(decode(['uint256'],r)[0]); } catch(e){ return null; }
+    }
+  }
+  return out;
+}
+
 const LOAD_COOLDOWN = 12000;
 async function loadTransfers(force){
   if(!S.account) return;
@@ -2467,22 +2584,54 @@ async function loadTransfers(force){
     // On a destination chain, a transfer that arrived over the bridge may be
     // recorded against this account OR against its L1 alias, depending on how
     // that rollup attributes a cross-chain caller. Rather than encode a guess,
-    // ask for both — it is one more call in a batch already being sent — and
-    // believe whichever answers.
+    // ask for both — they go out together with everything else — and believe
+    // whichever answers.
+    //
+    // Never `|| []` on any of them. A read that did not answer is not an empty
+    // list, and the difference is the whole point: `_inboundTransfers` is a set
+    // strangers can stuff, so the failure this has to survive is one somebody
+    // arranged.
     const alias = S.chain!==MAINNET ? aliasOf(account) : null;
-    const calls = [
-      {to:SLOW,data:cd(SEL.getOut,['address'],[account])},
-      {to:SLOW,data:cd(SEL.getIn,['address'],[account])},
-      {to:SLOW,data:cd(SEL.guardians,['address'],[account])},
-    ];
-    if(alias) calls.push({to:SLOW,data:cd(SEL.getOut,['address'],[alias])});
-    const [oh,ih,gh,ah] = await mc(calls);
+    const [gRes, own, iRaw, viaBridge] = await Promise.all([
+      mc([{to:SLOW,data:cd(SEL.guardians,['address'],[account])}]),
+      readIdList('out', account),
+      readIdList('in', account),
+      alias ? readIdList('out', alias) : Promise.resolve([]),
+    ]);
     if(stale()) return;
-    const own = oh ? decode(['uint256[]'],oh)[0] : [];
-    const viaBridge = ah ? decode(['uint256[]'],ah)[0] : [];
+    const gh = gRes[0];
+    S.listError = null;
+    // THE ALIAS LEG IS SUBJECT TO BOTH RULES, and it was exempt from both. It
+    // was read the same way as the other two and then flattened with
+    // `Array.isArray(viaBridge) ? viaBridge : []` — which turns a failed read
+    // AND a stuffed set into "no bridged transfers", the exact `|| []` the note
+    // above forbids. Bridged-in transfers are the ones a reader is least able
+    // to check anywhere else, so silently reporting none is the worst of the
+    // three places to do it.
+    const lists = alias ? [own, iRaw, viaBridge] : [own, iRaw];
+    const overflow = lists.find(x => x && x.overflow);
+    if(overflow){
+      S.loading=false;
+      S.listError = `This account has ${group(String(overflow.overflow))} pending entries — more than `
+        + `this page can list. Anyone can add one with a dust deposit, so a very large count is `
+        + `usually somebody stuffing the list rather than transfers you are owed.`;
+      renderList();
+      return;
+    }
+    if(lists.some(x => x === null)){
+      S.loading=false;
+      S.listError = `Could not read your transfers on ${cfg().name}. This is a failed read, not an `
+        + `empty list — do not treat it as proof that nothing is pending.`;
+      renderList();
+      return;
+    }
+    // An array by here on every path: `[]` when there is no alias to ask about,
+    // and checked for both failure shapes above when there is. The `isArray`
+    // fallback that used to stand here is what made those two failures look
+    // handled when they were being swallowed.
     S.aliasHasTransfers = viaBridge.length>0;
     const oIds = [...own, ...viaBridge];
-    const iIds = ih ? decode(['uint256[]'],ih)[0] : [];
+    const iIds = iRaw;
     if(gh==null){
       // Do not guess. Every write path branches on this, and guessing wrong
       // sends a transaction that cannot succeed.
@@ -2548,7 +2697,7 @@ async function loadTransfers(force){
       });
     }
     if(stale()) return;
-    S.out=outArr; S.inb=inArr; S.hasGuardian=hasGuardian;
+    S.out=outArr; S.inb=inArr; S.hasGuardian=hasGuardian; S.listError=null;
     await loadUnlocked();
     if(stale()) return;
   } catch(e){
@@ -2731,6 +2880,10 @@ function exitRecipe(u, toRaw, dataRaw){
   if(!isAddr(to)) return {error:'Enter a destination address'};
   if(to.toLowerCase()===SLOW.toLowerCase()) return {error:'SLOW itself cannot be the destination'};
   if(to===ZERO) return {error:'The zero address cannot be the destination'};
+  // withdrawFrom reverts InvalidRecipient on the gate, so a recipe naming it is
+  // one the chain will refuse — say so here rather than let it be copied out.
+  if(S.gate && to.toLowerCase()===String(S.gate).toLowerCase())
+    return {error:'The keeper gate cannot be the destination'};
   if(data && !HEXDATA.test(data)) return {error:'Call data must be 0x followed by whole bytes'};
   const isETH=u.token===ZERO;
   const wf = dest => ({to:SLOW, value:0n,
@@ -2949,13 +3102,24 @@ function buildDestRow(){
     b.type='button'; b.className='opt'; b.dataset.dest=String(id);
     b.textContent=label;
     b.disabled=!live;
-    b.title = live ? '' : `SLOW is not deployed on ${cfg(id).name} yet`;
+    b.title = live ? ''
+      : S.slowDeployed[id]!==true ? `SLOW is not deployed on ${cfg(id).name} yet`
+      : `A transfer bridged to ${cfg(id).name} from this account could not be reversed or recovered`;
     b.setAttribute('aria-pressed', String((S.dest||MAINNET)===id));
     row.appendChild(b);
   };
   mk(MAINNET, 'Ethereum', true);
-  for(const id of opts) mk(id, cfg(id).short, S.slowDeployed[id]===true);
-  const live = opts.filter(id=>S.slowDeployed[id]===true).length;
+  // canBridge, not slowDeployed. SLOW being there is only half the question:
+  // the other half is whether the position that lands can still be reversed,
+  // and on an Arbitrum-kind destination — or on OP Stack from a contract
+  // account — it cannot unless SlowArrival is there to hold the reverse. The
+  // review screen promises a reverse and a recovery, so a route that has
+  // neither must not be offerable.
+  for(const id of opts) mk(id, cfg(id).short, canBridge(S.chain, id));
+  const live = opts.filter(id=>canBridge(S.chain, id)).length;
+  // A destination that stopped qualifying (the account turned out to be a
+  // contract, a probe came back) must not stay selected underneath the row.
+  if(S.dest && !canBridge(S.chain, S.dest)) S.dest=null;
   el.destHint.textContent = live ? '' : 'awaiting deployment';
 }
 
@@ -3140,6 +3304,12 @@ function renderList(){
   if(S.slowDeployed[S.chain]===false){
     c.appendChild(emptyState(`SLOW is not deployed on ${cfg().name} yet — there is nothing to read here.`,
       'Switch network', ()=>el.chainBtn.click()));
+    return;
+  }
+  // Before the empty state, always. An empty list and a list that could not be
+  // read look identical on screen and mean opposite things.
+  if(S.listError){
+    c.appendChild(emptyState(S.listError, 'Try again', ()=>loadTransfers(true)));
     return;
   }
   if(!list.length){
@@ -3450,18 +3620,24 @@ async function loadGuard(){
    operation, not a row in a list. Approving the id of an existing
    pendingTransfer sets a flag nothing will ever read.
 
-   `nonces[from]` increments on every guarded operation, so an approval is good
-   for exactly one, in order. `lastGuardianChange[from]` is in there too: setting
-   a new guardian invalidates every approval the old one had granted.
+   `guardianNonces[from]` — NOT `nonces`, which belongs to deposits and is not
+   guardian-gated — increments on every guarded operation, so an approval is good
+   for exactly one, in order. Splitting the two counters is what stops a 1-wei
+   deposit from a stolen key voiding every approval the guardian has granted.
+   `lastGuardianChange[from]` is in there too: setting a new guardian invalidates
+   every approval the old one had granted.
 */
 async function loadWardTransfers(w){
   const acct=S.account;
   try {
     const [oh, nh] = await mc([
       {to:SLOW,data:cd(SEL.getOut,['address'],[w.addr])},
-      {to:SLOW,data:cd(SEL.nonces,['address'],[w.addr])},
+      {to:SLOW,data:cd(SEL.guardianNonces,['address'],[w.addr])},
     ]);
-    w.nonce = nh ? decode(['uint256'],nh)[0] : 0n;
+    // Left undefined rather than defaulted to 0n: a build without the split
+    // has no `guardianNonces` and answers nothing, and "their nonce is 0" is a
+    // worse thing to show a guardian than no number at all.
+    w.nonce = nh ? decode(['uint256'],nh)[0] : undefined;
     const ids = oh ? decode(['uint256[]'],oh)[0] : [];
     const pts = ids.length ? await mc(ids.map(id=>({to:SLOW,data:cd(SEL.pendingTransfers,['uint256'],[id])}))) : [];
     const live=[];
@@ -3723,12 +3899,25 @@ async function resolveRecipient(input){
   S.resolving=true; paintFoot();
   try {
     if(isAddr(input)){
+      // Before anything is looked up, and before the address is shown back as
+      // "valid". A mixed-case address that fails EIP-55 is a corrupted one, and
+      // the whole cost of finding that out here is a keccak.
+      if(!checksumOk(input)){
+        S.resolved=null; S.resolvedName=null;
+        setNote(el.ens,
+          'That address fails its checksum — a character is wrong. Re-copy it from the source.',
+          'err');
+        updateSummary();
+        return false;
+      }
       const key=input.toLowerCase();
       const name = key in S.ens ? S.ens[key] : await reverseAny(input);
       if(stale()) return false;
       S.ens[key]=name||null;
-      S.resolved=input; S.resolvedName=name||null;
-      setNote(el.ens, name?`${name} · ${shortAddr(input)}`:'Valid address','ok');
+      // Held checksummed, so every later display of it carries the case that
+      // makes it checkable rather than flattening it to lowercase.
+      S.resolved=toChecksum(input); S.resolvedName=name||null;
+      setNote(el.ens, name?`${name} · ${shortAddr(S.resolved)}`:'Valid address','ok');
       updateSummary();
       return true;
     }
@@ -3738,8 +3927,10 @@ async function resolveRecipient(input){
       if(stale()) return false;
       S.ens[key]=a||null;
       if(a&&isAddr(a)){
-        S.resolved=a; S.resolvedName=input;
-        setNote(el.ens,`${input} · ${shortAddr(a)}`,'ok');
+        // A resolver answers in whatever case it likes; checksum it here so the
+        // review shows one canonical form whichever way the recipient was named.
+        S.resolved=toChecksum(a); S.resolvedName=input;
+        setNote(el.ens,`${input} · ${shortAddr(S.resolved)}`,'ok');
         updateSummary();
         return true;
       }
@@ -3774,6 +3965,13 @@ const fit = (len, box, max, min) => {
   const size = Math.floor((box*10)/(len*6));
   return size>max ? max : size<min ? min : size;
 };
+/* The contract passes `bytes(s).length` — UTF-8 BYTES — and JavaScript's
+   `.length` is UTF-16 code units. They agree on ASCII and diverge on
+   everything else: a four-character CJK symbol is 12 bytes to the contract and
+   4 to the page, which drew it at 44px where the chain draws 33. The gallery
+   fixture that pins this port is all ASCII, so the parity test could not see
+   it. Measure the way the thing being previewed measures. */
+const blen = s => new TextEncoder().encode(String(s)).length;
 // Truncating to the largest unit is what the contract does. It is lossy, and
 // the preview must be lossy in exactly the same way or it is not a preview.
 function formatDelay(d){
@@ -3810,9 +4008,9 @@ function renderNFT(token, delay, symbol, name){
     + '<line x1="20" y1="60" x2="280" y2="60" stroke="#fff" stroke-width="2"/>'
     + '<text x="20" y="44" font-family="Helvetica,Arial,sans-serif" font-size="26" fill="#fff">SLOW</text>'
     + '<g font-family="monospace" text-anchor="middle" fill="#fff">'
-    + `<text x="150" y="150" font-size="${fit(sym.length,240,44,14)}">${sym}</text>`
-    + `<text x="150" y="185" font-size="${fit(nm.length,250,14,8)}" fill="#8A8A8A">${nm}</text>`
-    + `<text x="150" y="240" font-size="${fit(label.length,250,22,11)}">${label}</text>`
+    + `<text x="150" y="150" font-size="${fit(blen(sym),240,44,14)}">${sym}</text>`
+    + `<text x="150" y="185" font-size="${fit(blen(nm),250,14,8)}" fill="#8A8A8A">${nm}</text>`
+    + `<text x="150" y="240" font-size="${fit(blen(label),250,22,11)}">${label}</text>`
     + '</g></svg>';
 }
 function paintPreview(){
@@ -3875,6 +4073,26 @@ function renderReview(){
 
   const who = S.resolvedName || shortAddr(S.resolved);
   el.summary.textContent = `${S.amount} ${S.symbol} → ${who}`;
+
+  /* THE ADDRESS IN FULL, AND THIS IS THE ONLY PLACE IT APPEARS.
+     The line above says a name, or `0x1234…abcd`. Six characters and four is
+     within reach of anyone grinding a vanity address, which is the whole
+     mechanic behind address poisoning — and the wallet will not make up the
+     difference, because the recipient here is an argument INSIDE `depositTo`
+     calldata rather than the transaction's `to`. So the last screen before a
+     signature showed a name resolved over one public RPC and ten characters of
+     the address it resolved to. Now it shows all forty-two, checksummed, and
+     names the resolver's answer as an answer rather than as the recipient. */
+  el.recipFull.replaceChildren();
+  if(S.resolved){
+    const full = document.createElement('b');
+    full.textContent = S.resolved;
+    if(S.resolvedName){
+      el.recipFull.append(document.createTextNode(`${S.resolvedName} resolves to `), full);
+    } else {
+      el.recipFull.append(full);
+    }
+  }
 
   const t0=nw(), unlock=t0+S.delay, claw=unlock+GRACE;
   const dest = S.dest ? cfg(S.dest) : null;

@@ -167,6 +167,12 @@ contract SlowArrival {
     ///      to record where the value went.
     uint256 private constant FORWARD_RESERVE = 80_000;
 
+    /// @dev What the Arbitrum fee probe may spend. A real
+    ///      `calculateRetryableSubmissionFee` is arithmetic over one storage
+    ///      read; this is generous for that and small enough that the reserve
+    ///      above survives it, which is the property that matters.
+    uint256 private constant FEE_PROBE_GAS = 30_000;
+
     event Forwarded(
         uint256 indexed dstChainId,
         address indexed origin,
@@ -402,7 +408,10 @@ contract SlowArrival {
     {
         Route memory r = routeTo[dstChainId];
         if (r.entry == address(0) || dstChainId == block.chainid) return false;
-        if (gasleft() <= FORWARD_RESERVE) return false;
+        // The probe's cap is added rather than assumed to fit inside the
+        // reserve: the reserve exists to survive a FAILED forward, and gas the
+        // fee probe is allowed to spend is gas it will not have.
+        if (gasleft() <= FORWARD_RESERVE + FEE_PROBE_GAS) return false;
 
         // The far side is this same contract at this same address, which is
         // what makes the origin survivable: it will see `applyAlias(this)` and
@@ -425,14 +434,47 @@ contract SlowArrival {
             // chose to send, so the submission fee has to be PRICED LIVE
             // against the current base fee. Anything decided at send time would
             // be a working week stale by the time it is spent.
+            // THE ONLY CALL IN THIS FILE THAT HAD NEITHER PROTECTION THE REST
+            // OF IT APPLIES, and it needs both. `r.entry` is a proxy whose
+            // implementation can be replaced after this contract is deployed,
+            // so it is not the trusted constant its position in a Route makes
+            // it look like.
+            //
+            //   BOUNDED GAS, as `SlowOrigin._probe` bounds its probes. Uncapped,
+            //   this call takes 63/64 of everything and can spend the reserve
+            //   the failure branch is holding — the reserve is only reserved
+            //   from the FORWARD, never from this.
+            //
+            //   A FIXED 32-BYTE WINDOW, as `arrive` uses for the same reason.
+            //   `bytes memory` copies the whole `returndatasize()` into this
+            //   frame and charges quadratic memory expansion here, which is how
+            //   a callee held to a gas cap bills past it anyway.
+            //
+            // Either failure ends with `rescue` unable to run and `forward`
+            // reverting, and on the OP leg the portal has already marked the
+            // withdrawal finalised by then and will never replay it.
             uint256 submission;
-            (bool ok, bytes memory ret) = r.entry.staticcall(
-                abi.encodeCall(
+            {
+                bytes memory fd = abi.encodeCall(
                     IArbInbox.calculateRetryableSubmissionFee, (inner.length, block.basefee)
-                )
-            );
-            if (!ok || ret.length != 32) return false;
-            submission = abi.decode(ret, (uint256));
+                );
+                address feeTo = r.entry;
+                bool ok;
+                uint256 rds;
+                assembly ("memory-safe") {
+                    ok := staticcall(FEE_PROBE_GAS, feeTo, add(fd, 0x20), mload(fd), 0x00, 0x20)
+                    submission := mload(0x00)
+                    rds := returndatasize()
+                }
+                if (!ok || rds != 32) return false;
+            }
+            // BOUNDED BEFORE IT IS SCALED. `submission` is whatever `r.entry`
+            // said, and `submission * 3 / 2` on a wide answer OVERFLOWS — which
+            // under checked arithmetic REVERTS, the one thing this function may
+            // never do. So does `submission + gasCost` below. A fee already
+            // larger than the payload is refused three lines down anyway, so
+            // refusing it here costs nothing and makes both sums safe.
+            if (submission > value) return false;
             submission = submission * 3 / 2; // a rising base fee must not strand it
 
             uint256 gasCost = uint256(r.gasLimit) * uint256(r.maxFeePerGas);
@@ -461,6 +503,18 @@ contract SlowArrival {
             return false;
         }
 
+        // CHECKED AGAIN HERE, not just at the top of this function. Between the
+        // two the ARBITRUM branch makes an UNCAPPED staticcall into `r.entry`
+        // for the live submission fee, and `r.entry` is a proxy whose
+        // implementation can be replaced after this contract is deployed. If
+        // that call spends the gap, the subtraction below — which has to stay
+        // unchecked to be cheap — wraps to ~2^256, `call` takes 63/64 of what
+        // is left, and the `rescue` write in the caller that must survive a
+        // failed forward has nothing to run on. On the OP leg the portal has
+        // already marked the withdrawal finalised by then and will never
+        // replay it, so that is the one outcome this contract exists to
+        // prevent. `arrive` guards its own budget the same way.
+        if (gasleft() <= FORWARD_RESERVE) return false;
         uint256 budget;
         unchecked {
             budget = gasleft() - FORWARD_RESERVE;

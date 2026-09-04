@@ -759,5 +759,17 @@ contract SlowRelay {
         return interfaceId == 0x01ffc9a7 || interfaceId == 0x4e2312e0;
     }
 
-    receive() external payable {}
+    /* NO `receive()`, AND THAT IS THE SAFE DIRECTION.
+
+       There was one, and nothing needed it. `open` is payable and hands
+       `msg.value` straight to `depositTo` in the same call; every payout —
+       `release`, `releaseTo`, `cancel`, `reverse`, `clawback` — goes through
+       `SLOW.withdrawFrom`, which sends to the party being paid and never back
+       here. So the only ETH a bare `receive()` could take was ETH nobody meant
+       to send, and this contract has no sweep, no owner and no recovery: it
+       would have been stuck for good.
+
+       Refusing it costs nothing and turns a silent permanent loss into a
+       reverted transaction the sender can see and correct. A contract that
+       should never hold loose ETH should say so. */
 }

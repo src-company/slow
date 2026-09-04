@@ -38,12 +38,14 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///                            shown the accounts it guards instead of being
 ///                            asked to type them in.
 ///
-/// @dev SIZE. 24,356 bytes of runtime against EIP-170's 24,576 — 220 to spare,
+/// @dev SIZE. 24,006 bytes of runtime against EIP-170's 24,576 — 570 to spare,
 ///      up from 21,648. The DAI-style and Permit2 entrypoints were already
 ///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
-///      spent: anything added from here has to come out of those 220 bytes, or
+///      spent: anything added from here has to come out of those 570 bytes, or
 ///      out of something this contract currently does. Re-measure with
-///      `forge build --sizes` after any change here or in the extensions.
+///      `forge build --sizes` after any change here or in the extensions — the
+///      number above is a measurement, and a stale one reads as headroom that
+///      is not there.
 ///
 /// @dev STORAGE IS NOT COMPATIBLE WITH THE DEPLOYED BUILD, and does not need to
 ///      be. Base contracts are laid out first, so the index's two mappings take
@@ -110,11 +112,24 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     ///      WITHOUT IT the delay is a full uint96, and at `type(uint96).max` the
     ///      entry is not slow, it is permanent: `unlock`, `claim` and `clawback`
     ///      all gate on `pt.timestamp + delay`, which never arrives, while
-    ///      `reverse` stays with the sender. Anyone could pin an unremovable row
-    ///      — and an unspendable wrapper — into a stranger's account for the
-    ///      cost of a dust deposit, which is what made the lens denial-of-service
-    ///      permanent rather than a nuisance. A hundred years is past any real
-    ///      use and still leaves the id's high 96 bits alone.
+    ///      `reverse` stays with the sender.
+    ///
+    ///      WHAT THIS DOES NOT FIX, so that nobody reads it as fixed. Anyone can
+    ///      still pin a row into a stranger's `_inboundTransfers` for the cost of
+    ///      a dust deposit, and the recipient still cannot remove it: `unlock`
+    ///      needs `pt.timestamp + delay` and `clawback` needs another 30 days on
+    ///      top, both chosen by the sender. A hundred years is not meaningfully
+    ///      shorter than forever for the account holding the row. Measured, the
+    ///      array getter costs ~2,380 gas a row, so roughly 21,000 rows put
+    ///      `getInboundTransfers` past a 50M `eth_call` — an afternoon's work on
+    ///      a cheap chain. What the ceiling buys is that the delay stays a
+    ///      duration rather than an assertion that time will not pass, and that
+    ///      `pt.timestamp + delay + _CLAWBACK_GRACE` cannot be arranged to land
+    ///      anywhere strange. The griefing itself is bounded by paginating the
+    ///      read — `inboundTransferCount` + `inboundTransferAt`, or `SlowLens` —
+    ///      never by the getter, and a caller that treats a failed
+    ///      `getInboundTransfers` as an empty one will show a stuffed account
+    ///      nothing at all.
     uint256 internal constant _MAX_DELAY = 3155760000; // 100 years, as the dapp offers.
 
     uint256 internal constant _CLAWBACK_GRACE = 30 days; // Wait after expiry before sender can clawback.
@@ -200,9 +215,9 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     /// @notice Hash matching the next guardian-gated or delayed `safeTransferFrom` by
     /// `from` at the current `nonces[from]` / `lastGuardianChange[from]`. Plain
     /// transfers (no delay, no guardian) consume no id. Use this for guardian co-sign
-    /// of wrapper transfers; use `predictWithdrawalId` for raw exits. Delayed
-    /// `depositTo` also produces a pending transfer id under this preimage, but
-    /// deposits are not guardian-gated — the hash is exposed only as a handle for indexers.
+    /// of wrapper transfers; use `predictWithdrawalId` for raw exits, and
+    /// `predictDepositId` for the entry a delayed `depositTo` creates — deposits run
+    /// off `nonces` and carry `_OP_DEPOSIT`, so this function does NOT name one.
     function predictTransferId(address from, address to, uint256 id, uint256 amount)
         public
         view
@@ -375,14 +390,15 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     /// `guardians[user] != 0`, every outflow needs `approveTransfer` from that address.
     /// @dev First-time set (or post-removal) is immediate. Rotating an active guardian
     /// stages `pendingGuardian` with a `_GUARDIAN_CHANGE_DELAY` veto window — user or
-    /// current guardian can `cancelGuardianChange` before `effectiveAt`, anyone can
-    /// `commitGuardian` after. This protects already-wrapped balances against key
+    /// current guardian can `cancelGuardianChange` before `effectiveAt`, and either
+    /// of them can `commitGuardian` after. This protects already-wrapped balances against key
     /// compromise: a stolen key cannot remove a live guardian without the veto window.
     ///
     /// Post-window abort: once `block.timestamp >= effectiveAt`, the rotation is
-    /// considered decided and `commitGuardian` becomes permissionless — neither
+    /// considered decided and only `commitGuardian` is left — neither
     /// `cancelGuardianChange` nor `setGuardian(currentGuardian)` can clear the
-    /// pending entry. To abort late, propose a different guardian (this overwrites
+    /// pending entry. `commitGuardian` is restricted to `user` and the sitting
+    /// guardian, and the note on it says why a third party must not have it. To abort late, propose a different guardian (this overwrites
     /// the pending entry and restarts the window), then `cancelGuardianChange`
     /// during the new window. This is intentional: the 1-day delay is the decision
     /// window, not an indefinite veto.
@@ -416,7 +432,8 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         }
     }
 
-    /// @notice Apply a proposed guardian change after the delay. Permissionless poke.
+    /// @notice Apply a proposed guardian change after the delay. Callable by `user`
+    /// or the sitting `guardians[user]` — NOT by anyone, see the note in the body.
     /// `lastGuardianChange` updates here, invalidating any dangling approvals bound
     /// to the previous preimage.
     function commitGuardian(address user) public {
@@ -561,9 +578,6 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         nonReentrant
         returns (uint256 transferId)
     {
-        require(to != address(0), InvalidRecipient());
-        require(to != address(this), InvalidDeposit());
-
         if (msg.value != 0) {
             require(token == address(0) && amount == 0, InvalidDeposit());
             amount = msg.value;
@@ -591,8 +605,6 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         uint256 tip,
         bytes calldata data
     ) public payable nonReentrant returns (uint256 transferId) {
-        require(to != address(0), InvalidRecipient());
-        require(to != address(this), InvalidDeposit());
         require(amount != 0, InvalidAmount());
         require(delay != 0, InvalidDeposit());
         require(tip != 0 && tip <= type(uint96).max, InvalidAmount());
@@ -618,6 +630,20 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         // Bounded here rather than at each entrypoint: all four deposit paths
         // land in this function, so one check covers them and cannot drift.
         require(delay <= _MAX_DELAY, InvalidDeposit());
+        // And `to`, for the same reason and now at the same price. These two
+        // used to sit in `depositTo` and `depositToWithTip` and nowhere else,
+        // which left the permit pair leaning on Solady's `_mint` to refuse the
+        // zero address and on the receiver hook to refuse this contract. Both
+        // hold, and neither is a property the entrypoint states — it is a
+        // property of a dependency, asserted in a test rather than in the code.
+        //
+        // That trade was made when the check was priced per entrypoint at ~213
+        // bytes. Made ONCE, here, where all four paths already converge, it is
+        // 22 bytes CHEAPER than the two copies it replaces: 24,006 against
+        // 24,028. The reason to spend the bytes is gone, so the reason to keep
+        // them in two places went with it.
+        require(to != address(0), InvalidRecipient());
+        require(to != address(this), InvalidDeposit());
         uint256 id = encodeId(token, delay);
 
         unchecked {

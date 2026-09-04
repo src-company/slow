@@ -123,3 +123,58 @@ test('collects every reason rather than stopping at the first', () => {
   assert.equal(r.fill, false);
   assert.ok(r.reasons.length >= 2, r.reasons.join('; '));
 });
+
+/* ── rule 6: know both legs before pricing either ──────────────────────────
+   The escrow is the only thing a relayer ever gets back, so `srcToken` is what
+   it is being PAID IN. Before this rule existed `assess` never read either
+   token field, and `fee / amount` was a ratio between two different contracts'
+   units — which is not a rate, and which a sender could set to anything. */
+
+test('refuses an escrow token it does not accept as payment', () => {
+  // The confetti fee: a token the sender minted, escrowed in bulk against a
+  // real fill. The bps floor reads it as generous; the relayer is paid nothing.
+  const confetti = { ...INTENT, srcToken: '0x' + 'c0ffee'.padStart(40, '0'), fee: 10n ** 24n };
+  const r = assess(confetti, ctx());
+  assert.equal(r.fill, false);
+  assert.match(r.reasons.join(' '), /not an asset this relayer accepts as payment/);
+  // And the headline number is withheld rather than quoted off a bad unit.
+  assert.equal(r.economics.priceable, false);
+  assert.equal(r.economics.impliedApr, null);
+});
+
+test('refuses to deliver an asset it does not carry', () => {
+  const r = assess({ ...INTENT, dstToken: '0x' + '11'.repeat(20) }, ctx());
+  assert.equal(r.fill, false);
+  assert.match(r.reasons.join(' '), /will deliver/);
+});
+
+test('refuses to price one asset against another', () => {
+  const assets = {
+    8453: { ['0x' + '0'.repeat(40)]: { symbol: 'ETH', decimals: 18 } },
+    4663: { ['0x' + '22'.repeat(20)]: { symbol: 'USDC', decimals: 6 } },
+  };
+  const r = assess({ ...INTENT, dstToken: '0x' + '22'.repeat(20) }, ctx(), { assets });
+  assert.equal(r.fill, false);
+  assert.match(r.reasons.join(' '), /no cross-asset price/);
+});
+
+test('scales the fee when the same asset is stated at different decimals', () => {
+  // USDC at 6 decimals on the source, 18 on the destination. The fee is 20bps
+  // either way; only a scaled comparison says so.
+  const assets = {
+    8453: { ['0x' + '33'.repeat(20)]: { symbol: 'USDC', decimals: 6 } },
+    4663: { ['0x' + '44'.repeat(20)]: { symbol: 'USDC', decimals: 18 } },
+  };
+  const i = {
+    ...INTENT,
+    srcToken: '0x' + '33'.repeat(20),
+    dstToken: '0x' + '44'.repeat(20),
+    amount: 10n ** 18n,        // 1 USDC at 18 decimals
+    fee: 2n * 10n ** 3n,       // 0.002 USDC at 6 decimals
+  };
+  const r = assess(i, ctx(), { assets });
+  assert.equal(r.economics.bps, 20, r.reasons.join('; '));
+  assert.equal(r.economics.rawFee, '2000');
+  assert.equal(r.economics.fee, (2n * 10n ** 15n).toString());
+  assert.equal(r.fill, true, r.reasons.join('; '));
+});

@@ -53,6 +53,22 @@
  *      RETURN leg, because that is how long the relayer's own money is locked
  *      up waiting for the proof to come back. Filling below that is a donation.
  *
+ *   6. KNOW BOTH LEGS BEFORE PRICING EITHER — and this file used to skip it
+ *      entirely. `fee` is denominated in `srcToken` and `amount` in `dstToken`,
+ *      which the Intent struct keeps as two fields precisely because they are
+ *      DIFFERENT CONTRACTS: USDC on Base and USDC on Robinhood Chain are not
+ *      one address, and whatever sits at Base's USDC address on another chain
+ *      is unrelated to it. So `fee / amount` is not a rate at all until both
+ *      sides are known to name the same asset at the same decimals.
+ *
+ *      Left unchecked it is not merely imprecise, it is the cheapest attack on
+ *      a relayer there is: mint a token worth nothing, escrow a mountain of it
+ *      as `fee` against a real USDC `amount`, and the bps floor in rule 5 reads
+ *      it as a generous offer. The relayer delivers real USDC and is paid in
+ *      the sender's own confetti. The escrow is the ONLY thing it ever gets
+ *      back, so an asset it would not choose to hold is an asset it must not
+ *      be paid in.
+ *
  * Dry run unless RELAYER_KEY is set, so it can be pointed at mainnet and read
  * without the possibility of spending anything.
  *
@@ -71,6 +87,28 @@ export const CHAINS = {
 
 /** How long the relayer's capital is locked waiting to be repaid FROM `chain`. */
 export const returnLatencyDays = (chainId) => CHAINS[chainId]?.returnDays ?? 7;
+
+const NATIVE = '0x' + '0'.repeat(40);
+
+/**
+ * What this relayer is willing to hold, per chain, and what each of them IS.
+ *
+ * Two jobs in one table, and rule 6 needs both. The keys are the allowlist: an
+ * asset absent from a chain's entry is one the relayer declines to be paid in
+ * or to deliver. The values are what make a price out of two amounts — the same
+ * `symbol` on both legs is what says the escrow and the fill are the same
+ * underlying thing, and `decimals` is what lets the ratio be computed when they
+ * are stated at different scales.
+ *
+ * Native ETH only, deliberately: a reference relayer has no business guessing
+ * at anyone's inventory policy, and an empty-by-default allowlist fails closed.
+ * Add entries here — or pass `opts.assets` — before filling anything else.
+ */
+export const ASSETS = {
+  1: { [NATIVE]: { symbol: 'ETH', decimals: 18 } },
+  8453: { [NATIVE]: { symbol: 'ETH', decimals: 18 } },
+  4663: { [NATIVE]: { symbol: 'ETH', decimals: 18 } },
+};
 
 // ─── the intent ────────────────────────────────────────────────────────────
 
@@ -92,6 +130,13 @@ const word = (v) => {
 };
 
 export const encodeIntent = (i) => '0x' + INTENT_FIELDS.map((f) => word(i[f])).join('');
+
+/** An intent's token field, in the one shape the allowlist is keyed on. */
+const addrOf = (v) => '0x' + word(v).slice(24);
+
+/** Restate `v` from `from` decimals to `to` decimals. */
+const scaleTo = (v, from, to) =>
+  from === to ? v : from < to ? v * 10n ** BigInt(to - from) : v / 10n ** BigInt(from - to);
 
 /** `keccak256(abi.encode(intent))` — identical on both chains, by design. */
 /* `keccak256` from lib.mjs already returns a 0x-prefixed string; prefixing it
@@ -172,16 +217,38 @@ export function assess(intent, ctx, opts = {}) {
     reasons.push(`only ${left}s to the deadline, inside the ${marginSeconds}s margin`);
   }
 
+  // 6. Both legs, before either is priced. `fee` is in srcToken and `amount` is
+  //    in dstToken; a ratio between them is meaningless until they are known to
+  //    be the same asset, and worse than meaningless when they are not.
+  const assets = opts.assets ?? ASSETS;
+  const srcToken = addrOf(intent.srcToken);
+  const dstToken = addrOf(intent.dstToken);
+  const src = assets[intent.srcChainId]?.[srcToken];
+  const dst = assets[intent.dstChainId]?.[dstToken];
+  if (!src) reasons.push(`srcToken ${srcToken} is not an asset this relayer accepts as payment`);
+  if (!dst) reasons.push(`dstToken ${dstToken} is not an asset this relayer will deliver`);
+  if (src && dst && src.symbol !== dst.symbol) {
+    reasons.push(
+      `paid in ${src.symbol} to deliver ${dst.symbol}; this relayer holds no cross-asset price`
+    );
+  }
+
   // 5. Price the capital: the fee is earned over the RETURN leg's latency.
+  //    Only reached as a real number once rule 6 has agreed the two legs are
+  //    comparable — scaled to the fill's decimals, since the same asset can be
+  //    stated at different ones on different chains.
   const amount = BigInt(intent.amount);
-  const fee = BigInt(intent.fee);
-  const bps = amount === 0n ? 0n : (fee * 10000n) / amount;
-  if (bps < BigInt(minFeeBps)) {
+  const rawFee = BigInt(intent.fee);
+  const priceable = !!src && !!dst && src.symbol === dst.symbol;
+  const fee = priceable ? scaleTo(rawFee, src.decimals, dst.decimals) : 0n;
+  const bps = priceable && amount !== 0n ? (fee * 10000n) / amount : 0n;
+  if (priceable && bps < BigInt(minFeeBps)) {
     reasons.push(`fee is ${bps}bps, below the ${minFeeBps}bps floor`);
   }
 
   const days = returnLatencyDays(intent.dstChainId);
-  const apr = amount === 0n ? 0 : (Number(fee) / Number(amount)) * (365 / days) * 100;
+  const apr =
+    !priceable || amount === 0n ? null : (Number(fee) / Number(amount)) * (365 / days) * 100;
 
   return {
     id,
@@ -189,7 +256,14 @@ export function assess(intent, ctx, opts = {}) {
     reasons,
     economics: {
       amount: amount.toString(),
+      // The fee AS PRICED — scaled to the fill's decimals — alongside the raw
+      // field, so a reader can see both the number in the intent and the number
+      // the decision was actually made on.
       fee: fee.toString(),
+      rawFee: rawFee.toString(),
+      srcAsset: src ? src.symbol : null,
+      dstAsset: dst ? dst.symbol : null,
+      priceable,
       bps: Number(bps),
       lockupDays: days,
       impliedApr: Number.isFinite(apr) ? Number(apr.toFixed(2)) : null,

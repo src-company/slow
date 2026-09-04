@@ -819,4 +819,34 @@ contract SlowRelayTransportTest is Test {
         vm.expectRevert(SlowRelay.NoRoute.selector);
         relay.pushProof(id, SlowRelay.Kind.NONE, address(0xBEEF), 300_000, 0, 0);
     }
+
+    /* ── loose ETH ─────────────────────────────────────────────────────────
+       This contract has no sweep, no owner and no recovery path, so ETH that
+       lands here with nothing to spend it on is gone. It used to accept it. */
+
+    function test_bareEtherIsRefusedRatherThanTrapped() public {
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(relay).call{value: 1 ether}("");
+        assertFalse(ok, "a plain transfer must not be accepted");
+        assertEq(address(relay).balance, 0, "and nothing sticks to the contract");
+    }
+
+    function test_unknownCalldataIsRefusedToo() public {
+        vm.deal(address(this), 1 ether);
+        (bool ok,) = address(relay).call{value: 1 ether}(abi.encodeWithSignature("nope()"));
+        assertFalse(ok, "no fallback either");
+        assertEq(address(relay).balance, 0);
+    }
+
+    function test_openStillTakesValueThroughTheFrontDoor() public {
+        // The refusal must not have closed the one path that is meant to carry
+        // ETH: `open` is payable and forwards it in the same call.
+        vm.chainId(SRC);
+        SlowRelay.Intent memory i = _intent();
+        vm.deal(alice, 10 ether);
+        vm.prank(alice);
+        relay.open{value: i.amount + i.fee}(i);
+        assertEq(uint8(relay.statusOf(relay.intentId(i))), uint8(SlowRelay.Status.OPEN));
+        assertEq(address(relay).balance, 0, "and it did not stay here");
+    }
 }

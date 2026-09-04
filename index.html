@@ -1,16 +1,80 @@
 <!doctype html><meta charset=utf-8><title>SLOW</title><link rel=icon href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 100' fill='none' stroke-linecap='square'%3E%3Crect width='120' height='100' fill='%23000'/%3E%3Cpath stroke='%23fff' d='M35 32h30M23 50h42M43 68h22M75 22l32 28-32 28' stroke-width='10'/%3E%3Cpath stroke='%23fff' d='M15 43l-8 7 8 7' stroke-width='6'/%3E%3C/svg%3E"><link rel=preconnect href=https://ethereum-rpc.publicnode.com><body>Loading SLOW from chain…<script>
+/* The client-only twin of gateway/server.js: same job, no server.
+
+   TWO ENDPOINTS HAVE TO AGREE BEFORE ANY OF THIS RUNS.
+
+   What comes back from `html()` is not data this page displays, it is the page
+   — parsed, adopted, and its scripts re-created so they execute. So an endpoint
+   that answers with something else is not giving a wrong balance; it is
+   replacing the dapp, on the origin the reader typed, with full access to
+   everything that origin can do. A wallet prompt from it looks exactly like a
+   wallet prompt from the real one.
+
+   Taking the first answer made any single endpoint in the list sufficient for
+   that. The document is immutable — `html()` reads SSTORE2 chunks fixed at
+   construction — so two independent endpoints must return identical bytes, and
+   requiring it costs one parallel request. A single compromise no longer
+   reaches the reader; two colluding endpoints would.
+
+   (A hash pinned into this file would be stronger still, and needs re-pinning
+   every time the on-chain document changes. Agreement never goes stale, which
+   is why it is what ships here.)
+
+   NOTHING IS EXECUTED UNTIL THE COMPARISON PASSES. On failure this says so and
+   stops, rather than falling back to one node's word — a page that quietly
+   degrades to the weaker guarantee is worse than one that will not load. */
 (async()=>{
 const A='0x000000000000888741B254d37e1b27128AfEAaBC',D='0x33c34ac3',
-R=['https://ethereum-rpc.publicnode.com','https://1rpc.io/eth','https://eth-pokt.nodies.app','https://gateway.tenderly.co/public/mainnet'];
-for(const u of R)try{
-const j=await(await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:`{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"${A}","data":"${D}"},"latest"]}`})).json();
-if(!j.result)continue;
-const n=parseInt(j.result.slice(66,130),16)*2,
-h=new TextDecoder().decode(Uint8Array.from(j.result.slice(130,130+n).match(/../g),b=>parseInt(b,16)));
+R=['https://ethereum-rpc.publicnode.com','https://1rpc.io/eth','https://eth-pokt.nodies.app','https://gateway.tenderly.co/public/mainnet'],
+TIMEOUT=12000,
+say=t=>{document.body.textContent=t};
+
+// One endpoint, bounded in time. No timeout meant one endpoint that accepts the
+// connection and never replies stalled the whole load with nothing on screen.
+async function ask(u){
+  const ac=new AbortController(),k=setTimeout(()=>ac.abort(),TIMEOUT);
+  try{
+    const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},
+      body:`{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"${A}","data":"${D}"},"latest"]}`,
+      signal:ac.signal});
+    if(!r.ok) return null;
+    const j=await r.json();
+    return typeof j.result==='string' && j.result.length>130 ? j.result : null;
+  }catch(e){ return null; }
+  finally{ clearTimeout(k); }
+}
+
+// Every endpoint at once, and the first value TWO of them return identically.
+// Compared as raw hex, before decoding: whatever differs, differs here.
+const results=await Promise.all(R.map(ask));
+const seen=new Map();
+let agreed=null;
+for(const r of results){
+  if(!r) continue;
+  const n=(seen.get(r)||0)+1;
+  seen.set(r,n);
+  if(n>=2){ agreed=r; break; }
+}
+
+if(!agreed){
+  const answered=results.filter(Boolean).length;
+  say(answered<2
+    ? `Only ${answered} of ${R.length} nodes answered. SLOW will not load a page that a second node has not confirmed — try again in a moment.`
+    : 'The nodes disagree about what is deployed at this address. Nothing has been loaded. Do not proceed until this resolves.');
+  return;
+}
+
+// Decoded only now, from bytes two nodes vouched for. The offset word is read
+// rather than assumed: a document at a different offset would otherwise be cut
+// in the wrong place and rendered as garbage.
+const off=parseInt(agreed.slice(2,66),16)*2+2,
+n=parseInt(agreed.slice(off,off+64),16)*2,
+hex=agreed.slice(off+64,off+64+n);
+if(hex.length!==n){ say('The document returned by the chain is truncated. Nothing has been loaded.'); return; }
+const h=new TextDecoder().decode(Uint8Array.from(hex.match(/../g),b=>parseInt(b,16)));
+
 const d=new DOMParser().parseFromString(h,'text/html');
 document.documentElement.replaceWith(document.adoptNode(d.documentElement));
-document.querySelectorAll('script').forEach(o=>{const n=document.createElement('script');for(const a of o.attributes)n.setAttribute(a.name,a.value);n.text=o.textContent;o.replaceWith(n)});return;
-}catch(e){}
-document.body.textContent='Failed to load SLOW from chain.';
+document.querySelectorAll('script').forEach(o=>{const n=document.createElement('script');for(const a of o.attributes)n.setAttribute(a.name,a.value);n.text=o.textContent;o.replaceWith(n)});
 })()
 </script>
