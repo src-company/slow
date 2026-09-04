@@ -322,7 +322,7 @@ contract SlowRelayTest is Test {
         vm.chainId(SRC);
 
         ForgedInbox forged = new ForgedInbox(address(relay)); // claims to carry OUR message
-        vm.expectRevert(SlowRelay.UntrustedInbox.selector);
+        vm.expectRevert(SlowRelay.UntrustedMessenger.selector);
         forged.push(address(relay), abi.encodeCall(SlowRelay.receiveRelay, (id, address(0xBAD))));
 
         assertEq(relay.provenBy(id), address(0));
@@ -334,7 +334,7 @@ contract SlowRelayTest is Test {
         (, bytes32 id,) = _openAndFill();
         vm.chainId(SRC);
         // Right bridge, wrong origin: the message did not come from SlowRelay.
-        vm.expectRevert(SlowRelay.UntrustedInbox.selector);
+        vm.expectRevert(SlowRelay.UntrustedMessenger.selector);
         inbox.relay(
             address(0xDECAF),
             address(relay),
@@ -366,7 +366,7 @@ contract SlowRelayTest is Test {
         (, bytes32 id,) = _openAndFill();
         vm.chainId(SRC);
         vm.prank(SlowOrigin.applyAlias(address(0xDECAF)));
-        vm.expectRevert(SlowRelay.UntrustedInbox.selector);
+        vm.expectRevert(SlowRelay.UntrustedMessenger.selector);
         relay.receiveRelay(id, relayer);
     }
 

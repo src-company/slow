@@ -150,7 +150,19 @@ contract SlowRelay {
     ///      also arrive through a known bridge. Constructor arguments do not
     ///      enter a CREATE3 address, so this contract still lands at one address
     ///      on every chain despite holding chain-specific values.
-    mapping(address inbox => bool) public trustedInbox;
+    /// @notice Contracts allowed to deliver a cross-chain message to this one.
+    /// @dev NOT THE INBOX, WHICH IS THE TRAP THIS NAME USED TO SET. `proveFill`
+    ///      sends through `OP_MESSENGER.sendMessage` and `ArbSys.sendTxToL1`,
+    ///      and what arrives here is whatever DELIVERS that message — the
+    ///      L1CrossDomainMessenger on OP Stack, and the Arbitrum BRIDGE on Nitro
+    ///      (the Outbox calls `bridge.executeCall`, so `msg.sender` is the
+    ///      bridge). An Inbox is the opposite direction and belongs nowhere in
+    ///      this set, even though `pushProof` genuinely takes one as its
+    ///      `entry`. Populate this with Inbox addresses and `receiveRelay`
+    ///      rejects every real proof: senders still refund through `cancel`,
+    ///      relayers are never paid, and nothing reverts at deploy time to say
+    ///      so.
+    mapping(address messenger => bool) public trustedMessenger;
 
     mapping(bytes32 intentId => Status) public statusOf;
     /// @notice intentId => the escrowed SLOW id, so a payout needs no re-derivation.
@@ -202,15 +214,18 @@ contract SlowRelay {
     error BadValue();
     error BadIntent();
     error DelayedIdRefused();
-    error UntrustedInbox();
+    error UntrustedMessenger();
     error BadSignature();
     error SlipUsed();
     error NoRoute();
 
-    constructor(address slow_, address[] memory inboxes) {
+    /// @param messengers The message-DELIVERING contracts for every route this
+    ///        deployment accepts proofs from. See `trustedMessenger`: on OP
+    ///        Stack that is the L1CrossDomainMessenger, on Nitro the Bridge.
+    constructor(address slow_, address[] memory messengers) {
         slow = slow_;
-        for (uint256 i; i != inboxes.length; ++i) {
-            trustedInbox[inboxes[i]] = true;
+        for (uint256 i; i != messengers.length; ++i) {
+            trustedMessenger[messengers[i]] = true;
         }
     }
 
@@ -472,7 +487,7 @@ contract SlowRelay {
     ///      mean deploying code at `applyAlias(address(this))`, a specific
     ///      address nobody can reach.
     function receiveRelay(bytes32 id, address relayer) external {
-        require(_authenticatedSelf(), UntrustedInbox());
+        require(_authenticatedSelf(), UntrustedMessenger());
         require(relayer != address(0), BadIntent());
         if (provenBy[id] == address(0)) {
             provenBy[id] = relayer;
@@ -484,7 +499,7 @@ contract SlowRelay {
         // Unforgeable: an L1→L2 message from this contract arrives aliased, and
         // nobody can put code at that address.
         if (SlowOrigin.undoAlias(msg.sender) == address(this)) return true;
-        if (!trustedInbox[msg.sender]) return false;
+        if (!trustedMessenger[msg.sender]) return false;
         (address origin, bool authenticated) = SlowOrigin.recover(msg.sender, address(0));
         return authenticated && origin == address(this);
     }
