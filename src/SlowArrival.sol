@@ -117,10 +117,18 @@ contract SlowArrival {
 
     error NotOrigin();
     error NothingToRescue();
+    error NoSlow();
     error TransferGone();
     error SendFailed();
 
+    /// @dev `slow_` must already be deployed. A value-bearing call to a codeless
+    ///      address returns success with empty returndata, which this contract
+    ///      reads as a failed deposit — so it would credit `rescue` for ETH that
+    ///      had already left, and the first claimant would drain the rest. The
+    ///      CREATE3 same-address design makes deploying this before SLOW an easy
+    ///      ordering mistake, so it is refused rather than trusted.
     constructor(address slow_) {
+        require(slow_.code.length != 0, NoSlow());
         slow = slow_;
     }
 
@@ -144,6 +152,20 @@ contract SlowArrival {
         payable
     {
         (address origin, bool authenticated) = SlowOrigin.recover(msg.sender, originHint);
+        // ORIGIN HINTS ARE CHECKED, NEVER TAKEN ON TRUST. An unmatched hint is
+        // refused and the caller owns its own deposit, which is what stops
+        // anyone handing a stranger's address the reverse right by simply
+        // naming it.
+        //
+        // THE COST OF THAT, and it is real: on an L1->L2 leg the caller IS the
+        // aliased sender, so a message that OMITS `originHint` resolves to an
+        // address with no key on either chain, and `rescue`/`originOf` land
+        // somewhere nobody can claim from. A correct hint is honoured — the
+        // alias branch in `SlowOrigin.recover` matches it — so the requirement
+        // is that L1->L2 callers always pass one. Preferring an unmatched hint
+        // instead was considered and rejected: it would rescue the omitted-hint
+        // case not at all (there is no hint to prefer) while letting any direct
+        // caller give their deposit away, which is a worse trade.
 
         uint256 value = msg.value;
         // A bounty at or above the payload is a malformed message. Clamping it

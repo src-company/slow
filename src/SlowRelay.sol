@@ -197,6 +197,7 @@ contract SlowRelay {
     event Released(bytes32 indexed intentId, address indexed relayer, uint256 amount);
     event Cancelled(bytes32 indexed intentId, address indexed sender, uint256 amount);
     event Reversed(uint256 indexed transferId, address indexed sender);
+    event ClawedBack(uint256 indexed transferId, address indexed sender);
     event ProofSent(bytes32 indexed intentId, address indexed relayer, uint256 towardChainId);
 
     // ──────────────────────────────────────────────────────────── ERRORS
@@ -377,6 +378,15 @@ contract SlowRelay {
         require(i.dstChainId != i.srcChainId, BadIntent());
         require(i.amount != 0, BadIntent());
         require(i.recipient != address(0), BadIntent());
+        // EVERY PRECONDITION `depositTo` ENFORCES, checked here too. The escrow
+        // is committed on this chain and the only party who can discover the
+        // intent is unfillable is a relayer on the other one — after which the
+        // money sits until `fillDeadline + PROOF_GRACE`, eight days minimum.
+        // So anything the destination will refuse has to be refused at open:
+        // `to != address(this)` and the 100-year delay ceiling, alongside the
+        // zero-recipient and zero-amount cases.
+        require(i.recipient != slow, BadIntent());
+        require(i.delay <= MAX_DELAY, BadIntent());
         require(i.fillDeadline > block.timestamp, DeadlinePassed());
     }
 
@@ -470,7 +480,7 @@ contract SlowRelay {
         delete originOf[transferId];
         ISlow(slow).clawback(transferId);
         ISlow(slow).withdrawFrom(address(this), to, id, amount);
-        emit Reversed(transferId, origin);
+        emit ClawedBack(transferId, origin);
     }
 
     // ───────────────────────────────────────────────────────────── PROVING
@@ -607,6 +617,10 @@ contract SlowRelay {
     ///      earliest possible proof always lands before the earliest possible
     ///      cancel, whenever within the window the fill happened.
     uint256 internal constant PROOF_GRACE = 8 days;
+
+    /// @dev SLOW's own timelock ceiling, mirrored so an intent that the
+    ///      destination would refuse cannot be opened here in the first place.
+    uint96 internal constant MAX_DELAY = 3155760000; // 100 years.
 
     enum Kind {
         NONE,
