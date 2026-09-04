@@ -423,7 +423,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
   opacity:0;transition:opacity .2s;max-width:min(92vw,440px);text-align:center;pointer-events:none;
 }
 .toast.on{opacity:1}
-.nftbox{width:100%;max-width:340px;aspect-ratio:1/1}
+.nftbox{width:100%;max-width:340px;aspect-ratio:1/1;transition:opacity var(--t)}
+.nftbox.waiting{opacity:.45}
 .nftbox svg{width:100%;height:100%;display:block}
 #tipLayer{position:fixed;inset:0;pointer-events:none;z-index:30}
 
@@ -601,7 +602,7 @@ body{overscroll-behavior:none}
       </div>
 
       <div class="field" id="fPreview" hidden>
-        <span class="flabel">The position <em>drawn on chain</em></span>
+        <span class="flabel">The position <em id="previewHint">updates as you choose</em></span>
         <div class="nftbox" id="nftBox"></div>
       </div>
       </div>
@@ -1307,16 +1308,27 @@ function fmtAmt(raw,dec){
 }
 const isAddr = a => /^0x[a-fA-F0-9]{40}$/.test(a||'');
 const shortAddr = a => a ? a.slice(0,6)+'…'+a.slice(-4) : '';
+/* A countdown, at the resolution the wait actually has.
+   It used to stop at days, so a five-year lock read "1824d 23h 59m" — three
+   units of precision on a number nobody can hold, and the minutes are noise at
+   that distance. It now rolls up through months and years and shows the two
+   largest units that carry information: "4y 11mo", "28d 21h", "1m 30s". */
+/* The month here is a TWELFTH OF THIS YEAR, not the contract's 30 days. Mixing
+   a 365-day year with a 30-day month makes twelve months fit inside one year
+   with days to spare, and the countdown reads "4y 12mo" — which is not wrong so
+   much as unreadable. A twelfth keeps the remainder under twelve, always. */
+const TIME_UNITS = [['y',31536000],['mo',2628000],['d',86400],['h',3600],['m',60],['s',1]];
 function fmtTime(s){
   s=Math.max(0,Math.floor(s));
-  if(!s) return '0s';
-  const d=s/86400|0, h=(s%86400)/3600|0, m=(s%3600)/60|0, sec=s%60;
   const p=[];
-  if(d) p.push(d+'d');
-  if(h||d) p.push(h+'h');
-  if((m||h||d)&&p.length<3) p.push(m+'m');
-  if(!d&&!h&&p.length<3) p.push(sec+'s');
-  return p.join(' ');
+  for(const [w,n] of TIME_UNITS){
+    const v=Math.floor(s/n);
+    if(v){ p.push(v+w); s-=v*n; }
+    // The second unit only earns its place if it is not zero: "1y 0mo" is
+    // noise where "1y" is the answer.
+    if(p.length===2) break;
+  }
+  return p.length?p.join(' '):'0s';
 }
 function fmtCustomTime({d,h,m,s}){
   const D=parseInt(d)||0,H=parseInt(h)||0,M=parseInt(m)||0,S=parseInt(s)||0;
@@ -2935,6 +2947,7 @@ function resetForm(){
   paintPresets();
 }
 function setView(v){
+  if(v==='send') paintPreview();   // the card is there before the first keystroke
   S.view=v;
   if(v==='home') resetForm();
   if(v!=='take'){ stopTimer(); }
@@ -3613,6 +3626,7 @@ async function resolveRecipient(input){
   }
 }
 function updateSummary(){ renderReview(); paintPreview(); }
+// Painted on entry too, so the card is there before the first keystroke.
 
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3638,11 +3652,11 @@ function formatDelay(d){
   // The parity test caught this, which is the entire reason it exists.
   d=BigInt(d);
   const u=(n,w)=>`${d/n} ${w}${d/n===1n?'':'s'}`;
-  if(d>=31536000n) return u(31536000n,'year');
-  if(d>=2592000n) return u(2592000n,'month');
-  if(d>=86400n) return u(86400n,'day');
-  if(d>=3600n) return u(3600n,'hour');
-  if(d>=60n) return u(60n,'minute');
+  // The largest unit that divides EXACTLY, matching _formatDelay. Truncating to
+  // the largest unit that merely fits understates the lock — 23 months as
+  // "1 year" is an eleven-month lie on an artefact nobody can correct.
+  for(const [n,w] of [[31536000n,'year'],[2592000n,'month'],[86400n,'day'],[3600n,'hour'],[60n,'minute']])
+    if(d>=n && d%n===0n) return u(n,w);
   return `${d} second${d===1n?'':'s'}`;
 }
 // LibString.escapeHTML: the five characters, in the contract's own order.
@@ -3672,12 +3686,17 @@ function renderNFT(token, delay, symbol, name){
     + '</g></svg>';
 }
 function paintPreview(){
-  const show = !!(S.token!==null && S.symbol && S.delay);
-  el.fPreview.hidden = !show;
-  if(!show) return;
+  el.fPreview.hidden = false;
   const meta = S.meta[(S.token||'').toLowerCase()];
-  const name = S.token===ZERO ? 'Ether' : (meta&&meta.name) || S.symbol;
-  el.nftBox.innerHTML = renderNFT(S.token, S.delay, S.symbol, name);
+  const name = S.token===ZERO ? 'Ether' : (meta&&meta.name) || (S.symbol||'');
+  // Placeholder, then the real thing, in the same shape. An em dash where a
+  // value is not chosen yet reads as "this is where that goes"; hiding the card
+  // until everything is set removes it from exactly the moment it would explain
+  // what a SLOW position is.
+  const blank = !S.symbol && !S.delay;
+  el.nftBox.classList.toggle('waiting', blank);
+  el.nftBox.innerHTML = renderNFT(S.token, S.delay||0, S.symbol||'\u2014', S.symbol?name:'');
+  el.previewHint.textContent = blank ? 'updates as you choose' : 'drawn on chain';
 }
 
 /* ══════════════════════════════════════════════════════════════════

@@ -242,8 +242,15 @@ eq(C.decodeStringLoose('0x'), '', 'decodeStringLoose on empty returndata');
 eq(C.fmtTime(0), '0s', 'fmtTime zero');
 eq(C.fmtTime(-5), '0s', 'fmtTime clamps negatives');
 eq(C.fmtTime(90), '1m 30s', 'fmtTime minutes');
-eq(C.fmtTime(3600), '1h 0m', 'fmtTime one hour');
-eq(C.fmtTime(90061), '1d 1h 1m', 'fmtTime days');
+eq(C.fmtTime(3600), '1h', 'fmtTime one hour');
+// Two units, and only two: a countdown at five years does not need minutes,
+// and "1y 0mo" is noise where "1y" is the answer.
+eq(C.fmtTime(90061), '1d 1h', 'fmtTime shows the two largest units that carry information');
+eq(C.fmtTime(157680000), '5y', 'five years is five years, not 1824d 23h 59m');
+eq(C.fmtTime(59616000), '1y 10mo', 'and a remainder is kept when there is one');
+eq(C.fmtTime(86400), '1d', 'a whole unit drops the trailing zero');
+eq(C.fmtTime(90), '1m 30s', 'short waits keep their seconds');
+eq(C.fmtTime(0), '0s', 'zero is zero');
 eq(C.fmtCustomTime({d: 1, h: 0, m: 0, s: 0}).seconds, 86400, 'fmtCustomTime seconds');
 eq(C.fmtCustomTime({d: 1, h: 2, m: 0, s: 0}).display, '1D 2H', 'fmtCustomTime display');
 
@@ -901,11 +908,26 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
 
 // The lossy parts have to be lossy identically, so check them head-on.
 {
-  eq(C.formatDelay(90), '1 minute', '1m30s truncates to the minute');
-  eq(C.formatDelay(59), '59 seconds', 'under a minute stays in seconds');
+  // The label is the largest unit that divides EXACTLY, so it is never short of
+  // the truth. Every duration anyone actually picks is unchanged; the awkward
+  // ones step down to a unit that says what the lock really is.
+  eq(C.formatDelay(600), '10 minutes', 'a round choice is unchanged');
+  eq(C.formatDelay(3600), '1 hour', 'as is an hour');
+  eq(C.formatDelay(86400), '1 day', 'and a day');
+  eq(C.formatDelay(604800), '7 days', 'and a week');
+  eq(C.formatDelay(31536000), '1 year', 'and a year');
+  eq(C.formatDelay(90), '90 seconds', '1m30s is 90 seconds, not "1 minute"');
+  eq(C.formatDelay(5400), '90 minutes', '1h30m is 90 minutes, not "1 hour"');
+  eq(C.formatDelay(180000), '50 hours', '2d2h is 50 hours, not "2 days"');
+  eq(C.formatDelay(59616000), '23 months', '23 months is 23 months, not "1 year"');
   eq(C.formatDelay(1), '1 second', 'and singular is singular');
-  eq(C.formatDelay(86399), '23 hours', '23h59m is not a day');
-  eq(C.formatDelay(59616000), '1 year', '23 months truncates to one year — an 11-month understatement');
+  // The invariant behind all of it: the label, read back, is the delay.
+  for (const d of [1, 45, 90, 600, 3599, 3600, 5400, 86399, 86400, 180000, 604800,
+                   2591999, 2592000, 7776000, 31536000, 59616000, 157680000]) {
+    const [n, unit] = C.formatDelay(d).split(' ');
+    const sec = {second: 1, minute: 60, hour: 3600, day: 86400, month: 2592000, year: 31536000}[unit.replace(/s$/, '')];
+    eq(BigInt(n) * BigInt(sec), BigInt(d), `${d}s reads back exactly as "${C.formatDelay(d)}"`);
+  }
   eq(C.fit(0, 240, 44, 14), 44, 'an empty string gets the maximum');
   eq(C.fit(100, 240, 44, 14), 14, 'a long one is floored, not shrunk away');
   eq(C.clipForDisplay('abc', 28), 'abc', 'a short name is untouched');

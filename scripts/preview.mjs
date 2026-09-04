@@ -33,6 +33,36 @@ if (fs.existsSync(galleryPath)) {
   entries.push(`100644 blob ${git('hash-object', '-w', galleryPath)}\tgallery.html`);
   gallery = true;
 }
+
+// The Take-view scenarios: states that are hard to reach on chain — a transfer
+// a minute from unlocking, one past its recovery window, one bridged in under
+// an address alias — captured from the real UI. An index, the sheets, and the
+// shots they reference, all under scenarios/.
+const scnDir = path.join(ROOT, 'preview/scenarios');
+let scenarios = false;
+if (fs.existsSync(scnDir)) {
+  const sub = [];
+  for (const f of fs.readdirSync(scnDir).sort()) {
+    if (f === '_harness.html' || (!f.endsWith('.png') && !f.endsWith('.html'))) continue;
+    sub.push(`100644 blob ${git('hash-object', '-w', path.join(scnDir, f))}\t${f}`);
+  }
+  const sheets = fs.readdirSync(scnDir).filter((f) => f.startsWith('sheet-')).sort();
+  if (sheets.length) {
+    const idx = `<title>SLOW · Take scenarios</title><style>body{font:14px system-ui;
+      background:#111;color:#eee;padding:32px;line-height:1.7}a{color:#8bf}</style>
+      <h1 style="font-size:15px;letter-spacing:.2em;text-transform:uppercase">Take scenarios</h1>
+      <p>The transfer list under states that are awkward to reach on chain, captured from the real UI.</p>
+      <ul>${sheets.map((f) => `<li><a href="${f}">${f.replace(/^sheet-|\.html$/g, '')}</a></li>`).join('')}</ul>`;
+    const idxFile = path.join(scnDir, 'index.html');
+    fs.writeFileSync(idxFile, idx);
+    sub.push(`100644 blob ${git('hash-object', '-w', idxFile)}\tindex.html`);
+  }
+  if (sub.length) {
+    const t = execFileSync('git', ['mktree'], {cwd: ROOT, encoding: 'utf8', input: sub.join('\n') + '\n'}).trim();
+    entries.push(`040000 tree ${t}\tscenarios`);
+    scenarios = true;
+  }
+}
 const tree = execFileSync('git', ['mktree'], {
   cwd: ROOT, encoding: 'utf8', input: entries.join('\n') + '\n',
 }).trim();
@@ -76,6 +106,7 @@ if (slug) {
   else console.log('  \u2514 Pages did not answer \u2014 enable it on the gh-pages branch');
 
   if (fs.existsSync(galleryPath)) console.log(`  ${pages}gallery.html`);
+  if (scenarios) console.log(`  ${pages}scenarios/`);
 
   console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/index.html`);
   console.log('  \u2514 commit-pinned mirror; githack rate-limits, so this 429s when leaned on');

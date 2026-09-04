@@ -41,10 +41,11 @@ contract RenderGallery is Script {
         ];
 
         // Two sets. The first is the round durations a sender actually picks.
-        // The second is where `_formatDelay` shows its seams: it prints ONE unit
-        // and truncates, so nothing ever reads "an hour and thirty minutes" —
-        // that is an hour, and 45 days is a month. These are the renders that
-        // say what a holder is really shown.
+        // The second set is the awkward values, and it is the one worth looking
+        // at: _formatDelay picks the largest unit that divides EXACTLY, so an
+        // hour and a half is "90 minutes" rather than "1 hour", and 729 days is
+        // "729 days" rather than "1 year". A label that reads back as anything
+        // other than the delay is a lie on an artefact nobody can correct.
         uint256[18] memory delays = [
             uint256(60), // a minute, the floor
             3600, // an hour, the default
@@ -57,13 +58,13 @@ contract RenderGallery is Script {
             type(uint96).max, // the ceiling, so the label cannot overflow the plate
             1, // "1 second" — the only singular second
             59, // still seconds, one tick below the minute floor
-            90, // a minute and a half -> "1 minute"
-            3599, // 59m59s -> "59 minutes", one tick below the hour
-            5400, // an hour and thirty minutes -> "1 hour"
-            86399, // 23h59m59s -> "23 hours", one tick below the day
-            90000, // a day and an hour -> "1 day"
-            3888000, // 45 days -> "1 month"
-            62985600 // 729 days, two years less a day -> "1 year"
+            90, // a minute and a half -> "90 seconds"
+            3599, // 59m59s -> "3599 seconds", exact or nothing
+            5400, // an hour and thirty minutes -> "90 minutes"
+            86399, // 23h59m59s -> "86399 seconds", exact or nothing
+            90000, // a day and an hour -> "25 hours"
+            3888000, // 45 days -> "45 days"
+            62985600 // 729 days, two years less a day -> "729 days"
         ];
 
         // Written a line at a time rather than concatenated: every uri() is a

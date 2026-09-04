@@ -125,6 +125,13 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     uint8 internal constant _OP_TRANSFER = 0;
     uint8 internal constant _OP_WITHDRAW = 1;
 
+    /// @dev Deposits are a third op, and they need to be. They run off `nonces`
+    ///      while both guarded ops now run off `guardianNonces`; two counters
+    ///      sharing one op byte could put a deposit's id and a transfer's id at
+    ///      the same preimage and let one overwrite the other's pending entry.
+    ///      The byte keeps the two spaces disjoint however the counters line up.
+    uint8 internal constant _OP_DEPOSIT = 2;
+
     mapping(address user => mapping(uint256 transferId => bool)) public guardianApproved;
 
     mapping(address user => EnumerableSetLib.Uint256Set) internal _outboundTransfers;
@@ -205,6 +212,28 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             keccak256(
                 abi.encodePacked(
                     from, to, id, amount, guardianNonces[from], lastGuardianChange[from], _OP_TRANSFER
+                )
+            )
+        );
+    }
+
+    /// @notice Hash matching the next delayed `depositTo` by `from`.
+    /// @dev Deposits run off `nonces` and carry `_OP_DEPOSIT`, so they are NOT
+    ///      predicted by `predictTransferId` — that one now answers only for the
+    ///      guarded ops, which run off `guardianNonces`. Splitting the counters
+    ///      is what stops a deposit voiding a guardian approval; splitting the
+    ///      op byte is what stops the two id spaces overlapping. This is the
+    ///      predictor for the deposit space, so an indexer or a wallet can still
+    ///      name the pending entry a deposit is about to create.
+    function predictDepositId(address from, address to, uint256 id, uint256 amount)
+        public
+        view
+        returns (uint256)
+    {
+        return uint256(
+            keccak256(
+                abi.encodePacked(
+                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_DEPOSIT
                 )
             )
         );
@@ -604,7 +633,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             amount,
                             nonces[msg.sender]++,
                             lastGuardianChange[msg.sender],
-                            _OP_TRANSFER
+                            _OP_DEPOSIT
                         )
                     )
                 );
@@ -698,45 +727,32 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             bool requiresDelayOrGuardian = guardian != address(0) || delay != 0;
 
             if (requiresDelayOrGuardian) {
-                // TWO IDS, TWO COUNTERS, and they must not be merged back. The
-                // approval id is keyed on `guardianNonces` so that a deposit
-                // cannot advance it; the pending-transfer id stays on `nonces`,
-                // which is what has always guaranteed pending entries do not
-                // overwrite each other. Keying both on one counter would put a
-                // deposit's id and a transfer's id in the same space — same op
-                // byte, same fields — and let one silently overwrite the other.
-                if (guardian != address(0)) {
-                    uint256 approvalId = uint256(
-                        keccak256(
-                            abi.encodePacked(
-                                from,
-                                to,
-                                id,
-                                amount,
-                                guardianNonces[from]++,
-                                lastGuardianChange[from],
-                                _OP_TRANSFER
-                            )
+                // One id, both roles: the guardian's approval handle and, when
+                // delayed, the pending entry's key. It runs on `guardianNonces`,
+                // which only guarded ops advance, so a deposit can no longer
+                // void a standing approval. Deposits keep `nonces` and carry
+                // `_OP_DEPOSIT`, which is what keeps the two id spaces disjoint
+                // now that they no longer share a counter.
+                uint256 transferId = uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            from,
+                            to,
+                            id,
+                            amount,
+                            guardianNonces[from]++,
+                            lastGuardianChange[from],
+                            _OP_TRANSFER
                         )
-                    );
-                    require(guardianApproved[from][approvalId], GuardianApprovalRequired());
-                    delete guardianApproved[from][approvalId];
+                    )
+                );
+
+                if (guardian != address(0)) {
+                    require(guardianApproved[from][transferId], GuardianApprovalRequired());
+                    delete guardianApproved[from][transferId];
                 }
 
                 if (delay != 0) {
-                    uint256 transferId = uint256(
-                        keccak256(
-                            abi.encodePacked(
-                                from,
-                                to,
-                                id,
-                                amount,
-                                nonces[from]++,
-                                lastGuardianChange[from],
-                                _OP_TRANSFER
-                            )
-                        )
-                    );
                     pendingTransfers[transferId] =
                         PendingTransfer(uint96(block.timestamp), from, to, id, amount);
 
@@ -817,30 +833,32 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
 
     /// @dev Rolls up past days. The deployed build stops there, so a hundred-year
     ///      lock reads "36525 days" — correct, and not legible as a duration.
+    /// @dev The largest unit that divides the delay EXACTLY.
+    ///
+    ///      Truncating to the largest unit that merely fits understates the
+    ///      lock, and this is an immutable artefact: 23 months rendered as
+    ///      "1 year" tells a holder their funds free eleven months before they
+    ///      do, forever. Every round duration anyone actually chooses — ten
+    ///      minutes, an hour, a day, a week, thirty days, a year — divides
+    ///      exactly and reads exactly as it did. Only the awkward values change,
+    ///      and they change from wrong to right: 1h30m is "90 minutes", not
+    ///      "1 hour"; 23 months is "23 months", not "1 year".
+    ///
+    ///      Seconds divide everything, so there is always an answer.
     function _formatDelay(uint256 delay) internal pure returns (string memory) {
         unchecked {
-            if (delay >= 31536000) {
-                uint256 y = delay / 31536000;
-                return string(abi.encodePacked(y.toString(), y == 1 ? " year" : " years"));
-            }
-            if (delay >= 2592000) {
-                uint256 mo = delay / 2592000;
-                return string(abi.encodePacked(mo.toString(), mo == 1 ? " month" : " months"));
-            }
-            if (delay >= 86400) {
-                uint256 d = delay / 86400;
-                return string(abi.encodePacked(d.toString(), d == 1 ? " day" : " days"));
-            }
-            if (delay >= 3600) {
-                uint256 h = delay / 3600;
-                return string(abi.encodePacked(h.toString(), h == 1 ? " hour" : " hours"));
-            }
-            if (delay >= 60) {
-                uint256 m = delay / 60;
-                return string(abi.encodePacked(m.toString(), m == 1 ? " minute" : " minutes"));
-            }
-            return string(abi.encodePacked(delay.toString(), delay == 1 ? " second" : " seconds"));
+            if (delay >= 31536000 && delay % 31536000 == 0) return _unit(delay / 31536000, "year");
+            if (delay >= 2592000 && delay % 2592000 == 0) return _unit(delay / 2592000, "month");
+            if (delay >= 86400 && delay % 86400 == 0) return _unit(delay / 86400, "day");
+            if (delay >= 3600 && delay % 3600 == 0) return _unit(delay / 3600, "hour");
+            if (delay >= 60 && delay % 60 == 0) return _unit(delay / 60, "minute");
+            return _unit(delay, "second");
         }
+    }
+
+    /// @dev "1 day", "7 days". Factored out because it was written six times.
+    function _unit(uint256 v, string memory w) private pure returns (string memory) {
+        return string(abi.encodePacked(v.toString(), " ", w, v == 1 ? "" : "s"));
     }
 
     function _createURI(uint256 id) internal view returns (string memory) {
@@ -1094,7 +1112,16 @@ contract SLOWGateNext {
     /// required); otherwise routes through `slow.claim`, which requires `pt.to` to
     /// have approved the gate via `setApprovalForAll`.
     function claim(uint256 transferId) public {
-        _claimAndPay(transferId);
+        _claimAndPay(transferId, msg.sender);
+    }
+
+    /// @notice One id, on behalf of `payee`. Callable only by this contract.
+    /// @dev The isolation primitive `claimMany` needs: a `try` needs an external
+    ///      call, an external call rewrites `msg.sender`, and the tip has to
+    ///      keep going to the keeper who submitted the batch.
+    function claimOne(uint256 transferId, address payee) public {
+        require(msg.sender == address(this), Unauthorized());
+        _claimAndPay(transferId, payee);
     }
 
     /// @notice Atomic batch settlement; the whole call reverts on the first failure.
@@ -1110,7 +1137,7 @@ contract SLOWGateNext {
             // `unlock` destroyed it, ~18x leverage that scales with batch size.
             // Filtering off-chain, which the note above prescribes, cannot fix
             // it — the kill is a front-run, so no pre-flight read can see it.
-            try this.claim(transferIds[i]) {} catch {}
+            try this.claimOne(transferIds[i], msg.sender) {} catch {}
         }
     }
 
@@ -1128,13 +1155,17 @@ contract SLOWGateNext {
         emit TipRefunded(transferId, t.amount, msg.sender);
     }
 
-    function _claimAndPay(uint256 transferId) internal {
+    /// @dev `payee` is threaded rather than read from `msg.sender`, because
+    ///      `claimMany` reaches this through a `this.` self-call to isolate a
+    ///      failing id — and inside that call `msg.sender` is the gate, not the
+    ///      keeper. Reading it there would pay every tip to this contract.
+    function _claimAndPay(uint256 transferId, address payee) internal {
         Tip memory t = tips[transferId];
         if (t.amount != 0) {
             delete tips[transferId];
             slow.claimTipped(transferId);
-            msg.sender.safeTransferETH(t.amount);
-            emit TipPaid(transferId, t.amount, msg.sender);
+            payee.safeTransferETH(t.amount);
+            emit TipPaid(transferId, t.amount, payee);
         } else {
             slow.claim(transferId);
         }
