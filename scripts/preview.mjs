@@ -43,7 +43,12 @@ let scenarios = false;
 if (fs.existsSync(scnDir)) {
   const sub = [];
   for (const f of fs.readdirSync(scnDir).sort()) {
-    if (f === '_harness.html' || (!f.endsWith('.png') && !f.endsWith('.html'))) continue;
+    // `index.html` is written below, so taking it here too puts the same name
+    // in the tree twice — and a tree with duplicate entries is not a tree. Git
+    // writes it locally without complaint and the remote rejects the whole pack
+    // with "index-pack failed", which names neither the file nor the reason.
+    if (f === '_harness.html' || f === 'index.html') continue;
+    if (!f.endsWith('.png') && !f.endsWith('.html')) continue;
     sub.push(`100644 blob ${git('hash-object', '-w', path.join(scnDir, f))}\t${f}`);
   }
   const sheets = fs.readdirSync(scnDir).filter((f) => f.startsWith('sheet-')).sort();
