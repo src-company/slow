@@ -20,7 +20,7 @@ import {SSTORE2} from "@solady/src/utils/SSTORE2.sol";
 ///      reverse, clawback, the gate and the tip accounting — against `SLOWBuild`.
 ///      The cast is safe: every selector the suite calls is inherited unchanged,
 ///      and `SLOWGateBuild` is ABI-identical to `SLOWGate`.
-contract SLOWNextParityTest is SLOWTest {
+contract SLOWParityTest is SLOWTest {
     function _deploySlow(bytes memory p1, bytes memory p2) internal override returns (SLOW) {
         return SLOW(address(new SLOWBuild(SSTORE2.write(p1), SSTORE2.write(p2))));
     }

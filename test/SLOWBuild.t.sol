@@ -17,7 +17,7 @@ import {Test} from "../lib/forge-std/src/Test.sol";
 /// @dev No fork. `SLOW`'s constructor only writes two immutables and
 ///      CREATE2s its gate, so these run offline — which matters for a suite
 ///      meant to gate a deployment to three chains.
-contract SLOWNextTest is Test {
+contract SLOWBuildTest is Test {
     SLOW internal slow;
     MockPermitToken internal token;
 
