@@ -1757,7 +1757,7 @@ const S = {
   accountIsContract:null,
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
-  resolved:null, resolvedName:null, resolveSeq:0,
+  resolved:null, resolvedName:null, resolveSeq:0, resolving:false, sending:false,
   autoClaim:false, tip:0n, gate:undefined,
   view:'home', step:0, tab:'outbound',
   out:[], inb:[], loading:false, hasGuardian:false,
@@ -3061,20 +3061,14 @@ function render(){
     o.setAttribute('aria-pressed',String(!!on));
   });
   el.customTimeOpt.textContent = customDly?S.delayDisplay:'Custom';
-  // The disabled button names what it is waiting for. A greyed-out Send with
-  // no explanation is the most common way this form used to stall: the field
-  // that would unblock it is often the one off the bottom of the screen.
-  const gap = missing();
-  el.confirmBtn.disabled = !!gap;
-  el.footHint.textContent = gap;
-  if(gap) el.confirmBtn.replaceChildren(document.createTextNode('Send'));
+  paintFoot();
   el.timeHint.textContent = S.step<2 ? 'enter an amount first' : '';
   el.tabOut.setAttribute('aria-selected',String(S.tab==='outbound'));
   el.tabIn.setAttribute('aria-selected',String(S.tab==='inbound'));
 }
 function resetForm(){
   S.token=S.symbol=null; S.decimals=18; S.amount=S.delay=S.delayDisplay=null;
-  S.resolved=S.resolvedName=null; S.step=0; S.autoClaim=false; S.tip=0n; S.balance=null;
+  S.resolved=S.resolvedName=null; S.resolving=false; S.step=0; S.autoClaim=false; S.tip=0n; S.balance=null;
   el.recipientInput.value=''; setNote(el.ens,'');
   el.amountInput.value=''; setNote(el.amountNote,''); el.planNote.textContent='';
   el.dInput.value=el.hInput.value=el.mInput.value=el.sInput.value='';
@@ -3726,7 +3720,7 @@ async function resolveRecipient(input){
   const seq=++S.resolveSeq;
   const stale=()=>S.resolveSeq!==seq;
   setNote(el.ens,'Resolving…');
-  el.confirmBtn.disabled=true;
+  S.resolving=true; paintFoot();
   try {
     if(isAddr(input)){
       const key=input.toLowerCase();
@@ -3758,7 +3752,7 @@ async function resolveRecipient(input){
     if(!stale()) setNote(el.ens,'Could not reach a name resolver','err');
     return false;
   } finally {
-    if(!stale()) el.confirmBtn.disabled=false;
+    if(!stale()){ S.resolving=false; paintFoot(); }
   }
 }
 function updateSummary(){ renderReview(); paintPreview(); }
@@ -3850,14 +3844,32 @@ function ready(){
 /* What is still missing, in the order the eye meets the fields — To and Amount
    down the left, Asset and the timelock down the right. Empty means ready(). */
 function missing(){
+  if(S.resolving) return 'Looking up that name…';
   if(!S.resolved) return 'Enter who it goes to';
   if(!S.token || !S.symbol) return 'Pick an asset';
   if(!S.amount) return 'Enter an amount';
   if(!S.delay) return 'Choose how long it stays locked';
   return '';
 }
+/* The footer is the whole of the button's state: enabled or not, and why not.
+   It is painted from render() AND from renderReview(), because the two are not
+   always called together — a name resolving in the background calls the second
+   only, and a hint reading "enter who it goes to" above an enabled Send is
+   worse than no hint at all. Nothing else may set confirmBtn.disabled: a bare
+   `disabled=false` was invisible while it lived inside a hidden review and now
+   would offer an unfinished transfer. */
+function paintFoot(){
+  const gap = S.sending ? '' : missing();
+  el.confirmBtn.disabled = S.sending || !!gap;
+  // Ready but not connected: Send does two things, and a wallet chooser
+  // appearing where a signature was expected is the surprise worth spending
+  // one line to avoid.
+  el.footHint.textContent = gap || (!S.sending && !S.account ? 'Connects a wallet first' : '');
+  if(gap) el.confirmBtn.replaceChildren(document.createTextNode('Send'));
+}
 function renderReview(){
   const show = ready();
+  paintFoot();
   el.fReview.hidden = !show;
   if(!show) return;
 
@@ -3998,7 +4010,7 @@ async function handleConfirm(){
   if(!ready()) return;
   if(!S.account && !await connect(true)) return;
   if(!await ensureChain()) return;
-  el.confirmBtn.disabled=true;
+  S.sending=true; paintFoot();
   try {
     if(S.slowDeployed[S.chain]===false) throw new Error(`SLOW is not deployed on ${cfg().name}`);
     const meta = S.token===ZERO?{decimals:18}:await tokenMeta(S.token);
@@ -4013,7 +4025,7 @@ async function handleConfirm(){
     loadTransfers(true);
   } catch(e){
     txHide();
-    fail(e); } finally { el.confirmBtn.disabled=false; }
+    fail(e); } finally { S.sending=false; paintFoot(); }
 }
 
 /* ══════════════════════════════════════════════════════════════════
