@@ -33,9 +33,19 @@ contract ArrivalGasTest is Test {
     SLOW internal slow;
     SlowArrival internal arrival;
 
-    /// @dev What the page buys today, from `BRIDGES` in dapp/page.html.
-    uint256 internal constant BASE_BUDGET = 400_000;
-    uint256 internal constant ROBINHOOD_BUDGET = 600_000;
+    /// @dev What the page buys today, from `BRIDGES` in dapp/page.html, and
+    ///      held in step with it by test/gasbudget.test.mjs — Solidity cannot
+    ///      read the page, so the two would otherwise drift in the one direction
+    ///      that matters.
+    ///
+    ///      Two numbers per chain, because the recipient decides the cost: the
+    ///      hook `depositTo` calls on a contract recipient spends from the same
+    ///      budget, so the page probes for code on the destination and buys the
+    ///      larger limit when it finds any.
+    uint256 internal constant BASE_BUDGET = 600_000;
+    uint256 internal constant ROBINHOOD_BUDGET = 800_000;
+    uint256 internal constant BASE_BUDGET_CONTRACT = 2_500_000;
+    uint256 internal constant ROBINHOOD_BUDGET_CONTRACT = 2_500_000;
 
     uint96 internal constant DELAY = 1 days;
     uint256 internal constant AMOUNT = 1 ether;
@@ -147,7 +157,7 @@ contract ArrivalGasTest is Test {
         s1.depositTo{value: AMOUNT}(address(0), address(r), 0, DELAY, "");
         uint256 direct = g - gasleft();
         console2.log("direct, 8-write recipient   ", direct);
-        assertGt(direct, BASE_BUDGET, "the shipped route already overruns 400k");
+        assertGt(direct, 400_000, "the route as shipped, at its old 400k, already overran");
     }
 
     /// @notice THE ONE INPUT THIS BUDGET CANNOT BOUND, and it does not fit.
@@ -164,24 +174,34 @@ contract ArrivalGasTest is Test {
     ///         defect in buying a FIXED 400,000 for a call whose cost the
     ///         recipient controls. The numbers below are what a fix has to be
     ///         sized against.
-    function test_aContractRecipientCanExceedTheBudget() public {
+    function test_aContractRecipientNoLongerExceedsTheBudget() public {
         HungryRecipient greedy = new HungryRecipient(20);
         uint256 used = _measure(address(0xA11CE), address(greedy), address(0), 0);
         console2.log("contract recipient, 20 writes", used);
-        console2.log("  budget (Base)              ", BASE_BUDGET);
-        assertGt(used, BASE_BUDGET, "twenty writes does NOT fit what Base buys");
-        assertGt(used, ROBINHOOD_BUDGET, "nor what Robinhood buys");
+        console2.log("  ordinary budget (Base)     ", BASE_BUDGET);
+        console2.log("  contract budget (Base)     ", BASE_BUDGET_CONTRACT);
+
+        // The point of the fix: this used to overrun what the page bought and
+        // lose the send. It still overruns the ORDINARY budget, which is why
+        // the page must probe rather than pick one number for both.
+        assertGt(used, BASE_BUDGET, "still past what an ordinary recipient needs");
+        assertLt(used, BASE_BUDGET_CONTRACT, "and inside what a contract recipient is given");
+        assertLt(used, ROBINHOOD_BUDGET_CONTRACT);
     }
 
-    /// @notice Where the cliff is, so the page has a number to size against
-    ///         rather than a warning. Each cold write costs ~22k, and the
-    ///         arrival itself takes ~285k of the 400k, so the recipient has
-    ///         roughly five writes of room on Base before the send is lost.
+    /// @notice Where the cliff is NOW, so the budgets are a measurement rather
+    ///         than a guess.
+    /// @dev Each cold write costs about 22,300 and the arrival itself takes
+    ///      about 285,000, so the ordinary budget covers roughly fourteen writes
+    ///      and the contract budget roughly a hundred. The old 400,000 covered
+    ///      five — which is what made an unremarkable recipient hook lose a
+    ///      bridged send.
     function test_whereTheContractRecipientCliffIs() public {
         uint256 last;
-        for (uint256 n = 0; n <= 8; n += 2) {
+        for (uint256 n = 0; n <= 20; n += 5) {
             SLOW s2 = new SLOW(address(0), address(0));
-            SlowArrival a2 = new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
+            SlowArrival a2 =
+                new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
             HungryRecipient r = new HungryRecipient(n);
 
             address caller = address(uint160(0xA11CE + n));
@@ -193,17 +213,17 @@ contract ArrivalGasTest is Test {
             );
             uint256 used = before - gasleft();
             assertTrue(ok);
-            console2.log("writes / gas / fits Base:", n, used);
-            console2.log("   fits:", used < BASE_BUDGET);
+            console2.log("writes / gas:", n, used);
+            console2.log("   fits ordinary / fits contract:",
+                used < BASE_BUDGET, used < BASE_BUDGET_CONTRACT);
             last = used;
         }
-        // Eight writes is already past it, which is a very ordinary hook.
-        assertGt(last, BASE_BUDGET, "eight writes overruns Base's 400k");
+        // Twenty writes is past the ordinary budget and comfortably inside the
+        // contract one. Both halves matter: the first is why the page probes,
+        // the second is why the probe is worth acting on.
+        assertGt(last, BASE_BUDGET, "twenty writes overruns the ordinary budget");
+        assertLt(last, BASE_BUDGET_CONTRACT, "and fits the contract budget with room");
     }
-
-    /// @notice The failure branch must also fit, because it is the one that runs
-    ///         when something is wrong — and on OP Stack a revert there destroys
-    ///         the withdrawal outright.
     function test_gasOnTheRescuePath() public {
         // `to == address(0)` makes the inner deposit revert, so this takes the
         // rescue branch and still has to complete.

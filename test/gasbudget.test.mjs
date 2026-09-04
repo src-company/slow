@@ -29,6 +29,16 @@ const pageBudgets = () => {
   return out;
 };
 
+/** And the larger limit bought when the recipient turns out to have code. */
+const pageContractBudgets = () => {
+  const bridges = /const BRIDGES = \{([\s\S]*?)\n\};/.exec(page)?.[1];
+  const out = {};
+  for (const m of bridges.matchAll(/(\d+):\s*\{[\s\S]*?l2GasLimitContract:\s*([\d_]+)n/g)) {
+    out[Number(m[1])] = Number(m[2].replace(/_/g, ''));
+  }
+  return out;
+};
+
 const solConst = (name) => {
   const m = new RegExp(`constant ${name} = ([\\d_]+)`).exec(gasTest);
   assert.ok(m, `${name} not found in ArrivalGas.t.sol`);
@@ -47,4 +57,19 @@ test('every bridged destination has a budget the gas test knows about', () => {
   const budgets = pageBudgets();
   assert.deepEqual(Object.keys(budgets).map(Number).sort(), [4663, 8453],
     'a new bridge destination needs a budget in ArrivalGas.t.sol too');
+});
+
+test('the contract-recipient budgets are in step too', () => {
+  const big = pageContractBudgets();
+  assert.equal(big[8453], solConst('BASE_BUDGET_CONTRACT'));
+  assert.equal(big[4663], solConst('ROBINHOOD_BUDGET_CONTRACT'));
+});
+
+test('a contract recipient is always given more than an ordinary one', () => {
+  const ord = pageBudgets();
+  const big = pageContractBudgets();
+  for (const id of Object.keys(ord)) {
+    assert.ok(big[id] > ord[id],
+      `chain ${id}: the contract budget must exceed the ordinary one, or the probe is pointless`);
+  }
 });

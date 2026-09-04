@@ -144,51 +144,50 @@ Two paths no test can reach:
   marker byte, which a forked EVM executes literally and reverts on. The
   outbound Arbitrum leg is only ever exercised stubbed.
 
-## Destination gas — the number that can lose funds
+## Destination gas — sized on the recipient, not fixed
 
-The gas for a bridged arrival is bought on L1 at the moment of sending and
-cannot be topped up. The page buys a fixed **400,000 for Base** and **600,000
-for Robinhood**. Measured (`test/ArrivalGas.t.sol`):
+The gas for a bridged arrival is bought on L1 when the transfer is sent and
+cannot be topped up. On OP Stack a message that runs out at the destination is
+consumed and never replayed, so the ETH is gone; an Arbitrum retryable survives
+seven days but needs someone to notice.
 
-| path | gas | against |
+A fixed limit could not be right, because **the recipient decides the cost**:
+`depositTo` calls `onERC1155Received` on a contract recipient and that hook
+spends from the same budget. Measured in `test/ArrivalGas.t.sol`:
+
+| recipient | gas |
+| --- | --- |
+| ordinary account | 281,495 |
+| contract, 5 cold writes | 392,790 |
+| contract, 10 | 504,085 |
+| contract, 15 | 615,380 |
+| contract, 20 | 726,663 |
+
+At the old fixed 400,000 a send to a contract past about **five** storage writes
+was lost — an entirely unremarkable hook. That was true before `SlowArrival`
+existed; the wrapper's 35,705 moved the threshold from about seven to five
+rather than creating it.
+
+So the page probes the destination chain for code at the recipient and buys
+accordingly:
+
+| chain | ordinary | contract |
 | --- | --- | --- |
-| OP Stack deposit, ordinary recipient | 284,939 | 400,000 ✓ |
-| Arbitrum retryable, ordinary recipient | 285,037 | 600,000 ✓ |
-| with a bounty | 307,266 | 400,000 ✓ |
-| rescue branch (inner deposit failed) | 92,058 | ✓ |
-| `SlowArrival` overhead over a direct deposit | 35,705 | — |
+| Base | 600,000 | 2,500,000 |
+| Robinhood | 800,000 | 2,500,000 |
 
-Comfortable for an ordinary recipient. **Not bounded for a contract one.**
-`depositTo` calls `onERC1155Received` on the recipient, and that hook spends from
-the same budget:
+which covers roughly fourteen cold writes on the ordinary budget and about a
+hundred on the contract one.
 
-| cold writes in the recipient's hook | gas | fits Base's 400k |
-| --- | --- | --- |
-| 0 | 281,392 | yes |
-| 4 | 370,428 | yes |
-| 6 | 414,946 | **no** |
-| 20 | 731,265 | **no** |
+**An unknown answer buys more, never less.** A failed probe means an RPC was
+unreachable, which says nothing about the recipient. Buying too much costs some
+L1 gas and, on Arbitrum, refunds the excess on the far side; buying too little
+costs the whole transfer.
 
-So a bridged send to a contract whose hook does more than about **five cold
-storage writes** overruns what was bought. On OP Stack the deposit is consumed
-before the call and is not replayable, so that ETH is gone. An Arbitrum retryable
-stays redeemable for seven days, which is survivable but needs someone to notice.
-
-**This is older than `SlowArrival`.** The shipped route already bought a fixed
-400,000 for a `depositTo` that calls an arbitrary hook, and already overran it at
-around seven writes — `test_theCliffExistsWithoutTheWrapperToo` pins that. The
-wrapper's 35,705 moves the threshold from about seven to about five. It makes a
-pre-existing hazard modestly worse rather than creating one.
-
-Worth fixing before the route carries value, in `dapp/page.html`:
-
-- raise the fixed limits, and/or
-- size them on the recipient: the page can `eth_getCode` the recipient on the
-  destination chain and buy far more when it has any. An ordinary account needs
-  nothing like 400,000; a contract can need several million.
-
-The L1 cost of a larger `gasLimit` should be measured before picking a number —
-OP Stack meters deposits, so it is not free.
+The Solidity constants and the page's `BRIDGES` table are held in step by
+`test/gasbudget.test.mjs` — Solidity cannot read the page, and the drift that
+matters is exactly the one where the budgets are raised and the gas test carries
+on measuring against the old number.
 
 ## Known blockers
 

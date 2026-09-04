@@ -979,13 +979,15 @@ const BRIDGES = {
     // OptimismPortal proxy; impl 0x66d94ee8f529b683ed6013729784e8bb44697a64
     entry:'0x49048044D57e1C92A77f79988d21Fa8fAF74E97e',
     // L2 gas the deposit may consume, purchased through the L1 transaction.
-    l2GasLimit:400_000n,
+    l2GasLimit:600_000n,
+    l2GasLimitContract:2_500_000n,
   },
   4663: {
     kind:'arb', from:1,
     // Delayed Inbox proxy; impl 0x8d3b93dffff4842e7b61fb553b383db2c6bc91c6
     entry:'0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D',
-    l2GasLimit:600_000n,
+    l2GasLimit:800_000n,
+    l2GasLimitContract:2_500_000n,
     // Arbitrum's NodeInterface, a precompile: reports 0 bytes of code and is
     // callable anyway, which is why presence is probed by calling it.
     nodeInterface:'0x00000000000000000000000000000000000000C8',
@@ -1120,18 +1122,64 @@ function innerDepositCalldata(recipient, delay, destChain){
 const bridgeVia = destChain =>
   (SLOW_ARRIVAL && S.arrivalDeployed[destChain] === true) ? SLOW_ARRIVAL : null;
 const bridgeTarget = destChain => bridgeVia(destChain) || SLOW;
+
+/* ══════════════════════════════════════════════════════════════════
+   How much destination gas to buy, and why a fixed number was wrong
+   ══════════════════════════════════════════════════════════════════
+   The gas is bought on L1 at the moment of sending and cannot be topped
+   up. If the arrival costs more than was bought, an OP Stack deposit
+   runs out of gas at the destination and the ETH is GONE — the message
+   is consumed before the call and is never replayable. Arbitrum is
+   kinder: the retryable stays redeemable for seven days, but somebody
+   has to notice.
+
+   A fixed 400,000 was not enough, and measurably so. `depositTo` calls
+   `onERC1155Received` on the recipient, and that hook spends from the
+   same budget. Measured in test/ArrivalGas.t.sol:
+
+     ordinary account          285k    fits
+     contract, 4 cold writes   370k    fits
+     contract, 6 cold writes   415k    DID NOT
+     contract, 20 cold writes  731k    DID NOT
+
+   So a send to a contract past about five storage writes was lost. That
+   was true before SlowArrival existed — the wrapper moved the threshold
+   from about seven writes to five, it did not create it.
+
+   The recipient decides the cost, so the recipient decides the budget:
+   a probe for code on the DESTINATION chain, and a much larger limit
+   when there is any.
+
+   AN UNKNOWN ANSWER BUYS MORE, NEVER LESS. A failed probe means an RPC
+   was unreachable, which says nothing about the recipient. Buying too
+   much costs the sender some L1 gas and refunds the rest on Arbitrum;
+   buying too little costs them everything.
+*/
+async function destGasLimit(destChain, recipient){
+  const b = BRIDGES[destChain];
+  const big = b.l2GasLimitContract || b.l2GasLimit;
+  try {
+    const code = await rpc('eth_getCode', [recipient, 'latest'], destChain);
+    if(typeof code !== 'string') return big;          // unreadable: buy more
+    return code.length > 4 ? big : b.l2GasLimit;
+  } catch(e){
+    return big;                                       // unreachable: buy more
+  }
+}
+
 async function bridgePlan(destChain, recipient, delay, weiAmount){
   const b = BRIDGES[destChain];
   if(!b) throw new Error(`No bridge route to ${cfg(destChain).name}`);
   const inner = innerDepositCalldata(recipient, delay, destChain);
   const target = bridgeTarget(destChain);
+  const l2Gas = await destGasLimit(destChain, recipient);
 
   if(b.kind==='op'){
     // depositTransaction(to, value, gasLimit, isCreation, data); msg.value funds it.
     return {
       to:b.entry,
       data: cd(SEL.depositTransaction, ['address','uint256','uint256','bool','bytes'],
-        [target, weiAmount, b.l2GasLimit, false, inner]),
+        [target, weiAmount, l2Gas, false, inner]),
       value: weiAmount,
       parts: [['Bridged', weiAmount]],
     };
@@ -1156,7 +1204,7 @@ async function bridgePlan(destChain, recipient, delay, weiAmount){
   catch(e){ maxFee = cfg(destChain).fallbackGasPrice * 2n; }
   if(maxFee < cfg(destChain).minGasPrice) maxFee = cfg(destChain).minGasPrice;
 
-  const gasLimit = b.l2GasLimit;
+  const gasLimit = l2Gas;
   const prepaid = gasLimit * maxFee;
   return {
     to:b.entry,

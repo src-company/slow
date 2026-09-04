@@ -38,10 +38,10 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///                            shown the accounts it guards instead of being
 ///                            asked to type them in.
 ///
-/// @dev SIZE. 24,006 bytes of runtime against EIP-170's 24,576 — 570 to spare,
+/// @dev SIZE. 24,282 bytes of runtime against EIP-170's 24,576 — 294 to spare,
 ///      up from 21,648. The DAI-style and Permit2 entrypoints were already
 ///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
-///      spent: anything added from here has to come out of those 570 bytes, or
+///      spent: anything added from here has to come out of those 294 bytes, or
 ///      out of something this contract currently does. Re-measure with
 ///      `forge build --sizes` after any change here or in the extensions — the
 ///      number above is a measurement, and a stale one reads as headroom that
@@ -358,7 +358,9 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     // Both array getters are unbounded and grow with set size — `_inboundTransfers`
     // can be expanded by anyone via dust deposits. On-chain consumers that iterate
     // these getters can OOG; use `inboundTransferCount` + `inboundTransferAt(i)`
-    // (or the outbound equivalents) to paginate and bound gas.
+    // (or the outbound equivalents) to paginate and bound gas. A reader whose
+    // inbound set has been stuffed clears it with `forgetInbound`; a reader who
+    // has not can still be shown a stuffed one, so paginate rather than assume.
 
     function getOutboundTransfers(address user) public view returns (uint256[] memory) {
         return _outboundTransfers[user].values();
@@ -382,6 +384,51 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
 
     function inboundTransferAt(address user, uint256 index) public view returns (uint256) {
         return _inboundTransfers[user].at(index);
+    }
+
+    /// @notice Drop `transferId` from your own inbound index.
+    ///
+    /// @dev THE INDEX IS A CONVENIENCE, NOT THE LEDGER, and until this existed
+    ///      it was the one part of an account's state a stranger could write to
+    ///      and the account could not. A dust deposit adds a row to
+    ///      `_inboundTransfers[to]`, and nothing removes it before
+    ///      `pt.timestamp + delay` — a delay the SENDER chooses, up to
+    ///      `_MAX_DELAY`. Measured, the array getter costs ~2,380 gas a row, so
+    ///      roughly 21,000 rows put `getInboundTransfers` past a 50M `eth_call`
+    ///      and the account can no longer be shown its own inbound transfers at
+    ///      all. The hundred-year ceiling does not help: it is not meaningfully
+    ///      shorter than forever for the person holding the row.
+    ///
+    ///      This removes the row and NOTHING ELSE. `pendingTransfers` is
+    ///      untouched, so `unlock` and `claim` still settle it by id, the
+    ///      sender's outbound row and their `reverse` and `clawback` are
+    ///      unaffected, and no value moves. Forgetting a transfer you did want
+    ///      costs you the listing, not the transfer — settle it by id, or let
+    ///      the sender clawback after the grace.
+    ///
+    ///      IT TAKES NO EXTERNAL CALL, deliberately. Every design that hands the
+    ///      dust back to the sender — mint, safeTransfer, safeTransferETH —
+    ///      routes through code the sender controls, and a sender who reverts on
+    ///      receipt would keep the row pinned exactly as before. A griefer must
+    ///      not be able to refuse the cleanup. That is also why this is the
+    ///      caller's OWN set and takes no `user` argument: there is no authority
+    ///      to check, so there is no authority to get wrong.
+    ///
+    ///      Batch with `multicall`, which is non-payable and needs none here.
+    ///
+    ///      NO EVENT, and it is the margin that decided it. Every other state
+    ///      change an account can cause here emits one, and consistency says
+    ///      this should too — but a guarded `InboundForgotten` costs 356 bytes
+    ///      against 276 for the bare function, 80 of a margin that is 570 and
+    ///      has already been bought twice over (the DAI and Permit2 entrypoints
+    ///      went to pay for it). What the event would buy is a log-following
+    ///      indexer staying in sync, and the note above already tells indexers
+    ///      to snapshot the getters rather than replay logs, because
+    ///      `EnumerableSetLib` reorders on remove and a replay cannot see that
+    ///      either. Add it if the margin ever stops being the binding
+    ///      constraint; it is one line and the number above is what it costs.
+    function forgetInbound(uint256 transferId) public {
+        _inboundTransfers[msg.sender].remove(transferId);
     }
 
     // GUARDIAN AUTH
