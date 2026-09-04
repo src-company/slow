@@ -50,7 +50,8 @@ globalThis.document = {
   body: stubEl(), hidden: false, activeElement: null,
   querySelector: () => null,
   querySelectorAll: (sel) => (sel === '[id]' ? nodes : []),
-  createElement: stubEl, addEventListener: noop,
+  createElement: stubEl,
+  createTextNode: (t) => ({textContent: String(t), nodeType: 3}), addEventListener: noop,
 };
 globalThis.window = globalThis;
 globalThis.addEventListener = noop;

@@ -107,6 +107,11 @@ body.v-home .home{display:flex}
   flex:1 1 auto;min-height:0;margin:0 auto;padding-top:4px;
 }
 body.v-send .panel,body.v-take .panel{display:flex}
+/* The send panel hugs its form when the form fits and only fills — and scrolls
+   inside itself — when it does not. Without this the footer is nailed to the
+   bottom of the viewport with half a screen of nothing above it on an empty
+   desktop form. Take and Guard still fill: a list wants the height. */
+body.v-send .panel{flex:0 1 auto}
 body.v-take .panel{max-width:640px}
 .seg{display:flex;border:1px solid var(--bd);flex:0 0 auto;margin-bottom:22px}
 .seg button{
@@ -119,7 +124,7 @@ body.v-take .panel{max-width:640px}
 .seg button[aria-selected=true]{background:var(--fg);color:var(--bg)}
 
 /* ── send flow ───────────────────────────────────────────── */
-.sendPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0}
+.sendPane{display:none;flex-direction:column;gap:20px;overflow-y:auto;min-height:0;flex:1 1 auto}
 .col{display:contents}
 #colA > .field:nth-child(1){order:1}  /* To          */
 #colB > .field:nth-child(1){order:2}  /* Asset       */
@@ -137,7 +142,8 @@ body.v-send .sendPane{display:flex}
    stayed tabbable and typeable, so the keyboard could fill a field the mouse
    could not reach. `inert` removes it from focus and the a11y tree too, and is
    set from JS alongside the class. */
-.field.locked{opacity:.55;pointer-events:none}
+.field.locked{pointer-events:none}
+.field.locked > :not(.flabel){opacity:.55;transition:opacity var(--t)}
 .field.locked .opt:disabled,.field.locked .input:disabled,.field.locked .crypto:disabled{opacity:1}
 .flabel{
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;
@@ -219,6 +225,16 @@ body.light .spinner.sm{border-color:rgba(255,255,255,.3);border-top-color:var(--
 @media (hover:hover){.link:hover:not(:disabled){color:var(--fg);border-color:var(--fg)}}
 .link:disabled{background:var(--bg2);color:var(--dim);border-color:var(--bd);border-style:solid;cursor:not-allowed}
 .link[aria-pressed=true]{background:var(--fg);color:var(--bg);border:1px solid var(--fg);border-style:solid;font-weight:700}
+
+/* Send sat at the end of a form that is 1300px long on a phone and 730px on a
+   laptop, so the one act the page exists for was always a scroll away and, at
+   1440x780, clipped off the bottom entirely. It is a sibling of the scrolling
+   pane now, not a row inside it: the form scrolls under a footer that does not.
+   It is present from the first paint — disabled, with the next step named
+   beneath it — so the goal is visible before the first keystroke. */
+.sendFoot{display:none;flex:0 0 auto;flex-direction:column;gap:9px;padding-top:13px;border-top:1px solid var(--bd)}
+body.v-send .sendFoot{display:flex}
+.foothint{font-size:11.5px;color:var(--dim);text-align:center;min-height:16px;line-height:1.35}
 
 /* ── take: one row per transfer ──────────────────────────── */
 .takePane{display:none;flex-direction:column;gap:14px;flex:1 1 auto;min-height:0}
@@ -323,12 +339,10 @@ body.light .modal{background:rgba(0,0,0,.4)}
   cursor:pointer;width:100%;transition:opacity var(--t);
 }
 .cs{text-transform:none}
-/* Send is the act and takes the width; the other two hand the transfer to
-   something else and share the row beneath. Three stacked full-width buttons
-   was 160px of chrome for one decision, and it put Send below the fold. */
-.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.acts #confirmBtn{grid-column:1/-1}
-.acts .btn.alt{font-size:11px;padding:0 10px}
+/* Send is the act and the only thing in the footer; the other two hand the
+   transfer to something else and stay with the review that describes them. */
+.alts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.alts .btn{font-size:11px;padding:0 10px}
 @media (hover:hover){.btn:hover:not(:disabled){opacity:.82}}
 .btn:disabled{background:var(--bg2);color:var(--dim);border-color:var(--bd);cursor:not-allowed}
 .btn.alt{background:transparent;color:var(--fg);border-color:var(--bd)}
@@ -419,6 +433,8 @@ body.light .modal{background:rgba(0,0,0,.4)}
      is no longer adjacency on screen, so redraw them inside each column. */
   .sendPane > .field + .field{padding-top:0;border-top:0}
   .col > .field + .field{padding-top:20px;border-top:1px solid var(--rule)}
+  /* Under the left column, the same width as the switch above it. */
+  body.v-send .sendFoot{width:422px;align-self:start}
 }
 .spinner{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--fg);animation:sp .8s linear infinite}
 .loading-wrap{display:flex;align-items:center;justify-content:center}
@@ -594,8 +610,7 @@ body{overscroll-behavior:none}
         <label class="check" for="autoClaimChk"><input type="checkbox" id="autoClaimChk"> Pay a keeper to auto-claim it</label>
         <p class="note" id="tipPre"></p>
         <p class="note" id="planNote" aria-live="polite"></p>
-        <div class="acts">
-          <button class="btn" id="confirmBtn">Send</button>
+        <div class="alts">
           <button class="btn alt" id="shareBtn">Copy request link</button>
           <button class="btn alt" id="recipeBtn">Copy the call</button>
         </div>
@@ -615,7 +630,7 @@ body{overscroll-behavior:none}
       </div>
 
       <div class="field locked" id="fTime">
-        <span class="flabel">Unlocks after</span>
+        <span class="flabel">Unlocks after <em id="timeHint"></em></span>
         <div class="row" id="timeRow" role="group" aria-label="Timelock">
           <button class="opt" data-time="600">10 MIN</button>
           <button class="opt" data-time="3600">1 HR</button>
@@ -631,6 +646,11 @@ body{overscroll-behavior:none}
       </div>
 
 
+    </div>
+
+    <div class="sendFoot">
+      <p class="foothint" id="footHint" aria-live="polite"></p>
+      <button class="btn" id="confirmBtn">Send</button>
     </div>
 
     <div class="guardPane">
@@ -1300,7 +1320,17 @@ function encBytesArr(arr){
   for(const b of arr){h+=word(c); const e=encBytes(b); t+=e; c+=e.length/2;}
   return word(arr.length)+h+t;
 }
-const encDyn = (t,v) => t==='bytes[]'?encBytesArr(v):encBytes(v);
+/* Only the dynamic types this page actually uses. Anything else threw nothing
+   and encoded garbage: `encode(['string'], ['Test Token'])` handed the literal
+   text to encBytes, which read it as hex and produced bytes no chain would
+   accept. Every call site here passes a supported type, so nothing shipped
+   wrong — but silently emitting bad calldata is the wrong failure mode for a
+   function whose whole job is calldata. */
+const encDyn = (t,v) => {
+  if(t==='bytes[]') return encBytesArr(v);
+  if(t==='bytes') return encBytes(v);
+  throw new Error(`encode: unsupported dynamic type ${t}`);
+};
 function encode(types,values){
   const heads=[],tails=[];
   for(let i=0;i<types.length;i++){
@@ -2958,7 +2988,8 @@ function paintPresets(){
       b.title=over?`More than your ${S.symbol} balance`:'';
     }
   } else {
-    el.balHint.textContent = S.token&&!S.account ? 'connect to see balance' : '';
+    el.balHint.textContent = !S.token ? 'pick an asset first'
+      : !S.account ? 'connect to see balance' : '';
     for(const b of btns){ b.disabled=false; b.title=''; }
   }
   el.maxBtn.disabled = S.balance===null;
@@ -3030,7 +3061,14 @@ function render(){
     o.setAttribute('aria-pressed',String(!!on));
   });
   el.customTimeOpt.textContent = customDly?S.delayDisplay:'Custom';
-  el.confirmBtn.disabled = !ready();
+  // The disabled button names what it is waiting for. A greyed-out Send with
+  // no explanation is the most common way this form used to stall: the field
+  // that would unblock it is often the one off the bottom of the screen.
+  const gap = missing();
+  el.confirmBtn.disabled = !!gap;
+  el.footHint.textContent = gap;
+  if(gap) el.confirmBtn.replaceChildren(document.createTextNode('Send'));
+  el.timeHint.textContent = S.step<2 ? 'enter an amount first' : '';
   el.tabOut.setAttribute('aria-selected',String(S.tab==='outbound'));
   el.tabIn.setAttribute('aria-selected',String(S.tab==='inbound'));
 }
@@ -3809,6 +3847,15 @@ function paintPreview(){
 function ready(){
   return !!(S.resolved && S.token && S.symbol && S.amount && S.delay);
 }
+/* What is still missing, in the order the eye meets the fields — To and Amount
+   down the left, Asset and the timelock down the right. Empty means ready(). */
+function missing(){
+  if(!S.resolved) return 'Enter who it goes to';
+  if(!S.token || !S.symbol) return 'Pick an asset';
+  if(!S.amount) return 'Enter an amount';
+  if(!S.delay) return 'Choose how long it stays locked';
+  return '';
+}
 function renderReview(){
   const show = ready();
   el.fReview.hidden = !show;
@@ -4273,6 +4320,9 @@ el.recipientInput.addEventListener('input',()=>{
 el.recipientInput.addEventListener('keydown',e=>{
   if(e.key!=='Enter') return;
   if(ready()) el.confirmBtn.click(); else el.amountInput.focus();
+});
+el.amountInput.addEventListener('keydown',e=>{
+  if(e.key==='Enter' && ready()) el.confirmBtn.click();
 });
 el.confirmBtn.onclick=handleConfirm;
 el.detailClose.onclick=()=>hideModal(el.detailModal);

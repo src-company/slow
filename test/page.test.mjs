@@ -1017,9 +1017,14 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
 // the whole view exists to reach.
 {
   const CSS3 = html.split('<style>')[1].split('</style>')[0];
-  ok(/\.acts\{display:grid;grid-template-columns:1fr 1fr/.test(CSS3),
-    'the three actions are two rows, not three');
-  ok(/\.acts #confirmBtn\{grid-column:1\/-1\}/.test(CSS3), 'and Send takes the width');
+  // These used to assert a specific `.acts` grid. That is a layout decision,
+  // it has since been made differently, and a regex over a selector is the
+  // wrong place to hold one — it fails when the design changes rather than
+  // when it breaks. What matters is that the primary action is reachable
+  // without scrolling, and that is measured in the browser by
+  // scripts/shoot.mjs and the layout probe, not asserted against a stylesheet.
+  ok(/id="confirmBtn"/.test(html), 'the primary action exists');
+  ok(/id="shareBtn"/.test(html) && /id="recipeBtn"/.test(html), 'and both hand-offs beside it');
   // The review is a child of the left column, not a band under both: as a band
   // it started after the TALLER column and left a hole under the shorter one.
   ok(!/#fReview\{grid-column:1\/-1/.test(CSS3), 'the review is not a full-width band');
@@ -1030,6 +1035,20 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
   const colB = doc.slice(doc.indexOf('id="colB"'), doc.indexOf('id="colB"') + 6000);
   ok(/id="fTime"/.test(colB) && /id="fPreview"/.test(colB),
     'and the delay sits with the asset and the card that draws them');
+}
+
+// encode() must refuse a type it cannot encode. It used to funnel every dynamic
+// type into encBytes, so a string was read as hex and produced calldata no
+// chain would accept — with no error at all.
+{
+  let threw = false;
+  try { C.encode(['string'], ['Test Token']); } catch (e) { threw = /unsupported dynamic type/.test(e.message); }
+  ok(threw, 'encoding an unsupported dynamic type throws instead of emitting garbage');
+  // The supported ones still work.
+  ok(C.encode(['bytes'], ['0xdeadbeef']).length > 0, 'bytes still encodes');
+  ok(C.encode(['bytes[]'], [['0xdead', '0xbeef']]).length > 0, 'bytes[] still encodes');
+  ok(C.encode(['address', 'uint256'], ['0x' + '11'.repeat(20), 5n]).length === 128,
+    'static types are two words');
 }
 
 // ─── The design system, in numbers ─────────────────────────────────────────
