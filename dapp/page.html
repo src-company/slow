@@ -977,6 +977,37 @@ const bridgeTo = id => BRIDGES[id];
    shaped by whoever set it.
 */
 const BRIDGE_REGISTRY = null;   // set once deployed on mainnet
+
+/* ══════════════════════════════════════════════════════════════════
+   SlowArrival — why a bridged deposit does not land in SLOW directly
+   ══════════════════════════════════════════════════════════════════
+   `SLOW._finishDeposit` records `pendingTransfers[id].from = msg.sender`,
+   and that is the field `reverse` checks. Whoever the DESTINATION thinks
+   is calling therefore owns the right to take the money back — and on a
+   retryable that is nobody.
+
+   Nitro aliases the sender of every retryable, EOAs included. Established
+   from chain rather than from documentation: an L1 EOA calling
+   createRetryableTicket arrives on chain 4663 as its own address plus
+   0x1111…1111, an address with no key on either side. OP Stack aliases
+   only when msg.sender != tx.origin, which is why the Base route keeps
+   its reverse and the Robinhood one does not.
+
+   SlowArrival is the fix: it becomes the depositor, recovers who the
+   deposit was really for, and hands the reverse back to them. It is the
+   same contract at the same address on every chain, so this is one
+   address, not three.
+*/
+/* Derived, not guessed. CREATE3 takes its address from the deployer and the
+   salt alone, so this is known before the contract exists — the same premise
+   the page's own address rests on. Steward 0x1c0aa8cc…5a20, salt tail
+   0x5107a771, byte 20 clear so `block.chainid` stays out of the guard. Checked
+   free on chains 1, 8453 and 4663, and identical on all three.
+
+   Until it is deployed, `probeArrival` finds no code and every route that
+   needs it stays closed. The address being wrong is therefore a route that
+   never opens, not a route that sends somewhere else. */
+const SLOW_ARRIVAL = '0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918';
 const KIND_BY_ID = {1:'op', 2:'arb'};
 async function loadBridgeRoutes(){
   if(!BRIDGE_REGISTRY || S.routesLoaded) return;
@@ -1044,23 +1075,37 @@ function recipeText(r){
   ].filter(Boolean).join('\n');
 }
 
-function innerDepositCalldata(recipient, delay){
+function innerDepositCalldata(recipient, delay, destChain){
+  // Through SlowArrival where it exists, so the sender keeps the reverse on
+  // the far side. `originHint` is only ever believed when the caller sits at
+  // exactly its alias, which nobody can arrange for an address they do not
+  // already control — so passing it is free and refusing to is what costs.
+  if(bridgeVia(destChain)){
+    return cd(SEL.arrive, ['address','uint96','address','uint256'],
+      [recipient, BigInt(delay), S.account || ZERO, 0n]);
+  }
   // On arrival this executes with the bridged ETH as msg.value, so depositTo
   // takes amount == 0 exactly as it does for a local ETH deposit.
   return cd(SEL.depositTo, ['address','address','uint256','uint96','bytes'],
     [ZERO, recipient, 0n, BigInt(delay), '0x']);
 }
+/* The destination-side contract a bridged deposit should call: SlowArrival
+   when it is deployed there, SLOW itself otherwise. */
+const bridgeVia = destChain =>
+  (SLOW_ARRIVAL && S.arrivalDeployed[destChain] === true) ? SLOW_ARRIVAL : null;
+const bridgeTarget = destChain => bridgeVia(destChain) || SLOW;
 async function bridgePlan(destChain, recipient, delay, weiAmount){
   const b = BRIDGES[destChain];
   if(!b) throw new Error(`No bridge route to ${cfg(destChain).name}`);
-  const inner = innerDepositCalldata(recipient, delay);
+  const inner = innerDepositCalldata(recipient, delay, destChain);
+  const target = bridgeTarget(destChain);
 
   if(b.kind==='op'){
     // depositTransaction(to, value, gasLimit, isCreation, data); msg.value funds it.
     return {
       to:b.entry,
       data: cd(SEL.depositTransaction, ['address','uint256','uint256','bool','bytes'],
-        [SLOW, weiAmount, b.l2GasLimit, false, inner]),
+        [target, weiAmount, b.l2GasLimit, false, inner]),
       value: weiAmount,
       parts: [['Bridged', weiAmount]],
     };
@@ -1091,7 +1136,7 @@ async function bridgePlan(destChain, recipient, delay, weiAmount){
     to:b.entry,
     data: cd(SEL.createRetryableTicket,
       ['address','uint256','uint256','address','address','uint256','uint256','bytes'],
-      [SLOW, weiAmount, submission, S.account, S.account, gasLimit, maxFee, inner]),
+      [target, weiAmount, submission, S.account, S.account, gasLimit, maxFee, inner]),
     value: weiAmount + submission + prepaid,
     parts: [['Bridged', weiAmount], ['Ticket', submission], ['Destination gas', prepaid]],
   };
@@ -1104,7 +1149,14 @@ async function l1BaseFee(){
 }
 const canBridge = (fromChain, toChain) => {
   const b = BRIDGES[toChain];
-  return !!b && b.from === fromChain && S.slowDeployed[toChain] === true;
+  if(!b || b.from !== fromChain || S.slowDeployed[toChain] !== true) return false;
+  // An Arbitrum-kind destination aliases the sender of every retryable, so
+  // without SlowArrival the position that lands there can never be reversed
+  // or clawed back. This page calls a SLOW send reversible; offering one that
+  // is not would be the page lying about the only thing it promises. Base is
+  // unaffected — OP Stack passes an EOA through unaliased.
+  if(b.kind === 'arb' && S.arrivalDeployed[toChain] !== true) return false;
+  return true;
 };
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
 
@@ -1121,6 +1173,8 @@ const SEL = {
   guardianApproved:'0x8d4a1b58', isGuardianApprovalNeeded:'0xaade934f',
   predictWithdrawalId:'0x2d0eae84', predictTransferId:'0xd8a29acf',
   wardsOf:'0xb266b777',
+  // SlowArrival
+  arrive:'0x24eb6264',                       // arrive(address,uint96,address,uint256)
   // L1 bridges
   depositTransaction:'0xe9e05c42',           // OP Stack portal
   createRetryableTicket:'0x679b6ded',        // Arbitrum Orbit inbox
@@ -1662,7 +1716,7 @@ async function reverseAny(addr){
 const S = {
   chain:MAINNET, theme:'system',
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
-  slowDeployed:{}, slowMismatch:null, slowUnknown:null,
+  slowDeployed:{}, slowMismatch:null, slowUnknown:null, arrivalDeployed:{},
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
   resolved:null, resolvedName:null, resolveSeq:0,
@@ -1922,13 +1976,29 @@ async function probeDeployed(id){
     if(id===S.chain) S.slowUnknown = id;
   }
 }
+/* The same selector check, for the contract that keeps the reverse alive on
+   the far side. Probed per destination rather than assumed, because a route
+   whose arrival is missing is a route this page must not offer. */
+async function probeArrival(id){
+  if(!SLOW_ARRIVAL || S.arrivalDeployed[id]!==undefined) return;
+  try {
+    const code = await rpc('eth_getCode',[SLOW_ARRIVAL,'latest'],id);
+    S.arrivalDeployed[id] = typeof code==='string' && code.length>4
+      && code.includes(SEL.arrive.slice(2));
+  } catch(e){
+    delete S.arrivalDeployed[id];   // unknown, and the guards test for === true
+  }
+}
 // The active chain AND every chain the destination row can offer. Gating those
 // buttons on slowDeployed while probing only the active chain left them
 // disabled and captioned "awaiting deployment" no matter what was live.
 async function checkDeployed(){
   const id=S.chain;
   const also = CHAIN_IDS.filter(x => x!==id && BRIDGES[x]);
-  await Promise.all([probeDeployed(id), ...also.map(x=>probeDeployed(x).catch(()=>{}))]);
+  await Promise.all([
+    probeDeployed(id), ...also.map(x=>probeDeployed(x).catch(()=>{})),
+    probeArrival(id), ...also.map(x=>probeArrival(x).catch(()=>{})),
+  ]);
   if(S.chain===id){ paintDeployed(); buildDestRow(); }
 }
 function setAccount(a){

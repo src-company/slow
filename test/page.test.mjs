@@ -71,6 +71,7 @@ const EXPORTS = [
   'fmtWhen', 'ready', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
+  'SLOW_ARRIVAL', 'bridgeVia', 'bridgeTarget', 'canBridge',
   'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
   'renderNFT', 'formatDelay', 'fit', 'clipForDisplay',
   'RETRY_CODES', 'rpcErr', 'rpcPool',
@@ -735,6 +736,59 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
   eq(BigInt('0x' + inner.slice(10 + 128, 10 + 192)), 0n,
     'amount is zero — the value rides as msg.value on arrival');
   eq(BigInt('0x' + inner.slice(10 + 192, 10 + 256)), 86400n, 'the delay is carried');
+}
+
+// SlowArrival: the far-side contract that keeps a bridged deposit reversible.
+{
+  ok(/^0x[0-9a-fA-F]{40}$/.test(C.SLOW_ARRIVAL), 'the arrival address is derived, not blank');
+  ok(C.SLOW_ARRIVAL !== C.SLOW, 'and it is not SLOW itself');
+
+  const snapA = C.S.arrivalDeployed;
+  const snapAcc = C.S.account;
+
+  // Until the probe finds code, nothing routes through it. An address alone
+  // is not a deployment.
+  C.S.arrivalDeployed = {};
+  eq(C.bridgeVia(4663), null, 'no code found, so nothing is routed through it');
+  eq(C.bridgeTarget(4663), C.SLOW, 'and the bridge still targets SLOW itself');
+  eq(C.innerDepositCalldata('0x000000000000000000000000000000000000dEaD', 86400, 4663).slice(0, 10),
+    C.SEL.depositTo, 'the deposit goes direct');
+
+  // Once it is there, the bridge points at it and the inner call becomes
+  // `arrive`, which is what carries the origin across.
+  C.S.arrivalDeployed = {4663: true};
+  C.S.account = '0x00000000000000000000000000000000000A11ce';
+  eq(C.bridgeVia(4663), C.SLOW_ARRIVAL, 'with code there, the route goes through it');
+  eq(C.bridgeTarget(4663), C.SLOW_ARRIVAL, 'so the bridge targets the arrival');
+  const via = C.innerDepositCalldata('0x000000000000000000000000000000000000dEaD', 86400, 4663);
+  eq(via.slice(0, 10), C.SEL.arrive, 'the inner call is arrive');
+  eq('0x' + via.slice(10 + 24, 10 + 64), '0x000000000000000000000000000000000000dEaD'.toLowerCase(),
+    'the recipient is carried');
+  eq(BigInt('0x' + via.slice(10 + 64, 10 + 128)), 86400n, 'the delay is carried');
+  eq('0x' + via.slice(10 + 152, 10 + 192), C.S.account.toLowerCase(),
+    'and the origin hint names the sender, so the far side can give the reverse back');
+
+  // A route with no arrival is unaffected by one that has it.
+  eq(C.bridgeTarget(8453), C.SLOW, 'per destination, not global');
+
+  C.S.arrivalDeployed = snapA;
+  C.S.account = snapAcc;
+}
+
+// A route that cannot keep the page's promise is not offered. Robinhood
+// aliases the sender of every retryable, so without SlowArrival the position
+// that lands there can never be reversed.
+{
+  const snap = {chain: C.S.chain, deployed: C.S.slowDeployed, arrival: C.S.arrivalDeployed};
+  C.S.slowDeployed = {8453: true, 4663: true};
+  C.S.arrivalDeployed = {};
+  eq(C.canBridge(1, 8453), true, 'Base is offered: OP Stack passes an EOA through unaliased');
+  eq(C.canBridge(1, 4663), false, 'Robinhood is refused while the reverse would be dead');
+  C.S.arrivalDeployed = {4663: true};
+  eq(C.canBridge(1, 4663), true, 'and offered once SlowArrival is there to hold the reverse');
+  C.S.slowDeployed = {8453: true, 4663: false};
+  eq(C.canBridge(1, 4663), false, 'SLOW itself is still required');
+  Object.assign(C.S, {chain: snap.chain, slowDeployed: snap.deployed, arrivalDeployed: snap.arrival});
 }
 
 // The destination row is gated on all three conditions, not just one.

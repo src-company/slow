@@ -3,8 +3,8 @@
   "title": "SLOW — timelocked transfers with a reverse",
   "description": "The SLOW dapp as one self-contained HTML document, served from contract bytecode over ERC-8244, ERC-5219 and ERC-4804.",
   "page": "dapp/page.html",
-  "bytes": 228728,
-  "sha256": "385c1b922329730bd7fccc250e6e1cf9dc50f41ec325915dc6ec905c0c0d5495",
+  "bytes": 229326,
+  "sha256": "1b9101503091c3c7c5c65115d28027d77d270958ff1586023a60a1747fd9b837",
   "chunks": {
     "artifact": "SlowPage",
     "maxPayload": 24575,
@@ -40,5 +40,42 @@
     },
     "chunkContracts": [],
     "routes": []
+  },
+  "bridge": {
+    "note": "SlowArrival and SlowRelay, CREATE3 through the same steward and deployer as the page. Addresses derived before deployment and checked free on all three chains.",
+    "create3Deployer": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "steward": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20",
+    "chains": [
+      1,
+      8453,
+      4663
+    ],
+    "saltNonce": "0x5107a771",
+    "contracts": {
+      "SlowArrival": {
+        "address": "0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918",
+        "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a2000000000000000005107a771",
+        "source": "src/SlowArrival.sol",
+        "constructorArgs": [
+          "SLOW on that chain"
+        ]
+      },
+      "SlowRelay": {
+        "address": "0x4eF8416ceaC4Bf23fe1804Dcc95be7B37a61aca6",
+        "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a2000000000000000005107a772",
+        "source": "src/SlowRelay.sol",
+        "constructorArgs": [
+          "SLOW on that chain",
+          "message deliverers: both on chain 1, none on an L2"
+        ]
+      }
+    },
+    "verified": {
+      "sameAddressOnAllChains": true,
+      "targetFreeOnAllChains": true,
+      "method": "test/DeployBridgeFork.t.sol runs the live CreateX on forks of 1, 8453 and 4663 with DIFFERENT constructor arguments on each and asserts one address. scripts/address.mjs reproduces the derivation offline.",
+      "whyItMatters": "SlowRelay.receiveRelay accepts a proof only when the recovered origin equals address(this). Diverging addresses would stop settlement silently."
+    },
+    "script": "script/DeployBridge.s.sol"
   }
 }
