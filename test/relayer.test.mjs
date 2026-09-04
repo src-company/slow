@@ -81,7 +81,7 @@ test('refuses an intent already filled', () => {
   assert.match(r.reasons.join(' '), /already filled/);
 });
 
-test('keeps a margin before the deadline, because the cancel race is ours to lose', () => {
+test('keeps a margin before the deadline — prudence now, not protection', () => {
   // Ten minutes left, thirty-minute margin.
   const r = assess(INTENT, ctx({ now: INTENT.fillDeadline - 600 }));
   assert.equal(r.fill, false);

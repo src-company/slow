@@ -25,11 +25,24 @@
  *      thing tying the fill on one chain to the escrow on the other, and a
  *      mismatch means filling something nobody will ever pay for.
  *
- *   3. STOP WELL BEFORE THE DEADLINE. The sender may cancel the moment
- *      `fillDeadline` passes, and a proof of fill takes days to arrive. Filling
- *      near the deadline races a cancel the relayer cannot see coming. That
- *      race is DELIBERATELY the relayer's to lose — the sender's refund stays
- *      unconditional — so the only defence is a margin.
+ *   3. THE MARGIN IS PRUDENCE, NOT PROTECTION — and an earlier version of this
+ *      file had that backwards. It said the cancel race was "deliberately the
+ *      relayer's to lose" and that a margin was the defence. Both were wrong.
+ *
+ *      `cancel` used to gate on `provenBy`, the ARRIVAL of the news rather than
+ *      the fact of the fill, and the only writer of `provenBy` is a canonical
+ *      exit days away. So a sender could open a one-hour window, take real
+ *      inventory, refund an hour later while the proof was still six days out,
+ *      and keep both legs. For any deadline shorter than the challenge period
+ *      there was no safe fill time at all, including the first block — so the
+ *      advice to "keep a margin" could not be followed by anyone.
+ *
+ *      The contract fixes it: `cancel` now requires
+ *      `fillDeadline + PROOF_GRACE`, eight days, which clears the longer
+ *      challenge period so the earliest possible proof always precedes the
+ *      earliest possible refund. The margin below is now only about not wasting
+ *      gas on a fill that may be redundant. It is no longer what stands between
+ *      a relayer and being robbed.
  *
  *   4. CHECK IT IS NOT ALREADY FILLED, on the destination chain, immediately
  *      before sending. `fill` reverts on a second attempt, so the cost of
@@ -124,7 +137,8 @@ export const filledBy = async (chainId, relay, id) =>
  * rather than throwing, so the dry run can explain every intent it declines
  * instead of stopping at the first.
  *
- * @param opts.marginSeconds how far before `fillDeadline` to stop filling
+ * @param opts.marginSeconds how far before `fillDeadline` to stop filling. Not
+ *        a safety parameter — see rule 3.
  * @param opts.minFeeBps     the least the relayer will work for, in basis points
  */
 export function assess(intent, ctx, opts = {}) {
@@ -150,7 +164,8 @@ export function assess(intent, ctx, opts = {}) {
     reasons.push(`already filled by ${ctx.dstFilledBy}`);
   }
 
-  // 3. The cancel race is ours to lose, so keep a margin.
+  // 3. Prudence, not protection: PROOF_GRACE in the contract is what makes a
+  //    fill safe. This only avoids spending gas near a window that is closing.
   const left = Number(intent.fillDeadline) - now;
   if (left <= 0) reasons.push('the fill deadline has passed');
   else if (left < marginSeconds) {
