@@ -1,6 +1,6 @@
 {
   "name": "slow",
-  "title": "SLOW \u2014 timelocked transfers with a reverse",
+  "title": "SLOW — timelocked transfers with a reverse",
   "description": "The SLOW dapp as one self-contained HTML document, served from contract bytecode over ERC-8244, ERC-5219 and ERC-4804.",
   "page": "dapp/page.html",
   "bytes": 225174,
@@ -13,7 +13,7 @@
   "protocol": {
     "chainId": 1,
     "slow": "0x000000000000888741B254d37e1b27128AfEAaBC",
-    "note": "The page names this contract and drives it. It is not redeployed.",
+    "note": "0x0000...AaBC is v1, live on Ethereum and named by the page until the redeployment lands. The build being deployed is src/SLOW.sol; v1's source is src/SLOWv1.sol. See `deployment` for the address it goes to.",
     "chains": {
       "1": "Ethereum",
       "8453": "Base",
@@ -21,11 +21,23 @@
     }
   },
   "deployment": {
-    "chainId": 1,
-    "contract": null,
-    "salt": null,
-    "create3Deployer": null,
-    "steward": null,
+    "contract": "0x000000006B4537003a5E0e550E44927b560a4854",
+    "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20000000000000000067eb8140",
+    "create3Deployer": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "steward": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20",
+    "chains": [
+      1,
+      8453,
+      4663
+    ],
+    "source": "src/SLOW.sol",
+    "verified": {
+      "sameAddressOnAllChains": true,
+      "targetFreeOnAllChains": true,
+      "permissioned": "Salt bytes[0:20] are the steward, so only that address reaches this contract address. A different sender deploying the same salt lands elsewhere (checked: 0x8179a1CE...).",
+      "chainIndependent": "Salt byte[20] is CreateX's redeploy-protection flag and MUST stay 0x00. Setting it mixes block.chainid into the guarded salt and yields three different addresses.",
+      "method": "Simulated CreateX.deployCreate3 as the steward on all three chains; identical result. scripts/address.mjs reproduces it offline via createxAddress()."
+    },
     "chunkContracts": [],
     "routes": []
   }
