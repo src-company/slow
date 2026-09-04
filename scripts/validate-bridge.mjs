@@ -33,11 +33,32 @@ const CHAINS = {
   4663: { name: 'Robinhood', rpc: 'https://rpc.mainnet.chain.robinhood.com' },
 };
 
+/**
+ * WHAT THE DEPLOYMENT IS SUPPOSED TO CONTAIN — read out of the deploy script
+ * rather than copied from it.
+ *
+ * The first version of this file hardcoded these addresses. That is the exact
+ * failure this whole script exists to catch, committed by the checker itself:
+ * change a constant in `DeployBridge.s.sol`, and a validator carrying the old
+ * one reports a confident "ok" over a deployment wired somewhere else. A
+ * checker that duplicates the thing it checks cannot see a change to it.
+ *
+ * So the expectations are parsed from the script's own source. If it stops
+ * matching these shapes, this throws rather than falling back to a guess.
+ */
+const scriptSrc = fs.readFileSync(path.join(ROOT, 'script/DeployBridge.s.sol'), 'utf8');
+
+const constantIn = (name) => {
+  const m = new RegExp(`constant\\s+${name}\\s*=\\s*(0x[0-9a-fA-F]{40}|[0-9_]+)`).exec(scriptSrc);
+  if (!m) throw new Error(`DeployBridge.s.sol no longer defines ${name} — this validator is stale`);
+  return m[1].includes('0x') ? m[1] : Number(m[1].replace(/_/g, ''));
+};
+
 /** The contracts that DELIVER a cross-chain message, which is not what sends one. */
 const EXPECTED_MESSENGERS = {
   1: [
-    ['Base L1CrossDomainMessenger', '0x866E82a600A1414e583f7F13623F1aC5d58b0Afa'],
-    ['Robinhood Bridge', '0xDf8755334ce7A73cCF6b581C02eA649AE3E864b3'],
+    ['Base L1CrossDomainMessenger', constantIn('BASE_L1_MESSENGER')],
+    ['Robinhood Bridge', constantIn('ROBINHOOD_BRIDGE')],
   ],
   8453: [],
   4663: [],
@@ -46,12 +67,15 @@ const EXPECTED_MESSENGERS = {
 /** Where a forward may push value on to. L1 only — an L2 has nowhere to go. */
 const EXPECTED_ROUTES = {
   1: [
-    [8453, 'Base OptimismPortal', '0x49048044D57e1C92A77f79988d21Fa8fAF74E97e', 1],
-    [4663, 'Robinhood Inbox', '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 2],
+    [8453, 'Base OptimismPortal', constantIn('BASE_PORTAL'), 1],
+    [4663, 'Robinhood Inbox', constantIn('ROBINHOOD_INBOX'), 2],
   ],
   8453: [],
   4663: [],
 };
+
+/** The portal SENDS; trusting it as a deliverer would be a mistake. */
+const NOT_A_MESSENGER = constantIn('BASE_PORTAL');
 
 const sel = (sig) => keccak256(Buffer.from(sig, 'utf8')).slice(0, 10);
 const pad = (v) => BigInt(v).toString(16).padStart(64, '0');
@@ -158,7 +182,7 @@ async function validateChain(chainId, addrs) {
     if (chainId === 1) {
       try {
         const ret = await call(chainId, addrs.relay,
-          sel('trustedMessenger(address)') + pad('0x49048044D57e1C92A77f79988d21Fa8fAF74E97e'));
+          sel('trustedMessenger(address)') + pad(NOT_A_MESSENGER));
         const trusted = BigInt(ret) === 1n;
         check(name, 'does NOT trust the portal', !trusted, trusted ? 'trusted in error' : 'correct');
       } catch { /* covered above */ }
