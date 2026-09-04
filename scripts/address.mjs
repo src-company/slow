@@ -78,7 +78,12 @@ export const createxGuard = (salt, sender = '0x' + '00'.repeat(20), chainId = 1)
   if (isSender && flag === 0x00) return keccak256(Buffer.concat([addr32(sender), raw]));
   if (isSender) throw new Error('byte 20 must be 0x00 or 0x01');
   if (isZero && flag === 0x01) return keccak256(Buffer.concat([b32(chainId), raw]));
-  if (isZero) throw new Error('a zero prefix with byte 20 = 0x00 is rejected by CreateX');
+  // A zero prefix with byte 20 = 0x00 is NOT rejected: CreateX guards it with
+  // keccak256(salt), the same as any unrecognised prefix. Verified on chain —
+  // sender 0x…dEaD, salt 0x00*20 ++ 00 ++ 009e37a1b4c5d6e7f8091a2b lands at
+  // 0xfDD918150D8F771c3047c4eC53F6CD0edAC3595b. (A bare 0x…01 tail reverts, but
+  // as a collision with something already deployed there, not as a rejection.)
+  if (isZero && flag !== 0x00) throw new Error('byte 20 must be 0x00 or 0x01');
   return keccak256(raw);
 };
 
