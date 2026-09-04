@@ -104,7 +104,25 @@ library SlowOrigin {
         //    against Robinhood Chain, where an L1 EOA calling
         //    createRetryableTicket arrives as its address plus the offset. OP
         //    Stack does it only to contracts.
-        if (hint != address(0) && applyAlias(hint) == sender) return (hint, true);
+        //
+        //    UNAUTHENTICATED, AND IT HAS TO BE. This used to return `true`, on
+        //    the reasoning that nobody could arrange to sit at `applyAlias(hint)`
+        //    for an address they did not control. That reads the equation
+        //    backwards: it pins `hint` GIVEN `sender`, and `applyAlias` is a
+        //    bijection, so for any caller there is exactly one satisfying
+        //    `hint` — `undoAlias(msg.sender)` — which anyone can compute and
+        //    nobody needs permission for. A genuine aliased arrival and a
+        //    direct caller passing that value are indistinguishable from
+        //    inside this contract, so the branch cannot prove anything and must
+        //    not claim to. The unforgeable form is the INVERTED one
+        //    `SlowRelay._authenticatedSelf` uses — `undoAlias(msg.sender) ==
+        //    address(this)` — which pins the target instead of accepting it.
+        //
+        //    `hint` is still the right ORIGIN to return: for a real arrival it
+        //    is the true sender, and for a forger it names an address the
+        //    forger is giving their own rights away to. Only the claim of proof
+        //    is withdrawn.
+        if (hint != address(0) && applyAlias(hint) == sender) return (hint, false);
 
         // 5. Nothing to learn. A local caller is its own origin.
         return (sender, false);

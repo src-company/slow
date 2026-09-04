@@ -113,7 +113,8 @@ contract SlowRelayTest is Test {
         i = SlowRelay.Intent({
             sender: alice,
             recipient: bob,
-            token: tok,
+            srcToken: tok,
+            dstToken: tok,
             amount: AMOUNT,
             fee: FEE,
             delay: DELAY,
@@ -490,7 +491,8 @@ contract SlowRelayTest is Test {
         SlowRelay.Intent memory j = SlowRelay.Intent({
             sender: i.sender,
             recipient: i.recipient,
-            token: i.token,
+            srcToken: i.srcToken,
+            dstToken: i.dstToken,
             amount: i.amount,
             fee: i.fee,
             delay: i.delay,
@@ -535,6 +537,60 @@ contract SlowRelayTest is Test {
         vm.prank(relayer);
         vm.expectRevert(SlowRelay.BadSignature.selector);
         relay.openFor(i, abi.encodePacked(r, s, v));
+    }
+
+    // ──────────────────────────────────────────── the two-token identity
+
+    /// @notice One address cannot name the same asset on two chains. USDC on
+    ///         Base and whatever sits at that address on Robinhood are unrelated
+    ///         contracts, so an intent carrying a single `token` field let a
+    ///         relayer deliver something worthless at the same address and then
+    ///         collect the real escrow. The sender names both legs now, and the
+    ///         id commits to both, so neither can be substituted.
+    function test_theEscrowedAssetAndTheDeliveredAssetAreNamedSeparately() public {
+        MockERC20 onSrc = token;
+        MockERC20 onDst = new MockERC20(); // the same asset, different address
+        onDst.mint(relayer, 100 ether);
+
+        SlowRelay.Intent memory i = _intent(address(onSrc));
+        i.dstToken = address(onDst);
+        bytes32 id = relay.intentId(i);
+
+        vm.startPrank(alice);
+        onSrc.approve(address(relay), AMOUNT + FEE);
+        relay.openToken(i);
+        vm.stopPrank();
+        assertEq(onSrc.balanceOf(address(slow)), AMOUNT + FEE, "the source asset is escrowed");
+
+        vm.chainId(DST);
+        vm.startPrank(relayer);
+        onDst.approve(address(relay), AMOUNT);
+        uint256 tid = relay.fill(i);
+        vm.stopPrank();
+
+        (,, address to, uint256 sid,) = slow.pendingTransfers(tid);
+        assertEq(to, bob);
+        assertEq(
+            sid,
+            (uint256(DELAY) << 160) | uint256(uint160(address(onDst))),
+            "the recipient is delivered the asset the SENDER named, not the escrow's"
+        );
+        assertEq(relay.filledBy(id), relayer);
+    }
+
+    /// @notice Substituting either leg produces a different intent, so a fill of
+    ///         it can never be released against this escrow.
+    function test_substitutingEitherLegChangesTheIntent() public {
+        SlowRelay.Intent memory i = _intent(address(token));
+        bytes32 base = relay.intentId(i);
+
+        SlowRelay.Intent memory swapped = _intent(address(token));
+        swapped.dstToken = address(new MockERC20());
+        assertTrue(relay.intentId(swapped) != base, "the delivered asset is committed");
+
+        SlowRelay.Intent memory other = _intent(address(token));
+        other.srcToken = address(new MockERC20());
+        assertTrue(relay.intentId(other) != base, "so is the escrowed one");
     }
 
     // ─────────────────────────────────────────────────── the id itself
@@ -670,7 +726,8 @@ contract SlowRelayTransportTest is Test {
         return SlowRelay.Intent({
             sender: alice,
             recipient: bob,
-            token: address(0),
+            srcToken: address(0),
+            dstToken: address(0),
             amount: AMOUNT,
             fee: FEE,
             delay: 3 days,
