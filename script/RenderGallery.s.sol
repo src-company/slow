@@ -40,7 +40,12 @@ contract RenderGallery is Script {
             ["GameStop Corp.", "GME"]
         ];
 
-        uint256[9] memory delays = [
+        // Two sets. The first is the round durations a sender actually picks.
+        // The second is where `_formatDelay` shows its seams: it prints ONE unit
+        // and truncates, so nothing ever reads "an hour and thirty minutes" —
+        // that is an hour, and 45 days is a month. These are the renders that
+        // say what a holder is really shown.
+        uint256[18] memory delays = [
             uint256(60), // a minute, the floor
             3600, // an hour, the default
             86400, // a day
@@ -49,18 +54,32 @@ contract RenderGallery is Script {
             7776000, // 90 days, rolls to months
             31536000, // a year
             157680000, // five years
-            type(uint96).max // the ceiling, so the label cannot overflow the plate
+            type(uint96).max, // the ceiling, so the label cannot overflow the plate
+            1, // "1 second" — the only singular second
+            59, // still seconds, one tick below the minute floor
+            90, // a minute and a half -> "1 minute"
+            3599, // 59m59s -> "59 minutes", one tick below the hour
+            5400, // an hour and thirty minutes -> "1 hour"
+            86399, // 23h59m59s -> "23 hours", one tick below the day
+            90000, // a day and an hour -> "1 day"
+            3888000, // 45 days -> "1 month"
+            62985600 // 729 days, two years less a day -> "1 year"
         ];
 
-        string memory out = "";
+        // Written a line at a time rather than concatenated: every uri() is a
+        // ~1.6 kB base64 blob, and accumulating 270 of them into one string runs
+        // the EVM out of memory before the file is ever opened.
+        vm.writeFile("preview/gallery.tsv", "");
         for (uint256 a; a != assets.length; ++a) {
             address token = address(0);
             if (a != 0) token = address(new Tok(assets[a][0], assets[a][1]));
             for (uint256 d; d != delays.length; ++d) {
                 uint256 id = uint256(uint160(token)) | (delays[d] << 160);
-                out = string.concat(out, assets[a][1], "\t", vm.toString(delays[d]), "\t", slow.uri(id), "\n");
+                vm.writeLine(
+                    "preview/gallery.tsv",
+                    string.concat(assets[a][1], "\t", vm.toString(delays[d]), "\t", slow.uri(id))
+                );
             }
         }
-        vm.writeFile("preview/gallery.tsv", out);
     }
 }
