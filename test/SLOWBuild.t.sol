@@ -198,6 +198,112 @@ contract SLOWBuildTest is Test {
         slow.depositToWithPermit(address(token), recipient, AMOUNT, tooLong, "", block.timestamp, v, r, s);
     }
 
+    // ──────────────────────────────────────── the inbound index is the reader's
+
+    /// @dev The grief, end to end. Anyone can pin rows into a stranger's inbound
+    ///      set with dust, and before `forgetInbound` nothing removed them
+    ///      before `pt.timestamp + delay` — sender-chosen, up to a century.
+    function testAStrangerCanStuffTheInboundIndex() public {
+        address victim = address(0xDEFACED);
+        for (uint256 i; i != 25; ++i) {
+            slow.depositTo{value: 1}(address(0), victim, 0, uint96(3155760000), "");
+        }
+        assertEq(slow.inboundTransferCount(victim), 25, "stuffed by a stranger");
+
+        uint256 pinned = slow.inboundTransferAt(victim, 0);
+
+        // Not removable by settling: the timelock has not expired and will not
+        // inside any horizon the victim cares about.
+        vm.prank(victim);
+        vm.expectRevert(SLOW.TimelockNotExpired.selector);
+        slow.unlock(pinned);
+
+        vm.warp(block.timestamp + 99 * 365 days);
+        vm.prank(victim);
+        vm.expectRevert(SLOW.TimelockNotExpired.selector);
+        slow.unlock(pinned);
+    }
+
+    function testForgetInboundClearsWhatAStrangerPinned() public {
+        address victim = address(0xDEFACED);
+        uint256[] memory ids = new uint256[](25);
+        for (uint256 i; i != 25; ++i) {
+            ids[i] = slow.depositTo{value: 1}(address(0), victim, 0, uint96(3155760000), "");
+        }
+
+        bytes[] memory calls = new bytes[](25);
+        for (uint256 i; i != 25; ++i) {
+            calls[i] = abi.encodeWithSelector(SLOW.forgetInbound.selector, ids[i]);
+        }
+        vm.prank(victim);
+        slow.multicall(calls);
+
+        assertEq(slow.inboundTransferCount(victim), 0, "the reader cleared their own index");
+        assertEq(slow.getInboundTransfers(victim).length, 0, "and the getter agrees");
+    }
+
+    /// @dev The row goes; nothing else does. This is the property that makes it
+    ///      safe to hand to a reader who might dismiss something they wanted.
+    function testForgetInboundMovesNoValueAndBreaksNoPath() public {
+        address sender = address(0xA11CE);
+        address to = address(0xB0B);
+        vm.deal(sender, 10 ether);
+
+        vm.prank(sender);
+        uint256 id = slow.depositTo{value: 1 ether}(address(0), to, 0, DELAY, "");
+
+        vm.prank(to);
+        slow.forgetInbound(id);
+
+        assertEq(slow.inboundTransferCount(to), 0, "dropped from the recipient's index");
+        assertEq(slow.outboundTransferCount(sender), 1, "the sender's row is untouched");
+        (uint96 ts,,,, uint256 amt) = slow.pendingTransfers(id);
+        assertTrue(ts != 0, "the transfer still exists");
+        assertEq(amt, 1 ether, "at full value");
+        assertEq(slow.balanceOf(to, slow.encodeId(address(0), DELAY)), 1 ether, "wrapper still held");
+
+        // And it still settles by id, which is what "the listing, not the transfer" means.
+        vm.warp(block.timestamp + DELAY);
+        uint256 before = to.balance;
+        vm.prank(to);
+        slow.claim(id);
+        assertEq(to.balance - before, 1 ether, "claimed by id after forgetting the row");
+    }
+
+    /// @dev Only your own set, and no authority to get wrong.
+    function testForgetInboundTouchesOnlyTheCallersOwnIndex() public {
+        address to = address(0xB0B);
+        vm.deal(address(this), 10 ether);
+        uint256 id = slow.depositTo{value: 1 ether}(address(0), to, 0, DELAY, "");
+
+        vm.prank(address(0xBADBAD));
+        slow.forgetInbound(id);
+        assertEq(slow.inboundTransferCount(to), 1, "a stranger cannot clear someone else's row");
+
+        vm.prank(to);
+        slow.forgetInbound(id);
+        assertEq(slow.inboundTransferCount(to), 0, "the holder can");
+
+        // Idempotent: forgetting twice is a no-op, not a revert.
+        vm.prank(to);
+        slow.forgetInbound(id);
+        assertEq(slow.inboundTransferCount(to), 0, "and forgetting again is a no-op");
+    }
+
+    /// @dev A sender that reverts on receipt cannot refuse the cleanup, which is
+    ///      the whole reason this moves no value.
+    function testAHostileSenderCannotBlockTheCleanup() public {
+        HostileSender bad = new HostileSender();
+        vm.deal(address(bad), 1 ether);
+        address victim = address(0xDEFACED);
+        uint256 id = bad.grief(slow, victim);
+
+        assertEq(slow.inboundTransferCount(victim), 1, "pinned by a contract that refuses receipt");
+        vm.prank(victim);
+        slow.forgetInbound(id);
+        assertEq(slow.inboundTransferCount(victim), 0, "cleared anyway");
+    }
+
     // ────────────────────────────────────────────── SlowPermit: tipped path
 
     function testTippedPermitDepositRecordsTipOnGate() public {
@@ -653,5 +759,22 @@ contract ReentrantPermitToken {
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
         return true;
+    }
+}
+
+/// @notice A depositor that reverts on anything sent back to it. Any cleanup
+///         that returned the dust — mint, safeTransfer, safeTransferETH — would
+///         route through this and the row would stay pinned.
+contract HostileSender {
+    function grief(SLOW slow, address victim) external returns (uint256) {
+        return slow.depositTo{value: 1}(address(0), victim, 0, uint96(3155760000), "");
+    }
+
+    receive() external payable {
+        revert("no");
+    }
+
+    fallback() external payable {
+        revert("no");
     }
 }

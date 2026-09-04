@@ -856,6 +856,30 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
     'setAccount rebuilds the destination row once it knows if the account has code');
 }
 
+// The inbound index is the one part of an account's state a stranger can write
+// to, so the page has to offer the way out of it — and offer it only where it
+// does something. `forgetInbound` edits the CALLER's own set, so the control is
+// meaningless on an outbound row or on somebody else's transfer.
+{
+  ok(/id="detailForget"/.test(html), 'the detail sheet has a dismiss control');
+  ok(/forgetInbound:'0x03ca0e44'/.test(body), 'and the selector it calls');
+  const fn = body.slice(body.indexOf('async function doForgetInbound('),
+                        body.indexOf('async function doClaim('));
+  ok(/SEL\.forgetInbound/.test(fn), 'dismiss calls forgetInbound');
+  ok(!/SEL\.(claim|unlock|reverse|clawback|withdrawFrom)\b/.test(fn),
+    'and nothing else — dismissing must not settle, reverse or move value');
+  const od = body.slice(body.indexOf('function openDetail('),
+                        body.indexOf('function tick('));
+  ok(/S\.tab==='inbound'/.test(od) && /detailForget\.hidden/.test(od),
+    'the control is shown on inbound rows only');
+  ok(/t\.to\.toLowerCase\(\)===S\.account\.toLowerCase\(\)/.test(od),
+    'and only to the account whose index it would edit');
+  const san = body.slice(body.indexOf('function showApprovalNeeded('),
+                         body.indexOf('Unwrap and call'));
+  ok(/detailForget\.hidden=true/.test(san),
+    'the reused sheet does not leak the control onto an unlocked position');
+}
+
 // ─── Links ─────────────────────────────────────────────────────────────────
 // Routes live in the fragment because a gateway serves this document from every
 // path on the contract and some rewrite the query; the fragment never reaches

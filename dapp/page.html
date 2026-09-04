@@ -769,6 +769,7 @@ body{overscroll-behavior:none}
   <dl class="rows" id="detailRows"></dl>
   <button class="btn" id="detailAction"></button>
   <button class="btn alt" id="detailShare">Copy link to this transfer</button>
+  <button class="btn alt" id="detailForget" hidden>Dismiss from my list</button>
   <button class="btn alt" id="detailClose">Close</button>
 </div></div>
 
@@ -1260,7 +1261,7 @@ const SEL = {
   reverse:'0x97d15425', claim:'0x379607f5', clawback:'0xfcc36bc9', unlock:'0x6198e339',
   withdrawFrom:'0xd4fdc309', multicall:'0xac9650d8', pendingTransfers:'0x6577b86a',
   getOut:'0xd40d4bc6', getIn:'0xe3993ee7',
-  outCount:'0x73bfdce5', inCount:'0xea712c4f',
+  outCount:'0x73bfdce5', inCount:'0xea712c4f', forgetInbound:'0x03ca0e44',
   outAt:'0xb5f8348b', inAt:'0x8b40f4c5',
   guardians:'0x0633b14a', isWithdrawalApprovalNeeded:'0xabe616b8',
   setGuardian:'0x8a0dac4a', commitGuardian:'0xa952a15f', cancelGuardianChange:'0xdb6c927d',
@@ -2662,7 +2663,9 @@ async function loadTransfers(force){
       S.loading=false;
       S.listError = `This account has ${group(String(overflow.overflow))} pending entries — more than `
         + `this page can list. Anyone can add one with a dust deposit, so a very large count is `
-        + `usually somebody stuffing the list rather than transfers you are owed.`;
+        + `usually somebody stuffing the list rather than transfers you are owed. `
+        + `Open a transfer by its link and dismiss it to take it off this list; dismissing removes `
+        + `the listing only, never the transfer.`;
       renderList();
       return;
     }
@@ -2853,6 +2856,8 @@ function showApprovalNeeded(u, opId, to){
   to = to || S.account;
   S.detail=null;
   el.detailShare.hidden=true;   // an unlocked position has no transfer to link to
+  el.detailForget.hidden=true;  // nor an inbound row to dismiss
+  el.detailForget.onclick=null;
   el.detailTitle.textContent='Guardian approval needed';
   el.detailRows.replaceChildren();
   const rows=[
@@ -3035,6 +3040,28 @@ async function refundTipIfAny(t){
     return isRejection(e) ? ' Tip left on the gate — refund it later with gate.refundTip.'
                           : ' Tip is still on the gate; refund it later with gate.refundTip.';
   }
+}
+/* Take a row off your own inbound index and nothing else.
+
+   `_inboundTransfers[you]` is the one part of your state a stranger can write
+   to: a dust deposit adds a row, and until `forgetInbound` nothing removed it
+   before a delay the SENDER picked. Enough of them and the getter stops fitting
+   in an eth_call, and then the page cannot show you your real transfers at all.
+
+   The transfer is untouched — it still settles by id from its own link, the
+   sender keeps their reverse and clawback, and no value moves. So the wording
+   has to be "dismiss", never "reject" or "cancel": the reader is editing a
+   listing, and telling them otherwise would be telling them they had refused
+   money they have not refused. */
+async function doForgetInbound(t){
+  if(!guardWritable()) return;
+  try {
+    await slowTx(c1(SEL.forgetInbound, t.id), 'Dismissing…', 'Confirm in your wallet');
+    forgetUnlocked(t.id);
+    toast('Dismissed from your list. The transfer itself is unchanged — its link still opens it.', 6000);
+    hideModal(el.detailModal);
+    loadTransfers(true);
+  } catch(e){ fail(e); }
 }
 async function doClaim(t){
   if(nw()<t.unlockTime){ toast(`${fmtTime(t.unlockTime-nw())} remaining`); return; }
@@ -3493,6 +3520,13 @@ function openDetail(t,sym){
     dt.textContent=k; dd.textContent=v;
     row.append(dt,dd); el.detailRows.appendChild(row);
   }
+  // Only on an inbound row, and only for the account that holds the index —
+  // `forgetInbound` edits the caller's own set, so offering it anywhere else
+  // would be offering a button that edits nothing.
+  const mine = !!S.account && !!t.to && t.to.toLowerCase()===S.account.toLowerCase();
+  el.detailForget.hidden = !(S.tab==='inbound' && mine);
+  el.detailForget.onclick = el.detailForget.hidden ? null : ()=>doForgetInbound(t);
+
   const st=statusOf(t), btn=el.detailAction;
   btn.className='btn'+(st.key==='recover'?' danger':'');
   if(st.act){
