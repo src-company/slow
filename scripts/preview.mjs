@@ -45,20 +45,38 @@ const slug = (url.match(/github\.com[/:]([^/]+\/[^/.]+)/) || [])[1];
 
 console.log(`published ${bytes.length.toLocaleString()} B  sha256 ${sha256.slice(0, 16)}…`);
 if (slug) {
-  // Pin the URL to the commit, not the branch.
-  //
-  // raw.githack.com bills itself as the uncached endpoint and is not: it served
-  // a build four commits old while the branch was correct, which looks exactly
-  // like a change that did not ship. A commit-pinned rawcdn path is immutable,
-  // so it cannot go stale — at the cost of a new URL per publish, which is the
-  // right trade while iterating.
-  console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/index.html`);
-  console.log(`  \u2514 pinned to this commit, cannot serve a stale copy`);
-  if (gallery) {
-    console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/gallery.html`);
-    console.log(`  \u2514 every uri() render, decoded from the contract's own output`);
-  }
   const [owner, repo] = slug.split('/');
-  console.log(`\n  https://${owner}.github.io/${repo}/`);
-  console.log(`  \u2514 stable URL, updates on push \u2014 needs Pages enabled on gh-pages`);
+  const pages = `https://${owner}.github.io/${repo}/`;
+
+  // Pages first, because it is the one that works.
+  //
+  // The commit-pinned githack URL was the headline here for a long time, on the
+  // reasoning that a pinned path cannot serve a stale copy — which is true, and
+  // was worth having after raw.githack served a build four commits old. What it
+  // does instead is 429: githack rate-limits, and publishing repeatedly in one
+  // session is exactly how you hit it. A link that is throttled is worse than a
+  // link that might be cached.
+  //
+  // Pages is checked, not assumed. This script asserted for weeks that it
+  // "needs Pages enabled" while Pages was serving correctly, so the caption was
+  // wrong in the direction that hides the working link.
+  let live = null;
+  try {
+    const r = await fetch(pages, {redirect: 'follow'});
+    if (r.ok) {
+      const body = await r.text();
+      const {createHash} = await import('node:crypto');
+      live = createHash('sha256').update(body).digest('hex');
+    }
+  } catch {}
+
+  console.log(`\n  ${pages}`);
+  if (live === sha256) console.log('  \u2514 serving this exact build (sha256 verified just now)');
+  else if (live) console.log('  \u2514 Pages is up but still serving the previous build \u2014 give it a minute');
+  else console.log('  \u2514 Pages did not answer \u2014 enable it on the gh-pages branch');
+
+  if (fs.existsSync(galleryPath)) console.log(`  ${pages}gallery.html`);
+
+  console.log(`\n  https://rawcdn.githack.com/${slug}/${commit}/index.html`);
+  console.log('  \u2514 commit-pinned mirror; githack rate-limits, so this 429s when leaned on');
 }
