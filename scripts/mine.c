@@ -27,7 +27,7 @@
  * never reach.
  *
  *   cc -O3 -pthread -o /tmp/mine scripts/mine.c
- *   /tmp/mine <sender> <prefix-hex> [threads]
+ *   /tmp/mine <sender> <prefix-hex> [threads] [count]
  *   /tmp/mine <sender> --check <salt32hex>
  */
 #include <stdio.h>
@@ -144,8 +144,8 @@ static void derive(const uint8_t sender[20], const uint8_t salt[32],
 static uint8_t g_sender[20];
 static uint8_t g_prefix[20];
 static int g_nibbles;
-static volatile int g_found;
-static uint8_t g_salt[32];
+static volatile int g_found;      /* hits so far */
+static int g_want = 1;            /* stop after this many */
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile uint64_t g_tried;
 
@@ -159,6 +159,8 @@ static int matches(const uint8_t a[20]) {
     return 1;
 }
 
+static void print_hex(const uint8_t *b, int n);
+
 typedef struct { int id; int nthreads; } arg_t;
 
 static void *worker(void *vp) {
@@ -169,15 +171,24 @@ static void *worker(void *vp) {
     salt[20] = 0x00;                       /* byte 20: flag clear  */
     uint64_t counter = (uint64_t)a->id;
     uint64_t local = 0;
-    while (!g_found) {
+    while (g_found < g_want) {
         /* bytes 21..31 are searchable; use the low 8 as the counter. */
         for (int b = 0; b < 8; b++) salt[31 - b] = (uint8_t)(counter >> (8 * b));
         derive(g_sender, salt, addr);
         if (matches(addr)) {
             pthread_mutex_lock(&g_lock);
-            if (!g_found) { memcpy(g_salt, salt, 32); g_found = 1; }
+            if (g_found < g_want) {
+                /* Printed as found rather than collected and printed at the
+                   end, so a long run that is interrupted is still worth
+                   something. N hits are N INTERCHANGEABLE addresses: a CREATE3
+                   address comes from the deployer and salt alone and never from
+                   what is deployed, so any hit can be assigned to any contract. */
+                g_found++;
+                printf("salt    "); print_hex(salt, 32);
+                printf("\naddress "); print_hex(addr, 20);
+                printf("\n\n"); fflush(stdout);
+            }
             pthread_mutex_unlock(&g_lock);
-            break;
         }
         counter += (uint64_t)a->nthreads;
         if ((++local & 0xFFFFF) == 0) __sync_fetch_and_add(&g_tried, 0x100000);
@@ -216,7 +227,7 @@ static void print_hex(const uint8_t *b, int n) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
-                "usage: mine <sender> <prefix-hex> [threads]\n"
+                "usage: mine <sender> <prefix-hex> [threads] [count]\n"
                 "       mine <sender> --check <salt32hex>\n");
         return 2;
     }
@@ -247,6 +258,8 @@ int main(int argc, char **argv) {
     }
     int threads = argc > 3 ? atoi(argv[3]) : 4;
     if (threads < 1) threads = 1;
+    g_want = argc > 4 ? atoi(argv[4]) : 1;
+    if (g_want < 1) g_want = 1;
 
     pthread_t *th = calloc((size_t)threads, sizeof(pthread_t));
     arg_t *args = calloc((size_t)threads, sizeof(arg_t));
@@ -257,12 +270,7 @@ int main(int argc, char **argv) {
     }
     for (int i = 0; i < threads; i++) pthread_join(th[i], NULL);
 
-    uint8_t addr[20];
-    derive(g_sender, g_salt, addr);
-    printf("salt    ");
-    print_hex(g_salt, 32);
-    printf("\naddress ");
-    print_hex(addr, 20);
-    printf("\ntried   %llu\n", (unsigned long long)g_tried);
+    printf("done: %d hit(s), %llu tried\n", g_found,
+           (unsigned long long)g_tried);
     return 0;
 }
