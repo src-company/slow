@@ -868,10 +868,10 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
 
 // ─── The preview is the contract, or it is a lie ───────────────────────────
 //
-// renderNFT is a port of SLOWNext._createImage. A port that drifts is worse
+// renderNFT is a port of SLOW._createImage. A port that drifts is worse
 // than no preview: it shows a picture the contract will never draw, and it does
 // so silently. So it is pinned to the real thing — preview/gallery.tsv is the
-// verbatim uri() output of a deployed SLOWNext, straight out of the EVM, and
+// verbatim uri() output of a deployed SLOW, straight out of the EVM, and
 // every row of it has to come back byte for byte.
 {
   const tsv = path.join(ROOT, 'preview/gallery.tsv');

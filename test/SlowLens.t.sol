@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.34;
 
-import {SLOWNext} from "../src/SLOWNext.sol";
+import {SLOW} from "../src/SLOW.sol";
 import {SlowLens} from "../src/SlowLens.sol";
 import {Test} from "../lib/forge-std/src/Test.sol";
 
@@ -21,14 +21,14 @@ import {Test} from "../lib/forge-std/src/Test.sol";
 ///      `symbol()` costs the callee almost nothing and charges the CALLER
 ///      quadratic memory expansion, cumulatively, across the loop.
 contract SlowLensTest is Test {
-    SLOWNext internal slow;
+    SLOW internal slow;
     SlowLens internal lens;
 
     address internal victim = address(0x71C);
     address internal attacker = address(0xA77E);
 
     function setUp() public {
-        slow = new SLOWNext(address(0), address(0));
+        slow = new SLOW(address(0), address(0));
         lens = new SlowLens(address(slow));
         vm.deal(attacker, 100 ether);
         vm.deal(victim, 100 ether);

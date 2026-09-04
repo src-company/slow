@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.34;
 
-import {SLOWNext, SLOWGateNext} from "../src/SLOWNext.sol";
+import {SLOW, SLOWGate} from "../src/SLOW.sol";
 import {Test} from "../lib/forge-std/src/Test.sol";
 
 /// @notice Coverage for the two extensions folded into the next build.
 ///
 /// @dev WHY THIS FILE EXISTS. `test/SLOW.t.sol` exercises `src/SLOW.sol` — the
-///      21,648-byte build frozen on mainnet. `SLOWNext` is what actually goes to
+///      21,648-byte build frozen on mainnet. `SLOW` is what actually goes to
 ///      the new canonical address on every chain, and until this file it was
 ///      referenced by nothing but a render script. The delta between the two is
 ///      `SlowPermit` and `SlowGuardianIndex`, so that delta is what is tested
-///      here; everything SLOWNext inherits unchanged is already covered next
+///      here; everything SLOW inherits unchanged is already covered next
 ///      door.
 ///
-/// @dev No fork. `SLOWNext`'s constructor only writes two immutables and
+/// @dev No fork. `SLOW`'s constructor only writes two immutables and
 ///      CREATE2s its gate, so these run offline — which matters for a suite
 ///      meant to gate a deployment to three chains.
 contract SLOWNextTest is Test {
-    SLOWNext internal slow;
+    SLOW internal slow;
     MockPermitToken internal token;
 
     uint256 internal constant OWNER_PK = 0xA11CE;
@@ -33,7 +33,7 @@ contract SLOWNextTest is Test {
     bytes4 internal constant REENTRANCY = 0xab143c06;
 
     function setUp() public {
-        slow = new SLOWNext(address(0), address(0));
+        slow = new SLOW(address(0), address(0));
         token = new MockPermitToken("Test", "TEST", 18, false);
         owner = vm.addr(OWNER_PK);
         token.mint(owner, 100 ether);
@@ -174,7 +174,7 @@ contract SLOWNextTest is Test {
             address(token), recipient, AMOUNT, DELAY, tip, "", block.timestamp, v, r, s
         );
 
-        SLOWGateNext gate = SLOWGateNext(payable(slow.gate()));
+        SLOWGate gate = SLOWGate(payable(slow.gate()));
         (uint96 amt, address sender) = gate.tips(transferId);
         assertEq(amt, uint96(tip));
         assertEq(sender, owner, "tip must be refundable to the depositor");
@@ -212,7 +212,7 @@ contract SLOWNextTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
 
         vm.prank(owner);
-        vm.expectRevert(); // SLOWGateNext.InvalidAmount
+        vm.expectRevert(); // SLOWGate.InvalidAmount
         slow.depositToWithTipAndPermit{value: tip}(
             address(token), recipient, AMOUNT, DELAY, tip, "", block.timestamp, v, r, s
         );
@@ -576,11 +576,11 @@ contract ReentrantPermitToken {
     mapping(address => mapping(address => uint256)) public allowance;
     mapping(address => uint256) public nonces;
 
-    SLOWNext internal immutable slow;
+    SLOW internal immutable slow;
     bytes4 public caught;
     bool internal entered;
 
-    constructor(SLOWNext _slow) {
+    constructor(SLOW _slow) {
         slow = _slow;
     }
 

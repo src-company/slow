@@ -328,7 +328,7 @@ contract SlowLens {
     ///
     ///      `MetadataReaderLib` bounds both — `min(returndatasize(), limit)` on
     ///      the copy, plus `GAS_STIPEND_NO_GRIEF` on the callee — and it is
-    ///      already what `SLOWNext.uri()` uses, which is exactly why `uri()`
+    ///      already what `SLOW.uri()` uses, which is exactly why `uri()`
     ///      was never griefable while this contract was.
     function _symbol(address token) private view returns (string memory, bool) {
         // 64 bytes: longer than any real ticker, and the same clip `uri()` takes.

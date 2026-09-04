@@ -2,7 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {Test, console2} from "../lib/forge-std/src/Test.sol";
-import {SLOWNext} from "../src/SLOWNext.sol";
+import {SLOW} from "../src/SLOW.sol";
 import {SlowArrival} from "../src/SlowArrival.sol";
 import {SlowOrigin} from "../src/SlowOrigin.sol";
 
@@ -112,7 +112,7 @@ contract LiarPortal {
 // ──────────────────────────────────────────────────────────────────── TESTS
 
 contract SlowArrivalTest is Test {
-    SLOWNext internal slow;
+    SLOW internal slow;
     SlowArrival internal arrival;
 
     MockOptimismPortal internal portal;
@@ -128,7 +128,7 @@ contract SlowArrivalTest is Test {
     uint256 internal constant AMOUNT = 1 ether;
 
     function setUp() public {
-        slow = new SLOWNext(address(0), address(0));
+        slow = new SLOW(address(0), address(0));
         arrival = new SlowArrival(address(slow));
 
         portal = new MockOptimismPortal();

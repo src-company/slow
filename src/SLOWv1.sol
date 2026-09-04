@@ -11,9 +11,6 @@ import {EnumerableSetLib} from "@solady/src/utils/EnumerableSetLib.sol";
 import {MetadataReaderLib} from "@solady/src/utils/MetadataReaderLib.sol";
 import {ReentrancyGuardTransient} from "@solady/src/utils/ReentrancyGuardTransient.sol";
 
-import {SlowPermit} from "./SlowPermit.sol";
-import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
-
 /// @notice Timelocked token sends with optional guardian co-sign and tipped settlement.
 /// @dev ERC1155 ids encode `(token, delay)`. Senders can `reverse` during the timelock
 /// or `clawback` after a 30-day post-expiry grace. Recipients settle via `unlock` +
@@ -25,33 +22,7 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 /// ERC-1155 deviations: `safeBatchTransferFrom` is disabled and zero-amount transfers
 /// are rejected (avoids spamming the inbound/outbound sets via 0-amount delayed sends). `supportsInterface`
 /// still reports ERC-1155 — treat this as ERC-1155-derived rather than fully compliant.
-/// @dev NEXT BUILD. This is `SLOW.sol` with the two extensions folded in, for
-///      the redeployment that puts one identical build on every chain. It is a
-///      separate file so the deployed source stays byte-reproducible: compiling
-///      `src/SLOW.sol` still yields the 21,648-byte runtime that is live on
-///      mainnet today.
-///
-///      What is added, and nothing else:
-///        SlowPermit        — signature-authorised deposits, so a wallet that
-///                            cannot batch still lands one transaction.
-///        SlowGuardianIndex — the reverse of `guardians`, so a guardian can be
-///                            shown the accounts it guards instead of being
-///                            asked to type them in.
-///
-/// @dev SIZE. 24,356 bytes of runtime against EIP-170's 24,576 — 220 to spare,
-///      up from 21,648. The DAI-style and Permit2 entrypoints were already
-///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
-///      spent: anything added from here has to come out of those 220 bytes, or
-///      out of something this contract currently does. Re-measure with
-///      `forge build --sizes` after any change here or in the extensions.
-///
-/// @dev STORAGE IS NOT COMPATIBLE WITH THE DEPLOYED BUILD, and does not need to
-///      be. Base contracts are laid out first, so the index's two mappings take
-///      slots 0 and 1 and push everything SLOW declares down by two. That is
-///      harmless for a fresh deployment at a fresh address and fatal for
-///      anything that tries to treat this as an upgrade — there is no proxy
-///      here, and this note is why there should not be one.
-contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, SlowGuardianIndex {
+contract SLOWv1 is ERC1155, Multicallable, ReentrancyGuardTransient {
     using EnumerableSetLib for EnumerableSetLib.Uint256Set;
     using MetadataReaderLib for address;
     using SafeTransferLib for address;
@@ -106,17 +77,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     }
 
     uint256 internal constant _GUARDIAN_CHANGE_DELAY = 1 days; // Veto window for guardian rotation.
-    /// @dev Ceiling on a deposit's timelock, matching what the interface offers.
-    ///      WITHOUT IT the delay is a full uint96, and at `type(uint96).max` the
-    ///      entry is not slow, it is permanent: `unlock`, `claim` and `clawback`
-    ///      all gate on `pt.timestamp + delay`, which never arrives, while
-    ///      `reverse` stays with the sender. Anyone could pin an unremovable row
-    ///      — and an unspendable wrapper — into a stranger's account for the
-    ///      cost of a dust deposit, which is what made the lens denial-of-service
-    ///      permanent rather than a nuisance. A hundred years is past any real
-    ///      use and still leaves the id's high 96 bits alone.
-    uint256 internal constant _MAX_DELAY = 3155760000; // 100 years, as the dapp offers.
-
     uint256 internal constant _CLAWBACK_GRACE = 30 days; // Wait after expiry before sender can clawback.
 
     // Op-type byte mixed into guardian-approval preimages. Distinguishes wrapper
@@ -124,13 +84,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     // consumed as the other at the same `(from, to, id, amount)`.
     uint8 internal constant _OP_TRANSFER = 0;
     uint8 internal constant _OP_WITHDRAW = 1;
-
-    /// @dev Deposits are a third op, and they need to be. They run off `nonces`
-    ///      while both guarded ops now run off `guardianNonces`; two counters
-    ///      sharing one op byte could put a deposit's id and a transfer's id at
-    ///      the same preimage and let one overwrite the other's pending entry.
-    ///      The byte keeps the two spaces disjoint however the counters line up.
-    uint8 internal constant _OP_DEPOSIT = 2;
 
     mapping(address user => mapping(uint256 transferId => bool)) public guardianApproved;
 
@@ -148,19 +101,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
 
     mapping(address user => address) public guardians;
 
-    /// @notice Freshness counter for guardian approval preimages.
-    /// @dev SEPARATE FROM `nonces` ON PURPOSE. Approvals used to be keyed on
-    ///      `nonces[from]`, which `_finishDeposit` also advances — and deposits
-    ///      are not guardian-gated. So the compromised key the guardian exists
-    ///      to defend against could void every standing approval for 1 wei plus
-    ///      gas, repeatedly, and batch ten of them per transaction through
-    ///      `multicall`. The guardian survived; the rescue it existed to
-    ///      authorise could never land. Worse, the victim could not escape by
-    ///      removing the guardian either — that path stages a window and the
-    ///      thief, still holding the key, takes the balance the moment it
-    ///      clears. Only operations a guardian actually gates move this one.
-    mapping(address user => uint256) public guardianNonces;
-
     mapping(address user => uint256) public nonces;
 
     /// @notice CREATE2-deployed auto-claim forwarder. Approve via
@@ -173,7 +113,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
     constructor(address _htmlChunk1, address _htmlChunk2) payable {
         htmlChunk1 = _htmlChunk1;
         htmlChunk2 = _htmlChunk2;
-        gate = address(new SLOWGateNext{salt: bytes32(0)}());
+        gate = address(new SLOWGatev1{salt: bytes32(0)}());
     }
 
     /// @notice Returns the full SLOW dapp HTML reassembled from onchain SSTORE2 chunks.
@@ -211,29 +151,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return uint256(
             keccak256(
                 abi.encodePacked(
-                    from, to, id, amount, guardianNonces[from], lastGuardianChange[from], _OP_TRANSFER
-                )
-            )
-        );
-    }
-
-    /// @notice Hash matching the next delayed `depositTo` by `from`.
-    /// @dev Deposits run off `nonces` and carry `_OP_DEPOSIT`, so they are NOT
-    ///      predicted by `predictTransferId` — that one now answers only for the
-    ///      guarded ops, which run off `guardianNonces`. Splitting the counters
-    ///      is what stops a deposit voiding a guardian approval; splitting the
-    ///      op byte is what stops the two id spaces overlapping. This is the
-    ///      predictor for the deposit space, so an indexer or a wallet can still
-    ///      name the pending entry a deposit is about to create.
-    function predictDepositId(address from, address to, uint256 id, uint256 amount)
-        public
-        view
-        returns (uint256)
-    {
-        return uint256(
-            keccak256(
-                abi.encodePacked(
-                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_DEPOSIT
+                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_TRANSFER
                 )
             )
         );
@@ -250,7 +168,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return uint256(
             keccak256(
                 abi.encodePacked(
-                    from, to, id, amount, guardianNonces[from], lastGuardianChange[from], _OP_WITHDRAW
+                    from, to, id, amount, nonces[from], lastGuardianChange[from], _OP_WITHDRAW
                 )
             )
         );
@@ -299,7 +217,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            guardianNonces[user],
+                            nonces[user],
                             lastGuardianChange[user],
                             _OP_TRANSFER
                         )
@@ -327,7 +245,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            guardianNonces[user],
+                            nonces[user],
                             lastGuardianChange[user],
                             _OP_WITHDRAW
                         )
@@ -403,8 +321,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             // First-time / post-removal: immediate. Defensive pending-clear (invariant: empty here).
             delete pendingGuardian[msg.sender];
             lastGuardianChange[msg.sender] = block.timestamp;
-            // Reverse index: previous is address(0) on this branch by definition.
-            _indexGuardian(msg.sender, address(0), newGuardian);
             emit GuardianSet(msg.sender, guardians[msg.sender] = newGuardian);
         } else {
             // Active guardian — stage rotation. Each new proposal restarts the veto window.
@@ -423,21 +339,8 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         PendingGuardian memory p = pendingGuardian[user];
         require(p.effectiveAt != 0, NoGuardianChangePending());
         require(block.timestamp >= p.effectiveAt, GuardianChangeNotReady());
-        // NOT PERMISSIONLESS. The natspec above offers a late abort — propose
-        // someone else, then cancel inside the new window — and a permissionless
-        // commit defeats it: the guardian being installed watches the mempool,
-        // front-runs that abort with this call, and is then the sitting guardian
-        // with a legitimate veto over every later rotation. The user cannot even
-        // name themselves (`InvalidGuardian`), so the position is permanent and
-        // the balance is frozen behind a co-signer they were trying to refuse.
-        // Restricting it to the two parties the change is actually between costs
-        // nothing: either of them can still land it once the window has passed.
-        require(msg.sender == user || msg.sender == guardians[user], Unauthorized());
         delete pendingGuardian[user];
         lastGuardianChange[user] = block.timestamp;
-        // Only here, never when the rotation is PROPOSED: until it commits the
-        // old guardian is still the guardian, and still the one who can veto.
-        _indexGuardian(user, guardians[user], p.guardian);
         emit GuardianSet(user, guardians[user] = p.guardian);
     }
 
@@ -614,10 +517,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         uint96 delay,
         uint256 tip,
         bytes calldata data
-    ) internal override returns (uint256 transferId) {
-        // Bounded here rather than at each entrypoint: all four deposit paths
-        // land in this function, so one check covers them and cannot drift.
-        require(delay <= _MAX_DELAY, InvalidDeposit());
+    ) internal returns (uint256 transferId) {
         uint256 id = encodeId(token, delay);
 
         unchecked {
@@ -633,7 +533,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             amount,
                             nonces[msg.sender]++,
                             lastGuardianChange[msg.sender],
-                            _OP_DEPOSIT
+                            _OP_TRANSFER
                         )
                     )
                 );
@@ -647,7 +547,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                 emit TransferPending(transferId, delay);
 
                 // `tip != 0` implies `delay != 0` (enforced by `depositToWithTip`).
-                if (tip != 0) SLOWGateNext(gate).recordTip{value: tip}(transferId, msg.sender, to);
+                if (tip != 0) SLOWGatev1(gate).recordTip{value: tip}(transferId, msg.sender, to);
             } else {
                 unlockedBalances[to][id] += amount;
             }
@@ -676,7 +576,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            guardianNonces[from]++,
+                            nonces[from]++,
                             lastGuardianChange[from],
                             _OP_WITHDRAW
                         )
@@ -696,13 +596,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                 token.safeTransfer(to, amount);
             }
         }
-    }
-
-    /// @dev The ERC-20 pull, exposed to `SlowPermit` so its entrypoints move
-    ///      funds exactly as `depositTo` does — from `msg.sender`, which is what
-    ///      keeps `pendingTransfers[id].from` the depositor rather than a router.
-    function _pull(address token, address from, uint256 amount) internal override {
-        token.safeTransferFrom(from, address(this), amount);
     }
 
     // TRANSFER
@@ -727,12 +620,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             bool requiresDelayOrGuardian = guardian != address(0) || delay != 0;
 
             if (requiresDelayOrGuardian) {
-                // One id, both roles: the guardian's approval handle and, when
-                // delayed, the pending entry's key. It runs on `guardianNonces`,
-                // which only guarded ops advance, so a deposit can no longer
-                // void a standing approval. Deposits keep `nonces` and carry
-                // `_OP_DEPOSIT`, which is what keeps the two id spaces disjoint
-                // now that they no longer share a counter.
                 uint256 transferId = uint256(
                     keccak256(
                         abi.encodePacked(
@@ -740,7 +627,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
                             to,
                             id,
                             amount,
-                            guardianNonces[from]++,
+                            nonces[from]++,
                             lastGuardianChange[from],
                             _OP_TRANSFER
                         )
@@ -831,34 +718,22 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
 
     // URI HELPERS
 
-    /// @dev Rolls up past days. The deployed build stops there, so a hundred-year
-    ///      lock reads "36525 days" — correct, and not legible as a duration.
-    /// @dev The largest unit that divides the delay EXACTLY.
-    ///
-    ///      Truncating to the largest unit that merely fits understates the
-    ///      lock, and this is an immutable artefact: 23 months rendered as
-    ///      "1 year" tells a holder their funds free eleven months before they
-    ///      do, forever. Every round duration anyone actually chooses — ten
-    ///      minutes, an hour, a day, a week, thirty days, a year — divides
-    ///      exactly and reads exactly as it did. Only the awkward values change,
-    ///      and they change from wrong to right: 1h30m is "90 minutes", not
-    ///      "1 hour"; 23 months is "23 months", not "1 year".
-    ///
-    ///      Seconds divide everything, so there is always an answer.
     function _formatDelay(uint256 delay) internal pure returns (string memory) {
         unchecked {
-            if (delay >= 31536000 && delay % 31536000 == 0) return _unit(delay / 31536000, "year");
-            if (delay >= 2592000 && delay % 2592000 == 0) return _unit(delay / 2592000, "month");
-            if (delay >= 86400 && delay % 86400 == 0) return _unit(delay / 86400, "day");
-            if (delay >= 3600 && delay % 3600 == 0) return _unit(delay / 3600, "hour");
-            if (delay >= 60 && delay % 60 == 0) return _unit(delay / 60, "minute");
-            return _unit(delay, "second");
+            if (delay >= 86400) {
+                uint256 d = delay / 86400;
+                return string(abi.encodePacked(d.toString(), d == 1 ? " day" : " days"));
+            }
+            if (delay >= 3600) {
+                uint256 h = delay / 3600;
+                return string(abi.encodePacked(h.toString(), h == 1 ? " hour" : " hours"));
+            }
+            if (delay >= 60) {
+                uint256 m = delay / 60;
+                return string(abi.encodePacked(m.toString(), m == 1 ? " minute" : " minutes"));
+            }
+            return string(abi.encodePacked(delay.toString(), delay == 1 ? " second" : " seconds"));
         }
-    }
-
-    /// @dev "1 day", "7 days". Factored out because it was written six times.
-    function _unit(uint256 v, string memory w) private pure returns (string memory) {
-        return string(abi.encodePacked(v.toString(), " ", w, v == 1 ? "" : "s"));
     }
 
     function _createURI(uint256 id) internal view returns (string memory) {
@@ -977,30 +852,6 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         return string(abi.encodePacked(_utf8Trim(string(clipped)), "..."));
     }
 
-    /// @dev Monospace has a fixed 0.6em advance, so the width of a string is
-    ///      known without measuring it. That is what lets this CHOOSE a size
-    ///      rather than force one: the deployed build sets
-    ///      `textLength="260" lengthAdjust="spacingAndGlyphs"` on the name row,
-    ///      which draws every name at exactly 260px however long it is. Measured
-    ///      across the collection that is 23.6px per character for "Ether (ETH)"
-    ///      and 8.4 for "Liquid staked Ether 2.0 (stETH)" — a 2.8x swing in
-    ///      letterform width, driven by a name this contract does not control.
-    /// @param len Character count of the string to be drawn.
-    /// @param box Width in pixels it has to fit inside.
-    function _fit(uint256 len, uint256 box, uint256 max, uint256 min)
-        internal
-        pure
-        returns (uint256)
-    {
-        if (len == 0) return max;
-        unchecked {
-            uint256 size = (box * 10) / (len * 6);
-            if (size > max) return max;
-            if (size < min) return min;
-            return size;
-        }
-    }
-
     function _createImage(
         address token,
         uint256 delay,
@@ -1011,7 +862,27 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         string memory escSymbol = LibString.escapeHTML(tokenSymbol);
         string memory dispName = LibString.escapeHTML(_clipForDisplay(tokenName, 28));
 
-
+        // Address row is suppressed for ETH (zero address would render as 0x000…000).
+        string memory addressRow = token == address(0)
+            ? ""
+            : string(
+                abi.encodePacked(
+                    '<text x="150" y="105" font-size="10" textLength="260" lengthAdjust="spacingAndGlyphs">',
+                    token.toHexStringChecksummed(),
+                    "</text>"
+                )
+            );
+        // Exact-seconds subtitle for delays over one minute, where the main
+        // label loses second-level resolution.
+        string memory secondsRow = delay > 60
+            ? string(
+                abi.encodePacked(
+                    '<text x="150" y="230" font-size="8" fill="#888">',
+                    delay.toString(),
+                    " seconds</text>"
+                )
+            )
+            : "";
 
         bytes memory svg = abi.encodePacked(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">',
@@ -1020,35 +891,20 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             unicode" · ",
             delayLabel,
             "</title>",
-            // The base plate. The supplied art's corners are continuous
-            // (superelliptical), not circular: an rx rounded rect of the same
-            // radius departs from it by 3.6px at this size, which is visible.
-            // Coordinates are rounded to 0.1, which costs 0.03px and 56 bytes.
-            // The old inset border is gone — it existed to find the edge against
-            // a page, and a blue plate finds its own.
-            '<path d="M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z" fill="#0A0A0A" stroke="#fff" stroke-width="4"/>',
-            // The rule needs a stated width: unstated it is 1 user unit, which at
-            // 300 lands on a half-pixel and greys out at small sizes.
-            '<line x1="20" y1="60" x2="280" y2="60" stroke="#fff" stroke-width="2"/>',
-            '<text x="20" y="44" font-family="Helvetica,Arial,sans-serif" font-size="26" fill="#fff">SLOW</text>',
+            '<rect width="300" height="300" fill="#000"/>',
+            '<rect x="1" y="1" width="298" height="298" fill="none" stroke="#fff"/>',
+            '<line x1="20" y1="50" x2="280" y2="50" stroke="#fff"/>',
+            '<text x="20" y="35" font-family="Helvetica,Arial,sans-serif" font-size="24" fill="#fff">SLOW</text>',
             '<g font-family="monospace" text-anchor="middle" fill="#fff">',
-            '<text x="150" y="150" font-size="',
-            _fit(bytes(escSymbol).length, 240, 44, 14).toString(),
-            '">',
+            addressRow,
+            '<text x="150" y="165" font-size="12" textLength="260" lengthAdjust="spacingAndGlyphs">',
+            dispName,
+            " (",
             escSymbol,
-            "</text>"
+            ")</text>"
         );
         bytes memory tail = abi.encodePacked(
-            '<text x="150" y="185" font-size="',
-            _fit(bytes(dispName).length, 250, 14, 8).toString(),
-            '" fill="#8A8A8A">',
-            dispName,
-            '</text><text x="150" y="240" font-size="',
-            _fit(bytes(delayLabel).length, 250, 22, 11).toString(),
-            '">',
-            delayLabel,
-            "</text>",
-            "</g></svg>"
+            '<text x="150" y="215" font-size="12">', delayLabel, "</text>", secondsRow, "</g></svg>"
         );
 
         return string(
@@ -1073,10 +929,10 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
 /// `setApprovalForAll(slow.gate(), true)`. Cannot redirect funds: the gate has
 /// no path to `safeTransferFrom` or `withdrawFrom`, and `claim` pins payout to `pt.to`.
 /// Holds optional per-transfer relayer tips posted via `SLOW.depositToWithTip`.
-contract SLOWGateNext {
+contract SLOWGatev1 {
     using SafeTransferLib for address;
 
-    SLOWNext public immutable slow = SLOWNext(msg.sender);
+    SLOWv1 public immutable slow = SLOWv1(msg.sender);
 
     struct Tip {
         uint96 amount;
@@ -1112,32 +968,14 @@ contract SLOWGateNext {
     /// required); otherwise routes through `slow.claim`, which requires `pt.to` to
     /// have approved the gate via `setApprovalForAll`.
     function claim(uint256 transferId) public {
-        _claimAndPay(transferId, msg.sender);
-    }
-
-    /// @notice One id, on behalf of `payee`. Callable only by this contract.
-    /// @dev The isolation primitive `claimMany` needs: a `try` needs an external
-    ///      call, an external call rewrites `msg.sender`, and the tip has to
-    ///      keep going to the keeper who submitted the batch.
-    function claimOne(uint256 transferId, address payee) public {
-        require(msg.sender == address(this), Unauthorized());
-        _claimAndPay(transferId, payee);
+        _claimAndPay(transferId);
     }
 
     /// @notice Atomic batch settlement; the whole call reverts on the first failure.
     /// Keepers must filter ids off-chain (timelock-expired, no guardian on `pt.to`).
     function claimMany(uint256[] calldata transferIds) public {
         for (uint256 i; i != transferIds.length; ++i) {
-            // PER-ID ISOLATION, because the failure is not hypothetical. Every
-            // id in the batch belongs to a recipient who may `unlock` it at any
-            // moment, and that is ordinary, honest behaviour — not an attack.
-            // Settled ids make `claimTipped` revert `TransferDoesNotExist`, and
-            // with a bare loop that one revert took the whole batch with it: a
-            // 20-id batch cost the keeper 1,375,690 gas and one 77,602-gas
-            // `unlock` destroyed it, ~18x leverage that scales with batch size.
-            // Filtering off-chain, which the note above prescribes, cannot fix
-            // it — the kill is a front-run, so no pre-flight read can see it.
-            try this.claimOne(transferIds[i], msg.sender) {} catch {}
+            _claimAndPay(transferIds[i]);
         }
     }
 
@@ -1155,17 +993,13 @@ contract SLOWGateNext {
         emit TipRefunded(transferId, t.amount, msg.sender);
     }
 
-    /// @dev `payee` is threaded rather than read from `msg.sender`, because
-    ///      `claimMany` reaches this through a `this.` self-call to isolate a
-    ///      failing id — and inside that call `msg.sender` is the gate, not the
-    ///      keeper. Reading it there would pay every tip to this contract.
-    function _claimAndPay(uint256 transferId, address payee) internal {
+    function _claimAndPay(uint256 transferId) internal {
         Tip memory t = tips[transferId];
         if (t.amount != 0) {
             delete tips[transferId];
             slow.claimTipped(transferId);
-            payee.safeTransferETH(t.amount);
-            emit TipPaid(transferId, t.amount, payee);
+            msg.sender.safeTransferETH(t.amount);
+            emit TipPaid(transferId, t.amount, msg.sender);
         } else {
             slow.claim(transferId);
         }

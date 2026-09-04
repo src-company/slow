@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 pragma solidity ^0.8.19;
 
-import {SLOW, SLOWGate} from "../src/SLOW.sol";
+import {SLOWv1 as SLOW, SLOWGatev1 as SLOWGate} from "../src/SLOWv1.sol";
 import {Test, Vm} from "../lib/forge-std/src/Test.sol";
 import {console} from "forge-std/console.sol";
 import {Base64} from "@solady/src/utils/Base64.sol";

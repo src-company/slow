@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build the render gallery from out/gallery.tsv — the raw uri() output of a
- * deployed SLOWNext, produced by script/RenderGallery.s.sol.
+ * deployed SLOW, produced by script/RenderGallery.s.sol.
  *
  * The point of going through the contract rather than porting the renderer to
  * JS is that a port can be wrong in exactly the way that matters: it would show
@@ -65,7 +65,7 @@ figcaption span{color:var(--dim);font-size:11px;font-variant-numeric:tabular-num
 </style>
 <header>
   <h1>SLOW &middot; Render Gallery</h1>
-  <p class="sub">Every image below is the literal output of <code>uri(id)</code> on a deployed SLOWNext &mdash;
+  <p class="sub">Every image below is the literal output of <code>uri(id)</code> on a deployed SLOW &mdash;
   compiled, run in the EVM, and decoded here. Nothing is re-drawn. ${items.length} renders:
   ${SYMBOLS.length} assets &times; ${DELAYS.length} delays, from one minute to the <code>uint96</code> ceiling.</p>
 </header>

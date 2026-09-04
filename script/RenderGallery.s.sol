@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Script} from "@forge/Script.sol";
-import {SLOWNext} from "../src/SLOWNext.sol";
+import {SLOW} from "../src/SLOW.sol";
 
 /// @dev A token that answers name() and symbol(), which is all _createURI reads.
 contract Tok {
@@ -20,7 +20,7 @@ contract Tok {
 ///         re-implementation of the renderer in another language.
 contract RenderGallery is Script {
     function run() external {
-        SLOWNext slow = new SLOWNext(address(0), address(0));
+        SLOW slow = new SLOW(address(0), address(0));
 
         string[2][15] memory assets = [
             ["Ether", "ETH"],

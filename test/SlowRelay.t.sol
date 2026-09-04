@@ -2,7 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {Test} from "../lib/forge-std/src/Test.sol";
-import {SLOWNext} from "../src/SLOWNext.sol";
+import {SLOW} from "../src/SLOW.sol";
 import {SlowRelay} from "../src/SlowRelay.sol";
 import {SlowOrigin} from "../src/SlowOrigin.sol";
 
@@ -73,7 +73,7 @@ contract ForgedInbox {
 }
 
 contract SlowRelayTest is Test {
-    SLOWNext internal slow;
+    SLOW internal slow;
     SlowRelay internal relay;
     MockERC20 internal token;
     MockInbox internal inbox;
@@ -92,7 +92,7 @@ contract SlowRelayTest is Test {
 
     function setUp() public {
         vm.chainId(SRC);
-        slow = new SLOWNext(address(0), address(0));
+        slow = new SLOW(address(0), address(0));
         inbox = new MockInbox();
         address[] memory inboxes = new address[](1);
         inboxes[0] = address(inbox);
@@ -703,7 +703,7 @@ contract SlowRelayTransportTest is Test {
     address internal constant ARB_SYS = 0x0000000000000000000000000000000000000064;
     address internal constant OP_MESSENGER = 0x4200000000000000000000000000000000000007;
 
-    SLOWNext internal slow;
+    SLOW internal slow;
     SlowRelay internal relay;
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
@@ -716,7 +716,7 @@ contract SlowRelayTransportTest is Test {
 
     function setUp() public {
         vm.chainId(DST);
-        slow = new SLOWNext(address(0), address(0));
+        slow = new SLOW(address(0), address(0));
         relay = new SlowRelay(address(slow), new address[](0));
         vm.deal(relayer, 100 ether);
         vm.warp(1_700_000_000);
