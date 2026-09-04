@@ -31,8 +31,15 @@ contract SLOWTest is Test {
     event TransferPending(uint256 indexed transferId, uint96 indexed delay);
     event TransferReversed(uint256 indexed transferId);
 
-    function _deploySlow(bytes memory p1, bytes memory p2) internal returns (SLOW) {
+    function _deploySlow(bytes memory p1, bytes memory p2) internal virtual returns (SLOW) {
         return new SLOW(SSTORE2.write(p1), SSTORE2.write(p2));
+    }
+
+    /// @dev The gate each build CREATE2s from its constructor. A subclass that
+    ///      deploys a different build deploys a different gate, so the address
+    ///      prediction has to follow it rather than pin one creation code.
+    function _gateInitCodeHash() internal pure virtual returns (bytes32) {
+        return keccak256(type(SLOWGate).creationCode);
     }
 
     function setUp() public payable {
@@ -2429,7 +2436,7 @@ contract SLOWTest is Test {
                             bytes1(0xff),
                             address(slow),
                             bytes32(0),
-                            keccak256(type(SLOWGate).creationCode)
+                            _gateInitCodeHash()
                         )
                     )
                 )
