@@ -57,6 +57,13 @@ forge script script/DeployBridge.s.sol \
   --sig "run(address,uint64)" <slow-on-that-chain> 0x5107a771
 ```
 
+The script supplies `SlowArrival`s forward routes itself, per chain — see below.
+Its constructor takes `(slow, chainIds, routes)`, so the arrival deployed on an
+L2 gets an empty set and the one on L1 gets both destinations.
+
+```
+```
+
 The script asserts the deployed address equals the predicted one before the
 transaction is worth anything, then checks `slow()` on both contracts and the
 messenger set on the relay.
@@ -77,6 +84,49 @@ Empty on the L2s is deliberate, not an omission: a message from the relay on L1
 arrives at `applyAlias(address(this))`, and forging that would mean deploying
 code at one specific address nobody can reach. Only L1, which receives through
 general-purpose bridge contracts, has to name them.
+
+## Forwarding, and the trust it costs
+
+`SlowArrival.forward` lands value on L1 only to send it on, so a Base-to-Robinhood
+transfer is **one action by the sender** rather than a withdrawal plus a second
+transaction five days later. The value is never at risk in the two-hop version
+either — but a transfer that needs the sender to come back a working week later
+is one most senders will not finish.
+
+**Only L1 has routes, and that is not an omission.** Both legs of an L2-to-L2
+send pass through L1; there is no canonical path from one L2 straight to
+another, so an L2 has nowhere to forward to. `_forwardRoutes()` returns an empty
+set anywhere but chain 1.
+
+| destination | entrypoint | kind |
+| --- | --- | --- |
+| Base 8453 | OptimismPortal `0x49048044…E97e` | OP Stack |
+| Robinhood 4663 | Delayed Inbox `0x1A07cc4B…7a2D` | Arbitrum |
+
+with `FORWARD_GAS` 1,000,000 and `FORWARD_MAX_FEE` 1 gwei.
+
+**This is the one place the contract trusts an address with value**, and it is
+worth being clear about why it is different from the relay. `SlowRelay.pushProof`
+takes an *untrusted* entrypoint because only a fact travels through it — a wrong
+address wastes the caller's gas and nothing else. Here value travels, so a wrong
+entrypoint is theft. The set is therefore fixed in the constructor, and there is
+no setter: what a deployment writes is what the contract does forever. Still no
+owner.
+
+Two behaviours worth knowing before choosing the numbers above:
+
+- **The retryable fee is priced live**, against `block.basefee` at the moment the
+  forward lands. Anything decided at send time is five days stale by the time it
+  is spent, so it cannot be carried in the message.
+- **Fees larger than the payload are refused, not paid.** A fee that has grown
+  past the amount would otherwise hand the whole transfer to the bridge. It goes
+  to `rescue` for the sender instead.
+
+Verified against the deployed contracts, not just mocks
+(`test/ArrivalForwardFork.t.sol`): the real Base portal accepts the deposit and
+the full payload arrives; the real Robinhood inbox accepts the retryable priced
+against its own `calculateRetryableSubmissionFee`; and a dust payload is refused
+against real fees rather than a mock's.
 
 ## After deployment
 
