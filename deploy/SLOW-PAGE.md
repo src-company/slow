@@ -90,13 +90,33 @@ The proxy initcode hash it uses is checked against the canonical
    ```
 
    Writes `out/chunkN.creation.txt` and prints the `keccak256` the constructor
-   will be given. At 99 KB the page is 5 chunks with 21,971 B of headroom.
+   will be given, the chunk count, and the headroom. **Read the count from that
+   output, never from here.** This page has been 5 chunks, then 10, and is 11
+   at the time of writing; a runbook that names a number is wrong by the next
+   time the page grows, and wrong quietly.
 
 4. **Deploy the chunks** with plain `CREATE`, in order, and record the
    addresses. Each is `eth_sendTransaction` with the initcode as `data` and no
-   `to`. Reference cost from the FWA deployment: a full 24.5 KB chunk is about
-   5.37M gas, so 5 chunks plus the wrapper is roughly 28M gas — under
-   0.003 ETH at 0.1 gwei.
+   `to`.
+
+   Measured by deploying the real `out/chunkN.creation.txt` initcode to a local
+   EVM, not estimated:
+
+   | | gas |
+   | --- | --- |
+   | a full 24,575 B chunk | 5,368,866 |
+   | the part-full last chunk, at 812 B | 228,981 |
+   | the `SlowPage` wrapper, over 11 chunks | 1,458,564 |
+
+   The first line confirms the FWA reference figure of ~5.37M to five digits.
+   A chunk's cost is code deposit, so it scales with its bytes and nothing else:
+   multiply by however many full chunks `chunk.mjs` emits. The wrapper does not
+   scale that way — it reassembles the whole document in memory and hashes it,
+   so its cost tracks the PAGE, and the figure above is for a 246,562 B one.
+
+   That build — ten full chunks, one part-full, and the wrapper — is
+   **55,376,205 gas, about 0.0055 ETH at 0.1 gwei**. Re-measure rather than
+   scaling this if the page has moved much; it moves often.
 
 5. **Deploy the wrapper through CREATE3** with the mined salt:
 
@@ -124,15 +144,21 @@ The proxy initcode hash it uses is checked against the canonical
    answers `200` with `text/html`, and that every route declared `exact` serves
    identical bytes.
 
-## Two chains, one page
+## Three chains, one page
 
 The page is a portal. It opens on the chain it was served from — a gateway
 serving `<0xADDRESS>.<chainId>.<host>` names the chain in the hostname — and a
-switcher moves between them. SLOW is at the same canonical address on both, so
-publishing this page on Robinhood Chain gives readers a working mainnet portal
-for free.
+switcher moves between them. SLOW is at the same canonical address on Ethereum,
+Base (8453) and Robinhood Chain (4663), so publishing this page on any one of
+them gives readers a working portal onto the other two for free.
 
-What is verified on chain 4663, and what the page does about it:
+Multicall3, Permit2 and CreateX are canonical on all three. Names are the one
+thing that is not: `.eth`, `.wei` and `.gwei` resolve on mainnet only, so name
+reads are pinned to chain 1 unconditionally — see the ENS note below for why
+that is a correctness requirement on 4663 rather than a convenience.
+
+What is verified on chain 4663, the newest of the three, and what the page does
+about it:
 
 | | 4663 | consequence |
 | --- | --- | --- |
