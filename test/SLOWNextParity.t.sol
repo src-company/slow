@@ -32,4 +32,27 @@ contract SLOWNextParityTest is SLOWTest {
     function _gateInitCodeHash() internal pure override returns (bytes32) {
         return keccak256(type(SLOWGateNext).creationCode);
     }
+
+    /// Deposits carry `_OP_DEPOSIT` here and run off `nonces`, while the guarded
+    /// ops moved to `guardianNonces` — so the deposit space has its own
+    /// predictor. That split is the fix for a deposit being able to void a
+    /// standing guardian approval.
+    function _predictDepositId(address from, address to, uint256 id, uint256 amount)
+        internal
+        view
+        override
+        returns (uint256)
+    {
+        return SLOWNext(payable(address(slow))).predictDepositId(from, to, id, amount);
+    }
+
+    /// `claimMany` isolates each id in this build.
+    function _claimManyIsAtomic() internal pure override returns (bool) {
+        return false;
+    }
+
+    /// Guarded ops consume `guardianNonces` here; `nonces` belongs to deposits.
+    function _opNonce(address user) internal view override returns (uint256) {
+        return SLOWNext(payable(address(slow))).guardianNonces(user);
+    }
 }

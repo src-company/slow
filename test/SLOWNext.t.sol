@@ -131,19 +131,21 @@ contract SLOWNextTest is Test {
     function testPermitDepositRejectsZeroRecipient() public {
         (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
         vm.prank(owner);
-        vm.expectRevert(SlowPermitErrors.InvalidPermitDeposit.selector);
+        vm.expectRevert(); // Solady's _mint: TransferToZeroAddress
         slow.depositToWithPermit(
             address(token), address(0), AMOUNT, DELAY, "", block.timestamp, v, r, s
         );
     }
 
-    /// Depositing to SLOW itself with `delay == 0` would credit
-    /// `unlockedBalances[address(this)]`, which nothing can ever spend — a
-    /// permanent loss with no `reverse` to undo it.
+    /// SLOW is not an ERC-1155 receiver, so `_mint` refuses it. The explicit
+    /// `to != address(this)` check that used to sit here was removed once that
+    /// was verified: it cost ~213 bytes of a ~500-byte EIP-170 margin to
+    /// re-reject something already unreachable. The PROPERTY still has to hold,
+    /// so it is still asserted — just without pinning which layer enforces it.
     function testPermitDepositRejectsContractItselfAsRecipient() public {
         (uint8 v, bytes32 r, bytes32 s) = _sign(OWNER_PK, address(slow), AMOUNT, block.timestamp);
         vm.prank(owner);
-        vm.expectRevert(SlowPermitErrors.InvalidPermitDeposit.selector);
+        vm.expectRevert();
         slow.depositToWithPermit(
             address(token), address(slow), AMOUNT, 0, "", block.timestamp, v, r, s
         );
@@ -234,6 +236,71 @@ contract SLOWNextTest is Test {
         assertEq(evil.caught(), REENTRANCY, "re-entry into the permit deposit must be rejected");
     }
 
+    // ────────────────────────────────── audit regressions (2026-09-04)
+
+    /// A dust deposit used to void every standing guardian approval: approvals
+    /// were keyed on `nonces`, which `_finishDeposit` advances on a path with no
+    /// guardian check. The compromised key the guardian defends against could
+    /// therefore freeze the balance for 1 wei a time, and removing the guardian
+    /// was no escape either — that stages a window the thief simply waits out.
+    function testDepositCannotVoidAGuardianApproval() public {
+        vm.prank(owner);
+        slow.depositTo{value: 10 ether}(address(0), owner, 0, 0, "");
+        uint256 id = slow.encodeId(address(0), 0);
+
+        vm.prank(owner);
+        slow.setGuardian(guardian);
+
+        uint256 wid = slow.predictWithdrawalId(owner, recipient, id, 10 ether);
+        vm.prank(guardian);
+        slow.approveTransfer(owner, wid);
+
+        // The attack: a delayed dust deposit from the compromised key. This
+        // advances `nonces`, and used to advance the approval's counter with it.
+        vm.prank(owner);
+        slow.depositTo{value: 1}(address(0), address(0xBAD), 0, 1, "");
+
+        // The approval must still be the one the withdrawal hashes to.
+        assertEq(slow.predictWithdrawalId(owner, recipient, id, 10 ether), wid, "approval id moved");
+        vm.prank(owner);
+        slow.withdrawFrom(owner, recipient, id, 10 ether);
+        assertEq(recipient.balance, 10 ether, "guarded recovery must land");
+    }
+
+    /// `commitGuardian` used to be permissionless, which defeated the late-abort
+    /// the natspec advertises: the guardian being installed front-runs the
+    /// user's abort, lands the commit, and then vetoes every later rotation.
+    function testCommitGuardianRejectsAStranger() public {
+        vm.prank(owner);
+        slow.setGuardian(guardian);
+        vm.prank(owner);
+        slow.setGuardian(address(0x7)); // staged rotation
+
+        vm.warp(vm.getBlockTimestamp() + 1 days);
+
+        vm.prank(address(0xDEAD));
+        vm.expectRevert();
+        slow.commitGuardian(owner);
+
+        // Either party to the change can still land it.
+        vm.prank(guardian);
+        slow.commitGuardian(owner);
+        assertEq(slow.guardians(owner), address(0x7));
+    }
+
+    /// An unbounded `delay` made a pending entry permanent — no `unlock`, no
+    /// `claim`, no `clawback` ever matures — so anyone could pin an unremovable
+    /// row into a stranger's account, which is what made the lens DoS stick.
+    function testDepositRejectsADelayPastTheCeiling() public {
+        vm.prank(owner);
+        vm.expectRevert();
+        slow.depositTo{value: 1 ether}(address(0), recipient, 0, type(uint96).max, "");
+
+        // The advertised ceiling itself still works.
+        vm.prank(owner);
+        slow.depositTo{value: 1 ether}(address(0), recipient, 0, 3155760000, "");
+    }
+
     // ───────────────────────────────────── SlowPermit: cross-chain replay
 
     /// SLOW lands at one address on every chain, and USDe/cbBTC are at one
@@ -306,6 +373,7 @@ contract SLOWNextTest is Test {
         assertFalse(slow.guards(next, owner), "new guardian gained the ward too early");
 
         vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.prank(owner);
         slow.commitGuardian(owner);
 
         assertFalse(slow.guards(guardian, owner));
@@ -321,6 +389,7 @@ contract SLOWNextTest is Test {
         vm.prank(owner);
         slow.setGuardian(address(0));
         vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.prank(owner);
         slow.commitGuardian(owner);
 
         assertEq(slow.wardCount(guardian), 0);
@@ -342,6 +411,7 @@ contract SLOWNextTest is Test {
         vm.prank(wards[1]);
         slow.setGuardian(address(0));
         vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.prank(wards[1]);
         slow.commitGuardian(wards[1]);
 
         assertEq(slow.wardCount(guardian), 2);
@@ -354,6 +424,7 @@ contract SLOWNextTest is Test {
         vm.prank(wards[2]);
         slow.setGuardian(address(0));
         vm.warp(vm.getBlockTimestamp() + 1 days);
+        vm.prank(wards[2]);
         slow.commitGuardian(wards[2]);
         assertEq(slow.wardCount(guardian), 1);
         assertEq(slow.wardsOf(guardian)[0], wards[0]);

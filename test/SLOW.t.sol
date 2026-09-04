@@ -35,6 +35,31 @@ contract SLOWTest is Test {
         return new SLOW(SSTORE2.write(p1), SSTORE2.write(p2));
     }
 
+    /// @dev Which id a deposit lands under. The next build gives deposits their
+    ///      own op byte, so `predictTransferId` no longer answers for them.
+    function _predictDepositId(address from, address to, uint256 id, uint256 amount)
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
+        return slow.predictTransferId(from, to, id, amount);
+    }
+
+    /// @dev The counter a GUARDED operation consumes. The next build moves
+    ///      guarded ops onto `guardianNonces` and leaves `nonces` to deposits,
+    ///      so that a deposit can no longer invalidate a standing approval.
+    function _opNonce(address user) internal view virtual returns (uint256) {
+        return slow.nonces(user);
+    }
+
+    /// @dev Whether `claimMany` aborts the batch on the first bad id. The next
+    ///      build isolates each id instead, because one recipient's ordinary
+    ///      `unlock` could otherwise destroy a keeper's whole batch.
+    function _claimManyIsAtomic() internal pure virtual returns (bool) {
+        return true;
+    }
+
     /// @dev The gate each build CREATE2s from its constructor. A subclass that
     ///      deploys a different build deploys a different gate, so the address
     ///      prediction has to follow it rather than pin one creation code.
@@ -370,10 +395,12 @@ contract SLOWTest is Test {
 
         // Commit before delay reverts.
         vm.expectRevert(SLOW.GuardianChangeNotReady.selector);
+        vm.prank(user1);
         slow.commitGuardian(user1);
 
         // After delay, anyone can commit.
         vm.warp(block.timestamp + 1 days);
+        vm.prank(user1);
         slow.commitGuardian(user1);
         assertEq(slow.guardians(user1), address(0), "guardian removed post-commit");
     }
@@ -394,10 +421,12 @@ contract SLOWTest is Test {
 
         // Commit before delay reverts.
         vm.expectRevert(SLOW.GuardianChangeNotReady.selector);
+        vm.prank(user1);
         slow.commitGuardian(user1);
 
         // After delay, commit succeeds and rotation lands.
         vm.warp(block.timestamp + 1 days);
+        vm.prank(user1);
         slow.commitGuardian(user1);
         assertEq(slow.guardians(user1), newGuardian);
         (pending, effectiveAt) = slow.pendingGuardian(user1);
@@ -427,6 +456,7 @@ contract SLOWTest is Test {
         // Even after the would-be delay window, no commit is possible.
         vm.warp(block.timestamp + 1 days + 1);
         vm.expectRevert(SLOW.NoGuardianChangePending.selector);
+        vm.prank(user1);
         slow.commitGuardian(user1);
     }
 
@@ -481,6 +511,7 @@ contract SLOWTest is Test {
         slow.cancelGuardianChange(user1);
 
         // Commit still works, as expected.
+        vm.prank(user1);
         slow.commitGuardian(user1);
         assertEq(slow.guardians(user1), address(0));
     }
@@ -510,6 +541,7 @@ contract SLOWTest is Test {
         vm.prank(user1);
         slow.setGuardian(address(0));
         vm.warp(block.timestamp + 1 days);
+        vm.prank(user1);
         slow.commitGuardian(user1);
         assertEq(slow.guardians(user1), address(0));
 
@@ -575,6 +607,7 @@ contract SLOWTest is Test {
         vm.prank(user1);
         slow.setGuardian(newGuardian);
         vm.warp(block.timestamp + 1 days);
+        vm.prank(user1);
         slow.commitGuardian(user1);
 
         // The stale approval no longer matches the now-current preimage.
@@ -1742,7 +1775,7 @@ contract SLOWTest is Test {
 
     function testPredictTransferIdMatches() public {
         uint256 id = calculateId(address(0), DELAY);
-        uint256 predicted = slow.predictTransferId(user1, user2, id, AMOUNT);
+        uint256 predicted = _predictDepositId(user1, user2, id, AMOUNT);
 
         vm.prank(user1);
         uint256 actual = slow.depositTo{value: AMOUNT}(address(0), user2, 0, DELAY, "");
@@ -2546,13 +2579,21 @@ contract SLOWTest is Test {
         ids[1] = 0xdeadbeef; // Nonexistent — second iteration must abort the whole batch.
 
         uint256 user2Before = user2.balance;
-        vm.expectRevert(SLOW.TransferDoesNotExist.selector);
-        gate.claimMany(ids);
-
-        assertEq(user2.balance, user2Before, "no funds moved on partial failure");
-
-        // Valid transfer still claimable after the rollback.
-        gate.claim(valid);
+        if (_claimManyIsAtomic()) {
+            vm.expectRevert(SLOW.TransferDoesNotExist.selector);
+            gate.claimMany(ids);
+            assertEq(user2.balance, user2Before, "no funds moved on partial failure");
+            // Valid transfer still claimable after the rollback.
+            gate.claim(valid);
+        } else {
+            // Isolated: the dead id is skipped and the good one still settles,
+            // which is the point — a keeper's batch must survive one recipient
+            // front-running it with an ordinary `unlock`.
+            gate.claimMany(ids);
+            assertEq(user2.balance, user2Before + AMOUNT, "good id must settle past a dead one");
+            vm.expectRevert(SLOW.TransferDoesNotExist.selector);
+            gate.claim(valid);
+        }
         assertEq(user2.balance, user2Before + AMOUNT, "valid claim still works post-revert");
     }
 
@@ -3290,7 +3331,7 @@ contract SLOWTest is Test {
 
         uint256 id = calculateId(address(0), 0);
         uint256 wid = slow.predictWithdrawalId(user1, user2, id, AMOUNT);
-        uint256 nonceBefore = slow.nonces(user1);
+        uint256 nonceBefore = _opNonce(user1);
 
         vm.prank(guardian);
         slow.approveTransfer(user1, wid);
@@ -3306,7 +3347,7 @@ contract SLOWTest is Test {
 
         // Approval and nonce are unchanged after the failed call.
         assertTrue(slow.guardianApproved(user1, wid));
-        assertEq(slow.nonces(user1), nonceBefore);
+        assertEq(_opNonce(user1), nonceBefore);
         assertEq(slow.predictWithdrawalId(user1, user2, id, AMOUNT), wid);
 
         // Legitimate caller still settles using the surviving approval.
@@ -3317,7 +3358,7 @@ contract SLOWTest is Test {
 
         // Now the approval has been consumed and the nonce moved forward.
         assertFalse(slow.guardianApproved(user1, wid));
-        assertEq(slow.nonces(user1), nonceBefore + 1);
+        assertEq(_opNonce(user1), nonceBefore + 1);
     }
 
     function testUnauthTransferDoesNotConsumeApproval() public {
@@ -3328,7 +3369,7 @@ contract SLOWTest is Test {
 
         uint256 id = calculateId(address(0), 0);
         uint256 tid = slow.predictTransferId(user1, user2, id, AMOUNT);
-        uint256 nonceBefore = slow.nonces(user1);
+        uint256 nonceBefore = _opNonce(user1);
 
         vm.prank(guardian);
         slow.approveTransfer(user1, tid);
@@ -3343,7 +3384,7 @@ contract SLOWTest is Test {
         slow.safeTransferFrom(user1, user2, id, AMOUNT, "");
 
         assertTrue(slow.guardianApproved(user1, tid));
-        assertEq(slow.nonces(user1), nonceBefore);
+        assertEq(_opNonce(user1), nonceBefore);
         assertEq(slow.predictTransferId(user1, user2, id, AMOUNT), tid);
 
         // Legitimate caller succeeds with the surviving approval.
@@ -3352,7 +3393,7 @@ contract SLOWTest is Test {
         assertEq(slow.balanceOf(user2, id), AMOUNT);
 
         assertFalse(slow.guardianApproved(user1, tid));
-        assertEq(slow.nonces(user1), nonceBefore + 1);
+        assertEq(_opNonce(user1), nonceBefore + 1);
     }
 
     function testIsWithdrawalApprovalNeededFlipsIndependently() public {
