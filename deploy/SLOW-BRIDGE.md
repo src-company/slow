@@ -94,19 +94,69 @@ Two paths no test can reach:
   marker byte, which a forked EVM executes literally and reverts on. The
   outbound Arbitrum leg is only ever exercised stubbed.
 
+## Destination gas — the number that can lose funds
+
+The gas for a bridged arrival is bought on L1 at the moment of sending and
+cannot be topped up. The page buys a fixed **400,000 for Base** and **600,000
+for Robinhood**. Measured (`test/ArrivalGas.t.sol`):
+
+| path | gas | against |
+| --- | --- | --- |
+| OP Stack deposit, ordinary recipient | 284,939 | 400,000 ✓ |
+| Arbitrum retryable, ordinary recipient | 285,037 | 600,000 ✓ |
+| with a bounty | 307,266 | 400,000 ✓ |
+| rescue branch (inner deposit failed) | 92,058 | ✓ |
+| `SlowArrival` overhead over a direct deposit | 35,705 | — |
+
+Comfortable for an ordinary recipient. **Not bounded for a contract one.**
+`depositTo` calls `onERC1155Received` on the recipient, and that hook spends from
+the same budget:
+
+| cold writes in the recipient's hook | gas | fits Base's 400k |
+| --- | --- | --- |
+| 0 | 281,392 | yes |
+| 4 | 370,428 | yes |
+| 6 | 414,946 | **no** |
+| 20 | 731,265 | **no** |
+
+So a bridged send to a contract whose hook does more than about **five cold
+storage writes** overruns what was bought. On OP Stack the deposit is consumed
+before the call and is not replayable, so that ETH is gone. An Arbitrum retryable
+stays redeemable for seven days, which is survivable but needs someone to notice.
+
+**This is older than `SlowArrival`.** The shipped route already bought a fixed
+400,000 for a `depositTo` that calls an arbitrary hook, and already overran it at
+around seven writes — `test_theCliffExistsWithoutTheWrapperToo` pins that. The
+wrapper's 35,705 moves the threshold from about seven to about five. It makes a
+pre-existing hazard modestly worse rather than creating one.
+
+Worth fixing before the route carries value, in `dapp/page.html`:
+
+- raise the fixed limits, and/or
+- size them on the recipient: the page can `eth_getCode` the recipient on the
+  destination chain and buy far more when it has any. An ordinary account needs
+  nothing like 400,000; a contract can need several million.
+
+The L1 cost of a larger `gasLimit` should be measured before picking a number —
+OP Stack meters deposits, so it is not free.
+
 ## Known blockers
 
-**The canonical SLOW address is occupied on Base by a different build.**
-`0x0000000000008887…AaBC` holds 13,386 bytes there against mainnet's 21,648. It
-answers to `name()` "SLOW" and carries `depositTo`, `reverse`, `unlock`,
-`withdrawFrom`, `setGuardian` and `predictTransferId`, but **not**
-`getOutboundTransfers`, `getInboundTransfers`, `depositToWithTip`, `clawback` or
-`claim`. It is an earlier generation, not the build the page drives.
+**SLOW is not deployed on Base or Robinhood at an address the page accepts.**
+A new vanity address is being mined for all three chains, which is what settles
+this. The address at `0x0000000000008887…AaBC` on Base holds an *older* SLOW —
+13,386 bytes against mainnet's 21,648, missing `getOutboundTransfers`,
+`getInboundTransfers`, `depositToWithTip`, `clawback` and `claim` — so it is not
+a candidate, and the page already refuses it: `probeDeployed` checks for the
+selectors the page actually calls, so Base reads as a mismatch rather than as
+SLOW and every route into it stays closed.
 
-The page already refuses it — `probeDeployed` checks for the selectors the page
-actually calls, so it reads as a mismatch rather than as SLOW, and every route
-into Base stays closed. Nothing is broken by it. But it does mean that address
-cannot host the consolidated build on Base, and the deployment plan has to name
-the address it will actually use.
+**Two paths no test can reach.** They need a real transaction, not another test:
 
-Robinhood Chain has nothing at that address.
+- **The finalisation transaction.** It needs a genuine Merkle proof, so no fork
+  test covers `arrive` being called by a real finalising portal.
+- **`ArbSys` on a real Orbit chain.** The precompile reports a single `0xfe`
+  marker byte, which a forked EVM executes literally and reverts on, so the
+  outbound Arbitrum leg is only ever exercised stubbed.
+
+Do one small round trip with dust before either contract is trusted with more.
