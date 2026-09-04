@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Run the whole suite, without the stale-artifact failure mode.
+#
+# WHY THE `touch`. `type(C).creationCode` is resolved when the file REFERENCING
+# it is compiled, not when C changes. `testGateAddressIsCreate2Predictable`
+# predicts the gate's CREATE2 address from `keccak256(type(SLOWGate).creationCode)`,
+# and SLOWGate lives in src/SLOW.sol — so editing that file moves the gate's
+# metadata hash while a cached test artifact still predicts the old address. The
+# test then fails on a change that could not have caused it.
+#
+# That has cost real time: a correct change was very nearly reverted on this
+# signal. It can also go the other way and hide a real move.
+#
+# scripts/render.sh already forces around exactly this hazard for the gallery
+# script, in its own words: "forge sees the script unchanged and replays the OLD
+# contract... That has happened twice." The tests had no such guard.
+#
+# A full `--force` rebuild recompiles every dependency through via-IR and gets
+# solc OOM-killed in a small container, which is why this touches only the test
+# files that bake in a creationCode constant rather than forcing the world.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Every test that embeds `type(...).creationCode`, found rather than listed, so
+# a new one is covered the day it is written.
+mapfile -t BAKED < <(grep -rl 'type(.*)\.creationCode' test/ 2>/dev/null || true)
+if [ ${#BAKED[@]} -gt 0 ]; then
+  echo "forcing recompile of ${#BAKED[@]} test file(s) that bake in creationCode:"
+  printf '  %s\n' "${BAKED[@]}"
+  touch "${BAKED[@]}"
+fi
+
+FORGE_ARGS=()
+[ "${1:-}" = "--fork" ] || FORGE_ARGS+=(--no-match-path 'test/*Fork*')
+
+echo
+echo "── forge ─────────────────────────────────────────────"
+forge test "${FORGE_ARGS[@]}"
+
+echo
+echo "── node ──────────────────────────────────────────────"
+status=0
+for t in test/*.test.mjs; do
+  [ -e "$t" ] || continue
+  echo "· $t"
+  node "$t" || status=1
+done
+exit $status
