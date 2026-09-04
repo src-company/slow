@@ -1153,9 +1153,16 @@ const canBridge = (fromChain, toChain) => {
   // An Arbitrum-kind destination aliases the sender of every retryable, so
   // without SlowArrival the position that lands there can never be reversed
   // or clawed back. This page calls a SLOW send reversible; offering one that
-  // is not would be the page lying about the only thing it promises. Base is
-  // unaffected — OP Stack passes an EOA through unaliased.
-  if(b.kind === 'arb' && S.arrivalDeployed[toChain] !== true) return false;
+  // is not would be the page lying about the only thing it promises.
+  //
+  // The same argument reaches one case on OP Stack, which passes an EOA
+  // through unaliased but NOT a contract: `OptimismPortal` aliases the
+  // depositor whenever `msg.sender != tx.origin`. So a Safe or any smart
+  // account bridging to Base without SlowArrival lands under an address nobody
+  // holds, and its reverse and clawback are just as dead as on Nitro — while
+  // the review screen promises both. An EOA is unaffected and keeps bridging.
+  if(S.arrivalDeployed[toChain] !== true
+     && (b.kind === 'arb' || S.accountIsContract === true)) return false;
   return true;
 };
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
@@ -1717,6 +1724,7 @@ const S = {
   chain:MAINNET, theme:'system',
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
   slowDeployed:{}, slowMismatch:null, slowUnknown:null, arrivalDeployed:{},
+  accountIsContract:null,
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
   resolved:null, resolvedName:null, resolveSeq:0,
@@ -2008,10 +2016,18 @@ function setAccount(a){
   // Everything below is per-account, and an account change invalidates it
   // exactly as a chain change does.
   S.unlocked=[]; S.exit=null; S.exitPlan=null; S.detail=null;
+  S.accountIsContract=null;
   S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
   hideAllModals();
   paintWallet(); paintNet();
   reverseAny(acct).then(n=>{ if(S.account===acct){ S.ensName=n; paintWallet(); } }).catch(()=>{});
+  // Does this account have code? It decides whether an OP-stack bridge keeps
+  // the reverse: the portal aliases a depositor only when it is a contract, so
+  // an EOA lands as itself and a smart account does not. Left null on any
+  // failure — the guard tests for `=== true`, so an unknown never blocks.
+  rpc('eth_getCode',[acct,'latest'],S.chain).then(c=>{
+    if(S.account===acct){ S.accountIsContract = typeof c==='string' && c.length>4; render(); }
+  }).catch(()=>{});
   if(S.view==='take') loadTransfers(true);
   if(S.view==='guard') loadGuard();
   if(S.token) refreshBalance();

@@ -791,6 +791,30 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
   Object.assign(C.S, {chain: snap.chain, slowDeployed: snap.deployed, arrivalDeployed: snap.arrival});
 }
 
+// The same argument reaches one case on OP Stack. The portal aliases a
+// depositor whenever `msg.sender != tx.origin`, so an EOA lands as itself and a
+// smart account does not — and a Safe bridging to Base without SlowArrival gets
+// a position whose reverse and clawback are as dead as on Nitro, while the
+// review screen promises both.
+{
+  const snap = {deployed: C.S.slowDeployed, arrival: C.S.arrivalDeployed,
+                isC: C.S.accountIsContract};
+  C.S.slowDeployed = {8453: true};
+  C.S.arrivalDeployed = {};
+
+  C.S.accountIsContract = false;
+  eq(C.canBridge(1, 8453), true, 'an EOA still bridges to Base without SlowArrival');
+  C.S.accountIsContract = null;
+  eq(C.canBridge(1, 8453), true, 'an unknown account never blocks: the guard tests === true');
+  C.S.accountIsContract = true;
+  eq(C.canBridge(1, 8453), false, 'a contract account is refused while its reverse would be dead');
+  C.S.arrivalDeployed = {8453: true};
+  eq(C.canBridge(1, 8453), true, 'and offered once SlowArrival holds the reverse for it');
+
+  Object.assign(C.S, {slowDeployed: snap.deployed, arrivalDeployed: snap.arrival,
+                      accountIsContract: snap.isC});
+}
+
 // The destination row is gated on all three conditions, not just one.
 {
   const snap = {chain: C.S.chain, token: C.S.token, deployed: C.S.slowDeployed};
