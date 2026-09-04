@@ -42,7 +42,7 @@ contract ArrivalGasTest is Test {
 
     function setUp() public {
         slow = new SLOW(address(0), address(0));
-        arrival = new SlowArrival(address(slow));
+        arrival = new SlowArrival(address(slow), new uint256[](0), new SlowArrival.Route[](0));
         vm.warp(1_700_000_000);
     }
 
@@ -112,7 +112,7 @@ contract ArrivalGasTest is Test {
         uint256 direct = g - gasleft();
 
         SLOW s2 = new SLOW(address(0), address(0));
-        SlowArrival a2 = new SlowArrival(address(s2));
+        SlowArrival a2 = new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
         address c2 = address(0xD2);
         vm.deal(c2, AMOUNT * 2);
         vm.prank(c2, c2);
@@ -181,7 +181,7 @@ contract ArrivalGasTest is Test {
         uint256 last;
         for (uint256 n = 0; n <= 8; n += 2) {
             SLOW s2 = new SLOW(address(0), address(0));
-            SlowArrival a2 = new SlowArrival(address(s2));
+            SlowArrival a2 = new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
             HungryRecipient r = new HungryRecipient(n);
 
             address caller = address(uint160(0xA11CE + n));

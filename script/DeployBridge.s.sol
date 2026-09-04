@@ -79,6 +79,20 @@ contract DeployBridge is Script {
     ///      what makes it usable as a proof of context.
     address internal constant ROBINHOOD_BRIDGE = 0xDf8755334ce7A73cCF6b581C02eA649AE3E864b3;
 
+    /// @dev Where a forward may send value ON to, from L1. These are the SEND
+    ///      side, unlike the messengers above which are the receive side: Base's
+    ///      OptimismPortal and Robinhood's Delayed Inbox, the same two the page
+    ///      already builds its own deposits against.
+    address internal constant BASE_PORTAL = 0x49048044D57e1C92A77f79988d21Fa8fAF74E97e;
+    address internal constant ROBINHOOD_INBOX = 0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D;
+
+    /// @dev Generous on purpose. The onward call is an `arrive`, which costs
+    ///      about 285,000 for an ordinary recipient — but the recipient's
+    ///      ERC-1155 hook spends from the same budget, and buying too little
+    ///      here strands a transfer that has already waited five days.
+    uint64 internal constant FORWARD_GAS = 1_000_000;
+    uint128 internal constant FORWARD_MAX_FEE = 1 gwei;
+
     error NotCreateX();
     error BadSalt();
     error AddressMismatch(address predicted, address actual);
@@ -89,8 +103,9 @@ contract DeployBridge is Script {
         address deployer = msg.sender;
         bytes32 salt = _salt(deployer, saltNonce);
 
+        (uint256[] memory ids, SlowArrival.Route[] memory routes) = _forwardRoutes();
         bytes memory arrivalInit =
-            abi.encodePacked(type(SlowArrival).creationCode, abi.encode(slow));
+            abi.encodePacked(type(SlowArrival).creationCode, abi.encode(slow, ids, routes));
         bytes memory relayInit = abi.encodePacked(
             type(SlowRelay).creationCode, abi.encode(slow, _messengers())
         );
@@ -127,6 +142,31 @@ contract DeployBridge is Script {
         console2.log("SlowArrival      ", arrival);
         console2.log("SlowRelay        ", relay);
         console2.log("messengers       ", expected.length);
+    }
+
+    /// @notice Where `SlowArrival.forward` may push value on to from this chain.
+    /// @dev Only L1 has any, and that is not an omission either. Forwarding
+    ///      exists to turn an L2-to-L2 send into one action, and both legs of
+    ///      that pass through L1 — there is no canonical path from one L2
+    ///      straight to another, so an L2 has nowhere to forward to.
+    ///
+    ///      This is the one set of addresses this contract trusts with VALUE, so
+    ///      unlike the relay's untrusted `pushProof` entry it is fixed at
+    ///      construction and there is no setter.
+    function _forwardRoutes()
+        internal
+        view
+        returns (uint256[] memory ids, SlowArrival.Route[] memory routes)
+    {
+        if (block.chainid != 1) {
+            return (new uint256[](0), new SlowArrival.Route[](0));
+        }
+        ids = new uint256[](2);
+        routes = new SlowArrival.Route[](2);
+        ids[0] = 8453;
+        routes[0] = SlowArrival.Route(BASE_PORTAL, 1, FORWARD_GAS, FORWARD_MAX_FEE);
+        ids[1] = 4663;
+        routes[1] = SlowArrival.Route(ROBINHOOD_INBOX, 2, FORWARD_GAS, FORWARD_MAX_FEE);
     }
 
     /// @notice Which contracts may deliver a proof to the relay on THIS chain.

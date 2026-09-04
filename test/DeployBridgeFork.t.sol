@@ -97,7 +97,11 @@ contract DeployBridgeForkTest is Test {
 
         vm.startPrank(DEPLOYER, DEPLOYER);
         arrival = CREATEX.deployCreate3(
-            s0, abi.encodePacked(type(SlowArrival).creationCode, abi.encode(slow))
+            s0,
+            abi.encodePacked(
+                type(SlowArrival).creationCode,
+                abi.encode(slow, new uint256[](0), new SlowArrival.Route[](0))
+            )
         );
         relay = CREATEX.deployCreate3(
             s1, abi.encodePacked(type(SlowRelay).creationCode, abi.encode(slow, messengers))
@@ -182,9 +186,8 @@ contract DeployBridgeForkTest is Test {
     }
 
     /// @notice On L1 the relay must trust the two contracts that actually
-    ///         deliver a message; on the L2s it must trust nothing, because the
-    ///         aliased branch is unforgeable and needs no allowlist.
-    function test_theMessengerSetIsRightForEachChain() public {
+    ///         deliver a message — and not the ones that only send.
+    function test_theMessengerSetOnL1() public {
         if (!_fork(0)) return;
         (, address relay) = _deploy(SLOW_MAINNET);
         assertTrue(
@@ -201,11 +204,20 @@ contract DeployBridgeForkTest is Test {
             ),
             "the portal sends, it does not deliver"
         );
+    }
 
+    /// @notice An L2 trusts nothing, because the aliased branch is unforgeable
+    ///         and needs no allowlist.
+    /// @dev Its own test rather than a second half of the one above. Two
+    ///      `createSelectFork` calls in one test share the test contract's
+    ///      storage and the deployment made before the switch, which made the
+    ///      second half assert against the first half's contract instead of a
+    ///      freshly deployed one.
+    function test_theMessengerSetOnAnL2() public {
         if (!_fork(1)) return;
-        (, address l2Relay) = _deploy(BASE_STANDIN);
+        (, address relay) = _deploy(BASE_STANDIN);
         assertFalse(
-            SlowRelay(payable(l2Relay)).trustedMessenger(
+            SlowRelay(payable(relay)).trustedMessenger(
                 0x866E82a600A1414e583f7F13623F1aC5d58b0Afa
             ),
             "an L2 needs no allowlist at all"

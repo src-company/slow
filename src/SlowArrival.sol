@@ -3,6 +3,33 @@ pragma solidity ^0.8.30;
 
 import {SlowOrigin} from "./SlowOrigin.sol";
 
+interface IOptimismPortal {
+    function depositTransaction(
+        address to,
+        uint256 value,
+        uint64 gasLimit,
+        bool isCreation,
+        bytes calldata data
+    ) external payable;
+}
+
+interface IArbInbox {
+    function createRetryableTicket(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        bytes calldata data
+    ) external payable returns (uint256);
+    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
+        external
+        view
+        returns (uint256);
+}
+
 interface ISlowDeposit {
     function depositTo(address token, address to, uint256 amount, uint96 delay, bytes calldata data)
         external
@@ -115,6 +142,42 @@ contract SlowArrival {
     event Reversed(uint256 indexed transferId, address indexed origin, uint256 amount);
     event ClawedBack(uint256 indexed transferId, address indexed origin, uint256 amount);
 
+    /// @notice Where a `forward` may send value on from here.
+    /// @dev THE ONE PLACE THIS CONTRACT HOLDS CONFIGURATION, and it is the price
+    ///      of forwarding at all. `SlowRelay.pushProof` can take an untrusted
+    ///      entrypoint because only a FACT travels through it — a wrong address
+    ///      wastes the caller's gas and nothing else. Here VALUE travels, so a
+    ///      wrong entrypoint is theft, and the set has to be fixed at
+    ///      construction. There is still no owner and no setter: what is written
+    ///      here at deploy is what this contract will do forever.
+    mapping(uint256 chainId => Route) public routeTo;
+
+    struct Route {
+        address entry; // the local entrypoint for that destination
+        uint8 kind; // 1 = OP Stack portal, 2 = Arbitrum inbox
+        uint64 gasLimit; // destination gas to buy
+        uint128 maxFeePerGas; // ceiling for the destination's gas price
+    }
+
+    uint8 internal constant KIND_OP = 1;
+    uint8 internal constant KIND_ARB = 2;
+
+    /// @dev The onward call is given a bounded budget for the same reason the
+    ///      deposit is: whatever happens, the failure branch must still be able
+    ///      to record where the value went.
+    uint256 private constant FORWARD_RESERVE = 80_000;
+
+    event Forwarded(
+        uint256 indexed dstChainId,
+        address indexed origin,
+        address indexed to,
+        uint256 amount,
+        uint96 delay
+    );
+    event ForwardFailed(
+        uint256 indexed dstChainId, address indexed origin, address indexed to, uint256 amount
+    );
+
     error NotOrigin();
     error NothingToRescue();
     error NoSlow();
@@ -127,9 +190,39 @@ contract SlowArrival {
     ///      had already left, and the first claimant would drain the rest. The
     ///      CREATE3 same-address design makes deploying this before SLOW an easy
     ///      ordering mistake, so it is refused rather than trusted.
-    constructor(address slow_) {
+    constructor(address slow_, uint256[] memory chainIds, Route[] memory routes) {
         require(slow_.code.length != 0, NoSlow());
         slow = slow_;
+        require(chainIds.length == routes.length, NoSlow());
+        for (uint256 i; i != chainIds.length; ++i) {
+            routeTo[chainIds[i]] = routes[i];
+        }
+    }
+
+    /// @dev Who is behind this call, with one branch `SlowOrigin` cannot carry.
+    ///
+    ///      A message this contract forwards to itself on another chain arrives
+    ///      ALIASED, because it is a contract sending it: `msg.sender` is
+    ///      `applyAlias(address(this))`. None of the library's probes answer for
+    ///      that, and its hint branch cannot match either — the hint names the
+    ///      original sender, not this contract — so recovery would fall through
+    ///      to `msg.sender` and hand the position to an address with no key.
+    ///      That is exactly the defect this contract exists to fix, arriving
+    ///      through the back door of its own forward.
+    ///
+    ///      Trusting the hint here is sound because nobody can put code at
+    ///      `applyAlias(address(this))`: reaching that specific address would
+    ///      mean finding a 160-bit preimage. The same argument `SlowRelay` uses
+    ///      to accept a proof with no allowlist at all.
+    function _recoverOrigin(address hint)
+        private
+        view
+        returns (address origin, bool authenticated)
+    {
+        if (SlowOrigin.undoAlias(msg.sender) == address(this)) {
+            return hint != address(0) ? (hint, true) : (msg.sender, false);
+        }
+        return SlowOrigin.recover(msg.sender, hint);
     }
 
     // ─────────────────────────────────────────────────────────── ARRIVING
@@ -151,7 +244,7 @@ contract SlowArrival {
         external
         payable
     {
-        (address origin, bool authenticated) = SlowOrigin.recover(msg.sender, originHint);
+        (address origin, bool authenticated) = _recoverOrigin(originHint);
         // ORIGIN HINTS ARE CHECKED, NEVER TAKEN ON TRUST. An unmatched hint is
         // refused and the caller owns its own deposit, which is what stops
         // anyone handing a stranger's address the reverse right by simply
@@ -246,6 +339,139 @@ contract SlowArrival {
                 if (!paid) rescue[origin] += pay;
             }
         }
+    }
+
+    // ───────────────────────────────────────────────────────── FORWARDING
+
+    /// @notice Land on this chain only to leave it again: take value arriving
+    ///         from one chain and push it on to another, so a send between two
+    ///         L2s is ONE action by the sender rather than two five days apart.
+    ///
+    /// @dev WHY THIS EXISTS. Without it, an L2-to-L2 send is a withdrawal to L1
+    ///      and then, five days later, a second transaction the sender has to
+    ///      come back and make. The value is not at risk in the meantime, but a
+    ///      transfer that needs the sender to return a working week later is one
+    ///      most senders will not finish. Forwarding makes the far side arrive
+    ///      on its own.
+    ///
+    /// @dev THE BOUNTY IS PAID HERE, NOT PASSED ON. This leg has a finaliser —
+    ///      somebody proved and finalised the withdrawal that landed this call —
+    ///      and the next leg does not, because an L1 to L2 message executes on
+    ///      its own. So the bounty is settled against `tx.origin` here and the
+    ///      onward `arrive` is built with a bounty of zero.
+    ///
+    /// @dev AND IT MUST NOT REVERT, for the same reason `arrive` must not: on
+    ///      the OP leg the portal has already marked the withdrawal finalised
+    ///      before calling, and will never replay it. Every failure — no route,
+    ///      fees larger than the payload, an entrypoint that reverts — lands in
+    ///      `rescue` for the origin instead.
+    function forward(
+        uint256 dstChainId,
+        address to,
+        uint96 delay,
+        address originHint,
+        uint256 bounty
+    ) external payable {
+        (address origin,) = _recoverOrigin(originHint);
+
+        uint256 value = msg.value;
+        uint256 pay = bounty < value ? bounty : 0;
+        unchecked {
+            value -= pay;
+        }
+
+        if (value != 0 && !_push(dstChainId, to, delay, origin, value)) {
+            rescue[origin] += value;
+            emit ForwardFailed(dstChainId, origin, to, value);
+        }
+
+        if (pay != 0) {
+            if (tx.origin == msg.sender) {
+                rescue[origin] += pay;
+            } else {
+                (bool paid,) = tx.origin.call{value: pay, gas: BOUNTY_GAS}("");
+                if (!paid) rescue[origin] += pay;
+            }
+        }
+    }
+
+    /// @dev The onward hop. Returns false rather than reverting, always.
+    function _push(uint256 dstChainId, address to, uint96 delay, address origin, uint256 value)
+        private
+        returns (bool)
+    {
+        Route memory r = routeTo[dstChainId];
+        if (r.entry == address(0) || dstChainId == block.chainid) return false;
+        if (gasleft() <= FORWARD_RESERVE) return false;
+
+        // The far side is this same contract at this same address, which is
+        // what makes the origin survivable: it will see `applyAlias(this)` and
+        // believe the hint. Bounty zero — see above.
+        bytes memory inner =
+            abi.encodeCall(this.arrive, (to, delay, origin, uint256(0)));
+
+        bytes memory cd;
+        uint256 send;
+        if (r.kind == KIND_OP) {
+            // The portal mints `msg.value` on the far side and calls `to` with
+            // `value`, so the two are the same number and no fee is deducted.
+            cd = abi.encodeCall(
+                IOptimismPortal.depositTransaction,
+                (address(this), value, r.gasLimit, false, inner)
+            );
+            send = value;
+        } else if (r.kind == KIND_ARB) {
+            // A retryable is bought here and now, five days after the sender
+            // chose to send, so the submission fee has to be PRICED LIVE
+            // against the current base fee. Anything decided at send time would
+            // be a working week stale by the time it is spent.
+            uint256 submission;
+            (bool ok, bytes memory ret) = r.entry.staticcall(
+                abi.encodeCall(
+                    IArbInbox.calculateRetryableSubmissionFee, (inner.length, block.basefee)
+                )
+            );
+            if (!ok || ret.length != 32) return false;
+            submission = abi.decode(ret, (uint256));
+            submission = submission * 3 / 2; // a rising base fee must not strand it
+
+            uint256 gasCost = uint256(r.gasLimit) * uint256(r.maxFeePerGas);
+            // If the fees eat the payload there is nothing worth sending, and
+            // sending anyway would hand the whole amount to the bridge.
+            if (value <= submission + gasCost) return false;
+            uint256 callValue;
+            unchecked {
+                callValue = value - submission - gasCost;
+            }
+            cd = abi.encodeCall(
+                IArbInbox.createRetryableTicket,
+                (
+                    address(this),
+                    callValue,
+                    submission,
+                    origin, // excess fee refund, on the far side
+                    origin, // call value refund, if the ticket is never redeemed
+                    r.gasLimit,
+                    r.maxFeePerGas,
+                    inner
+                )
+            );
+            send = value;
+        } else {
+            return false;
+        }
+
+        uint256 budget;
+        unchecked {
+            budget = gasleft() - FORWARD_RESERVE;
+        }
+        address entry = r.entry;
+        bool sent;
+        assembly ("memory-safe") {
+            sent := call(budget, entry, send, add(cd, 0x20), mload(cd), 0x00, 0x00)
+        }
+        if (sent) emit Forwarded(dstChainId, origin, to, value, delay);
+        return sent;
     }
 
     /// @notice Recover ETH from an arrival that could not be deposited.
