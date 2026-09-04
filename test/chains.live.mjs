@@ -50,7 +50,7 @@ globalThis.innerWidth = 1024;
 const captured = {};
 globalThis.__capture = captured;
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{
-  CHAINS, CHAIN_IDS, SLOW, ZERO, MC3, ENS_REG, WNS, SEL, MAINNET, TOKEN_COLORS,
+  CHAINS, CHAIN_IDS, SLOW, ZERO, MC3, ENS_REG, WNS, SEL, MAINNET,
   TOPIC_GUARDIAN_SET, word,
   encAggregate3, decAggregate3, decode, cd, decodeStringLoose,
 });`)();
@@ -124,9 +124,11 @@ for (const id of C.CHAIN_IDS) {
     eq(dec, t.decimals, `${c.short}: ${t.symbol} reports ${t.decimals} decimals`);
   });
 
-  // A tile colour and a ladder for every asset the chain offers.
+  // A usable label and a ladder for every asset the chain offers.
   for (const t of c.tokens) {
-    ok(C.TOKEN_COLORS[t.symbol] || t.address === C.ZERO, `${c.short}: ${t.symbol} has a tile colour`);
+    // Tiles carry no colour any more: identity is the symbol, so what has to
+    // hold on chain is that the symbol we print is the symbol the token reports.
+    ok(t.symbol.length > 0 && t.symbol.length <= 7, `${c.short}: ${t.symbol} is a usable tile label`);
   }
 
   // SLOW's address is canonical; the BUILD at it is not.

@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="color-scheme" content="dark light">
-<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cpath%20d%3D%22M0%205.06C0%203.32%200%202.46%20.33%201.79C.64%201.15%201.15%20.64%201.79%20.33C2.46%200%203.32%200%205.06%200H58.94C6.68%200%2061.54%200%2062.21%20.33C62.85%20.64%2063.36%201.15%2063.67%201.79C64%202.46%2064%203.32%2064%205.06V58.94C64%206.68%2064%2061.54%2063.67%2062.21C63.36%2062.85%2062.85%2063.36%2062.21%2063.67C61.54%2064%206.68%2064%2058.94%2064H5.06C3.32%2064%202.46%2064%201.79%2063.67C1.15%2063.36%20.64%2062.85%20.33%2062.21C0%2061.54%200%206.68%200%2058.94V5.06Z%22%20fill%3D%22%230000FF%22%2F%3E%3Crect%20x%3D%224%22%20y%3D%224%22%20width%3D%2256%22%20height%3D%2256%22%20rx%3D%224.4%22%20fill%3D%22none%22%20stroke%3D%22%23FFFFFF%22%20stroke-opacity%3D%22.45%22%20stroke-width%3D%221.6%22%20stroke-dasharray%3D%223%202.4%22%2F%3E%3Cpath%20d%3D%22M48%2C16%20H16%20V35%20H42%20V42%20H16%20V48%20H48%20V29%20H22%20V22%20H48%20Z%22%20fill%3D%22%23FFFFFF%22%2F%3E%3C%2Fsvg%3E">
+
+<link rel="icon" type="image/svg+xml" sizes="any" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cpath%20d%3D%22M0%205.06C0%203.32%200%202.46%20.33%201.79C.64%201.15%201.15%20.64%201.79%20.33C2.46%200%203.32%200%205.06%200H58.94C6.68%200%2061.54%200%2062.21%20.33C62.85%20.64%2063.36%201.15%2063.67%201.79C64%202.46%2064%203.32%2064%205.06V58.94C64%206.68%2064%2061.54%2063.67%2062.21C63.36%2062.85%2062.85%2063.36%2062.21%2063.67C61.54%2064%206.68%2064%2058.94%2064H5.06C3.32%2064%202.46%2064%201.79%2063.67C1.15%2063.36%20.64%2062.85%20.33%2062.21C0%2061.54%200%206.68%200%2058.94V5.06Z%22%20fill%3D%22%230000FF%22%2F%3E%3Cpath%20d%3D%22M48%2C16%20H16%20V35%20H42%20V42%20H16%20V48%20H48%20V29%20H22%20V22%20H48%20Z%22%20fill%3D%22%23FFFFFF%22%2F%3E%3C%2Fsvg%3E">
 <title>SLOW</title>
 <style>
 /* ─────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@
    ───────────────────────────────────────────────────────────── */
 :root{
   --bg:#000;--fg:#fff;
-  --bg2:#0d0d0d;--bg3:#1c1c1c;--bd:#333;--bd2:#555;--dim:#8b8b8b;
+  --bg2:#0d0d0d;--bg3:#1c1c1c;--bd:#5c5c5c;--bd2:#8a8a8a;--dim:#9e9e9e;
   --rule:#1e1e1e;
   --ok:#3ddc84;--warn:#ffb020;--err:#ff6b6b;
   --t:120ms linear;
@@ -23,13 +23,15 @@
 }
 body.light{
   --bg:#fff;--fg:#000;
-  --bg2:#f2f2f2;--bg3:#e4e4e4;--bd:#b9b9b9;--bd2:#7a7a7a;--dim:#5a5a5a;
+  --bg2:#f2f2f2;--bg3:#e4e4e4;--bd:#8e8e8e;--bd2:#5f5f5f;--dim:#585858;
   --rule:#e6e6e6;
   --ok:#0a7f3f;--warn:#9a5b00;--err:#c62828;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none!important}
 html,body{height:100%}
+:root{color-scheme:dark}
+body.light,:root:has(body.light){color-scheme:light}
 body{
   min-height:100dvh;background:var(--bg);color:var(--fg);
   font-family:var(--sans);font-size:15px;line-height:1.4;
@@ -38,6 +40,11 @@ body{
 }
 button,input{font:inherit;color:inherit;border-radius:0}
 :focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+/* On an inverted ground the fg-coloured ring is invisible. A second ring in the
+   background colour sits inside it, so one of the two always contrasts. */
+.txbar :focus-visible,.btn:focus-visible,.tab[aria-selected=true]:focus-visible,
+.seg button[aria-selected=true]:focus-visible,.crypto[aria-pressed=true]:focus-visible,
+.opt[aria-pressed=true]:focus-visible{outline-color:var(--bg);outline-offset:-4px;box-shadow:0 0 0 2px var(--fg)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.001ms!important;animation-duration:.001ms!important}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
@@ -51,14 +58,14 @@ button,input{font:inherit;color:inherit;border-radius:0}
 .chip{
   display:inline-flex;align-items:center;gap:7px;
   background:transparent;color:var(--fg);border:1px solid var(--bd);
-  padding:0 12px;height:34px;font-size:13px;cursor:pointer;
+  padding:0 12px;height:36px;font-size:13px;cursor:pointer;
   letter-spacing:.02em;white-space:nowrap;
   transition:border-color var(--t),background var(--t);
 }
 @media (hover:hover){.chip:hover{border-color:var(--fg);background:var(--bg2)}}
 .chip svg{width:17px;height:17px;flex:0 0 auto;display:block}
 .chip .lbl{overflow:hidden;text-overflow:ellipsis;max-width:34vw}
-#themeBtn,#helpBtn{width:34px;padding:0;justify-content:center;font-size:14px}
+#themeBtn,#helpBtn{width:36px;padding:0;justify-content:center;font-size:14px}
 .wordmark{
   display:inline-flex;align-items:center;gap:10px;
   background:transparent;border:none;cursor:pointer;color:var(--fg);
@@ -103,7 +110,7 @@ body.v-send .panel,body.v-take .panel{display:flex}
 body.v-take .panel{max-width:640px}
 .seg{display:flex;border:1px solid var(--bd);flex:0 0 auto;margin-bottom:22px}
 .seg button{
-  flex:1 1 0;height:36px;background:transparent;border:none;cursor:pointer;
+  flex:1 1 0;height:44px;background:transparent;border:none;cursor:pointer;
   font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--dim);
   transition:background var(--t),color var(--t);
 }
@@ -118,7 +125,12 @@ body.v-send .sendPane{display:flex}
 .sendPane > .field + .field,
 .guardPane > .field + .field{padding-top:20px;border-top:1px solid var(--rule)}
 .tl li:last-child{padding-bottom:0}
-.field.locked{opacity:.4;pointer-events:none}
+/* `pointer-events:none` disables the mouse and nothing else: every input inside
+   stayed tabbable and typeable, so the keyboard could fill a field the mouse
+   could not reach. `inert` removes it from focus and the a11y tree too, and is
+   set from JS alongside the class. */
+.field.locked{opacity:.55;pointer-events:none}
+.field.locked .opt:disabled,.field.locked .input:disabled,.field.locked .crypto:disabled{opacity:1}
 .flabel{
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;
   font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
@@ -127,16 +139,19 @@ body.v-send .sendPane{display:flex}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .crypto{
   display:flex;justify-content:center;align-items:center;
-  aspect-ratio:1/1;
-  font-weight:700;font-size:14px;letter-spacing:.02em;
-  cursor:pointer;border:2px solid transparent;
-  transition:border-color var(--t),opacity var(--t);overflow:hidden;
+  height:52px;padding:0 4px;
+  font-family:var(--mono);font-size:13px;letter-spacing:.02em;
+  background:transparent;color:var(--fg);
+  cursor:pointer;border:1px solid var(--bd);
+  transition:border-color var(--t),background var(--t),color var(--t),opacity var(--t);
+  overflow:hidden;white-space:nowrap;
 }
-.grid.dim .crypto{opacity:.3}
-.crypto[aria-pressed=true]{border-color:var(--fg);opacity:1!important}
+.grid.dim .crypto{opacity:.45}
+@media (hover:hover){.crypto:hover:not([aria-pressed=true]){border-color:var(--fg)}}
+.crypto[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg);opacity:1!important}
 .row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .opt{
-  height:42px;display:flex;align-items:center;justify-content:center;
+  height:44px;display:flex;align-items:center;justify-content:center;
   font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;
   background:transparent;color:var(--fg);cursor:pointer;border:1px solid var(--bd);
   transition:border-color var(--t),background var(--t),color var(--t);
@@ -144,7 +159,7 @@ body.v-send .sendPane{display:flex}
 }
 @media (hover:hover){.opt:hover:not(:disabled){border-color:var(--fg)}}
 .opt[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
-.opt:disabled{opacity:.25;cursor:not-allowed}
+.opt:disabled{opacity:1;background:var(--bg2);color:var(--dim);border-color:var(--bd);cursor:not-allowed}
 /* amount: a field you type in, with the presets as quick fills */
 .amt{display:grid;grid-template-columns:1fr auto;gap:6px}
 .amt .input{font-size:19px;padding:12px 13px}
@@ -190,10 +205,11 @@ body.light .spinner.sm{border-color:rgba(255,255,255,.3);border-top-color:var(--
 .link{
   background:transparent;color:var(--dim);font-size:11px;cursor:pointer;
   letter-spacing:.14em;text-transform:uppercase;border:1px dashed var(--bd);
-  height:34px;transition:color var(--t),border-color var(--t);
+  height:44px;transition:color var(--t),border-color var(--t);
 }
-@media (hover:hover){.link:hover{color:var(--fg);border-color:var(--fg)}}
-.link[aria-pressed=true]{color:#fff;border:2px solid var(--fg);border-style:solid;font-weight:700}
+@media (hover:hover){.link:hover:not(:disabled){color:var(--fg);border-color:var(--fg)}}
+.link:disabled{background:var(--bg2);color:var(--dim);border-color:var(--bd);border-style:solid;cursor:not-allowed}
+.link[aria-pressed=true]{background:var(--fg);color:var(--bg);border:1px solid var(--fg);border-style:solid;font-weight:700}
 
 /* ── take: one row per transfer ──────────────────────────── */
 .takePane{display:none;flex-direction:column;gap:14px;flex:1 1 auto;min-height:0}
@@ -228,15 +244,17 @@ body.v-guard .panel,body.v-take .panel{display:flex}
 }
 @media (hover:hover){.wtx button:hover{border-color:var(--fg)}}
 .wtx button.on{background:var(--ok);border-color:var(--ok);color:#000}
-.tabs{display:flex;gap:0;flex:0 0 auto;border:1px solid var(--bd)}
+.tabs{display:flex;gap:0;flex:0 0 auto;border-bottom:1px solid var(--bd)}
 .tab{
-  flex:1 1 0;height:34px;background:transparent;border:none;cursor:pointer;
-  font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  flex:1 1 0;height:36px;background:transparent;border:none;cursor:pointer;
+  font-size:11px;font-weight:400;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
   transition:background var(--t),color var(--t);
 }
-.tab + .tab{border-left:1px solid var(--bd)}
+
 @media (hover:hover){.tab:hover{color:var(--fg)}}
-.tab[aria-selected=true]{background:var(--fg);color:var(--bg)}
+/* Subordinate to .seg above it: the view switch fills, the list filter only
+   underlines. Two identical bars stacked read as two products. */
+.tab[aria-selected=true]{background:transparent;color:var(--fg);font-weight:700;box-shadow:inset 0 -3px 0 var(--fg)}
 .list{
   flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:1px;
   scrollbar-width:thin;scrollbar-color:var(--bd) transparent;
@@ -273,9 +291,10 @@ body.v-guard .panel,body.v-take .panel{display:flex}
 }
 
 /* ── overlays ────────────────────────────────────────────── */
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:40;overflow-y:auto;padding:14px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:80;overflow-y:auto;padding:14px}
 body.light .modal{background:rgba(0,0,0,.4)}
 .modal.on{display:flex;align-items:center;justify-content:center}
+.card:focus{outline:none}
 .card{
   background:var(--bg);border:2px solid var(--fg);color:var(--fg);
   padding:22px;width:min(400px,100%);margin:auto;
@@ -288,18 +307,23 @@ body.light .modal{background:rgba(0,0,0,.4)}
   padding:11px;font-family:var(--mono);font-size:14px;
 }
 .input:focus{outline:none;border-color:var(--fg)}
+.input[aria-invalid=true]{border-color:var(--err);border-width:2px}
 .btn{
   background:var(--fg);color:var(--bg);border:1px solid var(--fg);
   height:44px;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
   cursor:pointer;width:100%;transition:opacity var(--t);
 }
+.cs{text-transform:none}
 @media (hover:hover){.btn:hover:not(:disabled){opacity:.82}}
-.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn:disabled{background:var(--bg2);color:var(--dim);border-color:var(--bd);cursor:not-allowed}
 .btn.alt{background:transparent;color:var(--fg);border-color:var(--bd)}
 @media (hover:hover){.btn.alt:hover{border-color:var(--fg);opacity:1}}
 .btn.danger{background:var(--warn);border-color:var(--warn);color:#000}
 .note{font-size:12px;line-height:1.5;color:var(--dim);min-height:16px}
-.note.ok{color:var(--ok)}
+.note.ok{color:var(--fg)}
+/* `ok` used to be green, and it was the only colour in the product outside the
+   mark. A resolved name is confirmed by the address printed next to it, not by
+   a hue. Error red stays: it is the one place colour stops a mistake. */
 .note.err{color:var(--err)}
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .tgrid div{display:flex;flex-direction:column;gap:5px}
@@ -312,6 +336,11 @@ body.light .modal{background:rgba(0,0,0,.4)}
 .kv+.kv{border-top:1px solid var(--bd)}
 .kv dt{color:var(--dim);white-space:nowrap}
 .kv dd{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+/* .kv is a table of values; the help sheet is prose in the same markup. Numbers
+   want monospace and the right edge, sentences want neither. */
+#helpModal .kv{flex-direction:column;gap:4px;align-items:start}
+#helpModal .kv dd{font-family:var(--sans);text-align:left;font-variant-numeric:normal}
+#helpModal .kv dt{font-size:10.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
 .picks{display:flex;flex-direction:column;gap:6px}
 .pick{
   display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:13px;
@@ -358,6 +387,7 @@ body.light .modal{background:rgba(0,0,0,.4)}
    are untouched. */
 @media (min-width:900px){
   body.v-send .panel{max-width:880px}
+  body.v-send .seg{width:422px;align-self:start}
   body.v-send .sendPane{
     display:grid;grid-template-columns:1fr 1fr;column-gap:36px;row-gap:20px;
     align-content:start;
@@ -491,7 +521,7 @@ body{overscroll-behavior:none}
 
 <div class="bar">
   <button class="wordmark" id="homeBtn" aria-label="Home">
-    <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><path d="M0 5.06C0 3.32 0 2.46 .33 1.79C.64 1.15 1.15 .64 1.79 .33C2.46 0 3.32 0 5.06 0H58.94C6.68 0 61.54 0 62.21 .33C62.85 .64 63.36 1.15 63.67 1.79C64 2.46 64 3.32 64 5.06V58.94C64 6.68 64 61.54 63.67 62.21C63.36 62.85 62.85 63.36 62.21 63.67C61.54 64 6.68 64 58.94 64H5.06C3.32 64 2.46 64 1.79 63.67C1.15 63.36 .64 62.85 .33 62.21C0 61.54 0 6.68 0 58.94V5.06Z" fill="#0000FF"/><rect x="4" y="4" width="56" height="56" rx="4.4" fill="none" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="2.4" stroke-dasharray="3 2.4"/><path d="M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z" fill="#FFFFFF"/></svg><span>SLOW</span>
+    <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><path d="M0 5.06C0 3.32 0 2.46 .33 1.79C.64 1.15 1.15 .64 1.79 .33C2.46 0 3.32 0 5.06 0H58.94C6.68 0 61.54 0 62.21 .33C62.85 .64 63.36 1.15 63.67 1.79C64 2.46 64 3.32 64 5.06V58.94C64 6.68 64 61.54 63.67 62.21C63.36 62.85 62.85 63.36 62.21 63.67C61.54 64 6.68 64 58.94 64H5.06C3.32 64 2.46 64 1.79 63.67C1.15 63.36 .64 62.85 .33 62.21C0 61.54 0 6.68 0 58.94V5.06Z" fill="#0000FF"/><path d="M48,16 H16 V35 H42 V42 H16 V48 H48 V29 H22 V22 H48 Z" fill="#FFFFFF"/></svg><span>SLOW</span>
   </button>
   <div class="bar-r">
     <button class="chip" id="helpBtn" aria-label="How SLOW works">?</button>
@@ -537,7 +567,7 @@ body{overscroll-behavior:none}
       <div class="field locked" id="fAmount">
         <span class="flabel">Amount <em id="balHint"></em></span>
         <div class="amt">
-          <input type="text" class="input" id="amountInput" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount">
+          <input type="text" class="input" id="amountInput" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Amount" aria-describedby="amountNote">
           <button class="opt" id="maxBtn">Max</button>
         </div>
         <div class="row" id="amountRow" role="group" aria-label="Quick amounts">
@@ -545,7 +575,7 @@ body{overscroll-behavior:none}
           <button class="opt" data-amount="10">10</button>
           <button class="opt" data-amount="100">100</button>
         </div>
-        <p class="note" id="amountNote"></p>
+        <p class="note" id="amountNote" aria-live="polite"></p>
       </div>
 
       <div class="field" id="fDest" hidden>
@@ -612,7 +642,7 @@ body{overscroll-behavior:none}
         <button class="tab" id="tabIn"  role="tab" aria-selected="false" data-tab="inbound">Inbound</button>
         <button class="tab" id="tabUnlocked" role="tab" aria-selected="false" data-tab="unlocked" hidden>Unlocked</button>
       </div>
-      <div class="list" id="list" role="tabpanel" aria-live="polite"></div>
+      <div class="list" id="list" role="tabpanel" tabindex="0"></div>
     </div>
   </div>
 </main>
@@ -681,7 +711,7 @@ body{overscroll-behavior:none}
   <button class="btn alt" id="gaCancel">Cancel</button>
 </div></div>
 
-<div class="modal" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="card">
+<div class="modal" id="detailModal" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><div class="card" tabindex="-1">
   <h3 id="detailTitle">Transfer</h3>
   <dl class="rows" id="detailRows"></dl>
   <button class="btn" id="detailAction"></button>
@@ -717,7 +747,7 @@ body{overscroll-behavior:none}
   <span class="spinner sm" id="txSpin"></span>
   <span class="txmsg"><b id="txMsg"></b><em id="txStep"></em></span>
   <a id="txLink" target="_blank" rel="noopener" hidden>View</a>
-  <button id="txDismiss" aria-label="Dismiss" hidden>\u00d7</button>
+  <button id="txDismiss" aria-label="Dismiss" hidden>×</button>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -1091,44 +1121,10 @@ const TYPEHASH_2612 = '6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845
    rather than picked: every pair on a chain differs by more than 25 degrees of
    hue OR more than 0.25 in luminance, and every tile clears 3:1 with its ink.
    Shared assets keep one colour on both chains. */
-const TOKEN_COLORS = {
-  ETH:'#ff69b4', WETH:'#ff69b4', USDC:'#2775ca', USDT:'#26a17b', BOLD:'#c026d3',
-  USDe:'#6d28d9', USDG:'#ccff00', NVDA:'#4d7c0f',
-  wstETH:'#38bdf8', WBTC:'#a0522d', cbETH:'#71f26d', AERO:'#5d7222',
-  // The four tokenized equities have no brand colour anyone would recognise on
-  // a 100px square, so they are assigned for legibility instead — except GME,
-  // where the red IS the association. SPY moves off red to make room for it: an
-  // index fund reads as institutional teal more naturally than as GameStop.
-  cbBTC:'#f7931a', SPY:'#0f766e', SPCX:'#b9bec7', GME:'#dc2626',
-};
-/* USDG carries Robinhood's chartreuse, which is far too light for white text.
-   Rather than hand-maintain a second table, the ink is derived: WCAG relative
-   luminance, one threshold. A custom token's hashed colour goes through the
-   same path. */
-const RGB = h => {
-  const m=/^#?([0-9a-f]{6})$/i.exec(h||'');
-  if(!m) return null;
-  const v=parseInt(m[1],16);
-  return [(v>>16)&255,(v>>8)&255,v&255];
-};
-function luminance(hex){
-  const c=RGB(hex);
-  if(!c) return 0;                                  // hsl() from tokenColor(): always mid-dark
-  const lin=x=>{ x/=255; return x<=0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055,2.4); };
-  return 0.2126*lin(c[0])+0.7152*lin(c[1])+0.0722*lin(c[2]);
-}
-/* WCAG contrast ratio. A single luminance threshold got this wrong: white on
-   ETH's pink is 2.6:1 and on cbBTC's orange 2.3:1, both under the 3:1 floor for
-   large text, while a threshold set high enough to catch them would flip tiles
-   that were fine. Comparing the two candidate inks is exact and needs no
-   number to tune. */
-function contrast(a,b){
-  const x=luminance(a), y=luminance(b);
-  return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);
-}
-const INK_DARK='#110e08', INK_LIGHT='#ffffff';
-const inkOn = hex =>
-  contrast(hex,INK_DARK) > contrast(hex,INK_LIGHT) ? INK_DARK : INK_LIGHT;
+/* The eight-hue token palette and the ink-contrast machinery that served it
+   used to live here — a colour per asset, and a WCAG comparison to decide black
+   or white type on top. Both are gone. Identity comes from the symbol and
+   selection from inversion, so there is no colour left to choose ink for. */
 // Preset ladders are per-asset: "1" must not mean $1 and $4,000 on the same row.
 /* Ladders follow the asset's own scale. A tokenized share is not a dollar, and
    a bitcoin is not either: 10/100/1000 cbBTC would offer eight figures as the
@@ -1323,7 +1319,10 @@ function fmtWhen(ts){
   try { return d.toLocaleString(undefined,opts); } catch(e){ return d.toISOString().slice(0,16).replace('T',' '); }
 }
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
-const tokenColor = a => `hsl(${parseInt(a.slice(2,8),16)%360},55%,45%)`;
+// The list rail is the one place a per-token mark still earns its keep: it
+// distinguishes rows at a glance without competing with anything, because it is
+// 3px wide. Kept monochrome — the rail says "a different token", not "which".
+const tokenColor = () => 'var(--bd2)';
 
 /* ══════════════════════════════════════════════════════════════════
    Providers — EIP-6963 for wallets, a public pool for reads
@@ -1649,7 +1648,11 @@ const FOCUSABLE='button,[href],input,select,textarea,[tabindex]:not([tabindex="-
 function showModal(m){
   lastFocus=document.activeElement;
   m.classList.add('on'); trapped=m;
-  const f=m.querySelector(FOCUSABLE); if(f) f.focus();
+  // The first focusable is often hidden (an action button the sheet did not
+  // need), and .focus() on a hidden element does nothing — leaving focus on the
+  // page behind the dialog, outside the trap it just installed.
+  const f=[...m.querySelectorAll(FOCUSABLE)].find(x=>x.offsetParent!==null);
+  (f||m.querySelector('.card')||m).focus();
 }
 function hideModal(m){
   m.classList.remove('on');
@@ -1684,7 +1687,7 @@ const isRejection = e =>
   /user\s*(rejected|denied|cancell?ed)|rejected the request/i.test(e?.message||'');
 function errText(e){
   if(!e) return 'Something went wrong';
-  if(isRejection(e)) return 'Cancelled';
+  if(isRejection(e)) return 'You dismissed the wallet — nothing was sent';
   if(e.noWallet) return 'Connect a wallet to send';
   const m=String(e.message||e);
   if(/insufficient funds/i.test(m)) return "Not enough ETH to cover the transaction";
@@ -1693,7 +1696,7 @@ function errText(e){
   if(/reverted|execution reverted/i.test(m)) return 'The transaction reverted on chain';
   return m.length>140 ? m.slice(0,137)+'…' : m;
 }
-function fail(e){ if(isRejection(e)) toast('Cancelled'); else toast(errText(e), 5000); }
+function fail(e){ toast(errText(e), isRejection(e)?3200:5000); }
 
 /* ══════════════════════════════════════════════════════════════════
    Wallet
@@ -1705,7 +1708,7 @@ function walletChoices(){
 }
 async function pickWallet(){
   const list=walletChoices();
-  if(!list.length){ toast('No wallet detected — install one to send'); return null; }
+  if(!list.length){ toast('No wallet detected \u2014 install one to use SLOW'); return null; }
   if(list.length===1) return list[0];
   const key=await openPicker(el.walletModal, el.walletList,
     list.map(w=>({key:w.info.uuid, label:w.info.name, img:w.info.icon, sub:w.info.rdns||''})),
@@ -2751,12 +2754,17 @@ const ICONS = {
    +'<g transform="translate(4 4)" fill="#110E08">'
    +'<path d="M2.84 24h.53c.096 0 .192-.048.224-.128C7.591 13.696 11.94 8.656 14.67 5.638c.112-.128.064-.225-.096-.225h-4.88a.55.55 0 0 0-.45.225L5.746 9.972c-.514.642-.642 1.236-.642 2.086v4.43c-1.14 3.194-1.862 5.361-2.392 7.32-.032.125.016.192.129.192M20.447.646c-.754-.802-4.157-.834-5.73-.224a3 3 0 0 0-.786.465 41 41 0 0 0-3.323 3.178c-.112.113-.064.225.097.225h5.409c.497 0 .786.289.786.786v6.1c0 .16.128.208.225.064l3.258-4.254c.53-.69.69-.898.835-1.861.192-1.413.08-3.58-.77-4.479m-6.982 16.18 2.231-3.676a.7.7 0 0 0 .064-.29V6.73c0-.16-.112-.225-.224-.097-3.355 3.74-5.971 7.672-8.395 12.407-.06.12.016.225.16.177l5.009-1.54c.565-.174.882-.402 1.155-.852"/>'
    +'</g></svg>',
+  8453:'<svg viewBox="0 0 32 32" aria-hidden="true">'
+   +'<rect width="32" height="32" fill="#0052FF"/>'
+   +'<path d="M16 5.4A10.6 10.6 0 0 0 5.5 14.7h13.9v2.6H5.5A10.6 10.6 0 1 0 16 5.4Z"'
+   +' fill="#fff" transform="rotate(180 16 16)"/>'
+   +'</svg>',
 };
 
 /* ══════════════════════════════════════════════════════════════════
    Send form
    ══════════════════════════════════════════════════════════════════ */
-const tokenBg = t => TOKEN_COLORS[t.symbol] || tokenColor(t.address);
+
 /*
    Destination. Only offered from Ethereum, only for native ETH, and only to a
    chain where SLOW is actually deployed — which is the honest gate: bridging
@@ -2790,7 +2798,7 @@ function buildDestRow(){
 
 function buildTokenGrid(){
   const g=el.cryptoGrid, c=cfg();
-  el.assetHint.textContent=`${c.tokens.length} on ${c.name}`;
+  el.assetHint.textContent=c.name;
   g.replaceChildren();
   for(const t of cfg().tokens){
     const b=document.createElement('button');
@@ -2798,9 +2806,6 @@ function buildTokenGrid(){
     b.dataset.symbol=t.symbol; b.dataset.token=t.address.toLowerCase();
     b.dataset.decimals=String(t.decimals);
     b.textContent=t.symbol;
-    const bgc=tokenBg(t);
-    b.style.background=bgc;
-    b.style.color=inkOn(bgc);
     b.setAttribute('aria-pressed','false');
     g.appendChild(b);
   }
@@ -2871,14 +2876,13 @@ function render(){
   el.segGuard.setAttribute('aria-selected',String(S.view==='guard'));
 
   // Steps stay on screen and dim until reachable, so the layout never jumps.
-  el.fAmount.classList.toggle('locked',S.step<1);
-  el.fTime.classList.toggle('locked',S.step<2);
+  // `locked` styles it; `inert` actually disables it. Without the second, the
+  // keyboard could tab into and fill a field the mouse could not reach.
+  el.fAmount.classList.toggle('locked',S.step<1); el.fAmount.inert = S.step<1;
+  el.fTime.classList.toggle('locked',S.step<2);   el.fTime.inert = S.step<2;
 
   const isCustom = S.token && !qs(`.crypto[data-token="${S.token}" i]`);
   el.customTokenOpt.setAttribute('aria-pressed',String(!!isCustom));
-  const customBg = isCustom?tokenColor(S.token):'';
-  el.customTokenOpt.style.background = customBg;
-  el.customTokenOpt.style.color = isCustom?inkOn(customBg):'';
   el.customTokenOpt.textContent = isCustom?S.symbol:'+ Custom token';
   el.cryptoGrid.classList.toggle('dim',!!isCustom);
 
@@ -2942,9 +2946,15 @@ function statusOf(t){
 const progressOf = t => t.delay>0 ? Math.max(0,Math.min(100,((nw()-t.timestamp)/t.delay)*100)) : 100;
 const RANK = {ready:0, recover:1, pending:2, settling:3};
 
+// Nothing wrote aria-selected on these three, so Unlocked could never look or
+// read as selected — it was styled entirely by an attribute nobody set.
+function paintTabs(){
+  qsa('.tab[data-tab]').forEach(t=>t.setAttribute('aria-selected',String(t.dataset.tab===S.tab)));
+}
 function renderList(){
   const c = el.list;
   el.tabUnlocked.hidden = !S.unlocked.length;
+  paintTabs();
   if(S.tab==='unlocked' && !S.unlocked.length) S.tab='inbound';
   const list = S.tab==='outbound' ? S.out : S.inb;
   c.replaceChildren();
@@ -2989,7 +2999,7 @@ function renderUnlocked(){
   for(const u of S.unlocked){
     const row=document.createElement('div'); row.className='tx';
     const bar=document.createElement('span'); bar.className='tx-bar';
-    bar.style.background=TOKEN_COLORS[u.symbol]||tokenColor(u.token);
+    bar.style.background=tokenColor();
     const open=document.createElement('button'); open.type='button'; open.className='tx-open';
     const l1=document.createElement('span'); l1.className='tx-line';
     const amt=document.createElement('span'); amt.className='tx-amt';
@@ -3027,7 +3037,7 @@ function makeRow(t){
 
   const bar=document.createElement('span');
   bar.className='tx-bar';
-  bar.style.background=TOKEN_COLORS[t.symbol]||tokenColor(t.token);
+  bar.style.background=tokenColor();
   row.appendChild(bar);
 
   const open=document.createElement('button');
@@ -3531,7 +3541,13 @@ async function cancelGuardianTx(){
 /* ══════════════════════════════════════════════════════════════════
    Recipient
    ══════════════════════════════════════════════════════════════════ */
-function setNote(node,text,cls){ node.textContent=text; node.className='note'+(cls?' '+cls:''); }
+function setNote(node,text,cls){
+  node.textContent=text; node.className='note'+(cls?' '+cls:'');
+  // Red alone is not a state. Anything this note describes is marked invalid so
+  // the fact reaches the accessibility tree as well as the eye.
+  const owner=node.id && qs(`[aria-describedby="${node.id}"]`);
+  if(owner) owner.setAttribute('aria-invalid', String(cls==='err'));
+}
 async function resolveRecipient(input){
   const seq=++S.resolveSeq;
   const stale=()=>S.resolveSeq!==seq;
@@ -3614,9 +3630,12 @@ function renderReview(){
     li.appendChild(box);
     el.timeline.appendChild(li);
   }
-  el.confirmBtn.textContent = S.dest
-    ? `Send ${S.amount} ${S.symbol} to ${cfg(S.dest).short}`
-    : `Send ${S.amount} ${S.symbol}`;
+  // The button is uppercase by rule; a token symbol is not the button's to
+  // recase. cbBTC is not CBBTC.
+  el.confirmBtn.replaceChildren(
+    document.createTextNode(`Send ${S.amount} `),
+    Object.assign(document.createElement('span'),{className:'cs',textContent:S.symbol}),
+    document.createTextNode(S.dest ? ` to ${cfg(S.dest).short}` : ''));
   previewPlan();
 }
 async function updateTipPreview(){
@@ -4063,7 +4082,7 @@ el.txDismiss.onclick=txHide;
 el.helpBtn.onclick=()=>showModal(el.helpModal);
 el.helpClose.onclick=()=>hideModal(el.helpModal);
 
-qsa('.tab[data-tab]').forEach(t=>t.addEventListener('click',()=>{ S.tab=t.dataset.tab; render(); renderList(); }));
+qsa('.tab[data-tab]').forEach(t=>t.addEventListener('click',()=>{ S.tab=t.dataset.tab; paintTabs(); render(); renderList(); }));
 addEventListener('focus',()=>{ if(S.view==='take'&&S.account) loadTransfers(false); });
 
 /* Which chain was this page published on? A gateway serves it from

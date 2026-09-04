@@ -61,14 +61,14 @@ const captured = {};
 globalThis.__capture = captured;
 const EXPORTS = [
   'SLOW', 'ZERO', 'ENS_REG', 'WNS', 'MC3', 'MAINNET', 'GRACE', 'SEL', 'TYPEHASH_2612', 'PRESETS',
-  'CHAINS', 'CHAIN_IDS', 'cfg', 'TOKEN_COLORS',
+  'CHAINS', 'CHAIN_IDS', 'cfg',
   'keccak256', 'namehash', 'encode', 'decode', 'cd', 'word', 'strip',
   'encAggregate3', 'decAggregate3', 'chunk',
   'parseUnits', 'formatUnits', 'fmtAmt', 'group', 'fmtTime', 'fmtCustomTime',
   'decodeId', 'decodeStringLoose', 'isAddr', 'shortAddr',
   'domainSeparator', 'isRejection', 'errText', 'hasAtomic', 'statusOf', 'progressOf',
-  'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY', 'luminance', 'inkOn',
-  'fmtWhen', 'ready', 'contrast', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
+  'presetsFor', 'S', 'depositCalldata', 'planLabel', 'GUARD_DELAY',
+  'fmtWhen', 'ready', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
   'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
@@ -280,7 +280,13 @@ eq(C.isRejection({code: 4001}), true, 'isRejection by code');
 eq(C.isRejection({message: 'User rejected the request'}), true, 'isRejection by message');
 eq(C.isRejection({code: 'ACTION_REJECTED'}), true, 'isRejection by ethers code');
 eq(C.isRejection({message: 'execution reverted'}), false, 'a revert is not a rejection');
-eq(C.errText({code: 4001}), 'Cancelled', 'a rejection reads as Cancelled');
+// "Cancelled" alone reads as "your transfer was cancelled" in a product whose
+// subject IS cancelling transfers. It has to say who cancelled what.
+{
+  const t = C.errText({code: 4001});
+  ok(/nothing was sent/.test(t), 'a rejection says nothing was sent');
+  ok(!/^Cancelled$/.test(t), 'and does not read as the transfer being cancelled');
+}
 ok(C.errText({message: 'x'.repeat(400)}).length <= 140, 'error text is truncated');
 ok(/Not enough ETH/.test(C.errText({message: 'insufficient funds for gas'})), 'insufficient funds is explained');
 
@@ -822,27 +828,84 @@ ok(C.SEL.predictWithdrawalId !== C.SEL.predictTransferId,
 ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
   'approving and predicting are different calls');
 
-// ─── Tile contrast ─────────────────────────────────────────────────────────
-// Robinhood's chartreuse is far too light for white text; the ink is derived
-// rather than hand-maintained, so a custom token gets the same treatment.
-ok(C.luminance('#000000') < C.luminance('#ffffff'), 'luminance is ordered');
-eq(C.contrast('#ffffff', '#000000').toFixed(0), '21', 'contrast of black on white is 21:1');
-eq(C.contrast('#777777', '#777777').toFixed(0), '1', 'a colour against itself is 1:1');
-// Every tile the app ships must clear 3:1, the floor for large bold text.
-for (const [sym, hex] of Object.entries(C.TOKEN_COLORS)) {
-  const ratio = C.contrast(hex, C.inkOn(hex));
-  ok(ratio >= 3, `${sym} ${hex} reaches ${ratio.toFixed(1)}:1 with its chosen ink`);
+// Below 380px the chain chip drops its label and shows only the mark, so a
+// chain without one becomes a blank square with no way to tell where you are.
+{
+  for (const id of C.CHAIN_IDS) {
+    ok(new RegExp(`\\n  ${id}:'<svg`).test(html), `chain ${id} has a mark`);
+  }
 }
-// The cases a single luminance threshold got wrong.
-eq(C.inkOn('#ccff00'), '#110e08', 'chartreuse gets dark ink');
-eq(C.inkOn('#ff69b4'), '#110e08', 'ETH pink gets dark ink — white on it is 2.6:1');
-eq(C.inkOn('#f7931a'), '#110e08', 'cbBTC orange gets dark ink — white on it is 2.3:1');
-eq(C.inkOn('#2775ca'), '#ffffff', 'USDC blue keeps white ink');
-eq(C.inkOn('#4d7c0f'), '#ffffff', 'NVDA green keeps white ink');
-eq(C.inkOn('hsl(210,55%,45%)'), '#ffffff', 'a hashed hsl() colour falls back to white ink');
-// NVDA and USDG must not read as one colour side by side.
-ok(Math.abs(C.luminance('#4d7c0f') - C.luminance('#ccff00')) > 0.3,
-  'NVDA and USDG are separated by value, not just hue');
+
+// The mark ships without its dashed inset: three layers inside 26px resolve as
+// noise. The master in assets/ keeps it for large use.
+{
+  const mark = /<svg class="mk"[\s\S]*?<\/svg>/.exec(html)[0];
+  ok(!/stroke-dasharray/.test(mark), 'the header mark is plate and glyph only');
+  const icon = decodeURIComponent(/href="data:image\/svg\+xml,([^"]+)"/.exec(html)[1]);
+  ok(!/stroke-dasharray/.test(icon), 'and so is the favicon');
+  eq(/<path d="(M0 [^"]+Z)"/.exec(icon)[1], /<path d="(M0 [^"]+Z)"/.exec(mark)[1], 'still the same plate');
+}
+
+// Green was the only colour outside the mark, and it confirmed something the
+// address beside it already confirmed. Red stays: it is where colour prevents
+// a mistake.
+{
+  const CSS2 = html.split('<style>')[1].split('</style>')[0];
+  ok(/\.note\.ok\{color:var\(--fg\)\}/.test(CSS2), 'success is not a colour');
+  ok(/\.note\.err\{color:var\(--err\)\}/.test(CSS2), 'but failure still is');
+}
+
+// ─── The design system, in numbers ─────────────────────────────────────────
+
+// A helper, so the assertions below test the values that actually ship rather
+// than a copy of them.
+const CSS = html.split('<style>')[1].split('</style>')[0];
+const prop = (block, name) => new RegExp(`--${name}:(#[0-9a-f]{3,6})`, 'i').exec(block)[1];
+const lin = (c) => (c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+const lum = (h) => {
+  h = h.replace('#', '');
+  if (h.length === 3) h = [...h].map((c) => c + c).join('');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+
+// --bd draws every control in the product. It was 1.96:1 on white and 1.66:1 on
+// black, so the entire interface was outlined below the non-text floor.
+{
+  const dark = CSS.slice(CSS.indexOf(':root{'), CSS.indexOf('body.light'));
+  const light = CSS.slice(CSS.indexOf('body.light'));
+  for (const [name, block, bg] of [['dark', dark, '#000000'], ['light', light, '#ffffff']]) {
+    ok(ratio(prop(block, 'bd'), bg) >= 3, `--bd clears 3:1 in ${name} (${ratio(prop(block, 'bd'), bg).toFixed(2)}:1)`);
+    ok(ratio(prop(block, 'bd2'), bg) >= 3, `--bd2 clears 3:1 in ${name}`);
+    ok(ratio(prop(block, 'dim'), bg) >= 4.5, `--dim clears 4.5:1 in ${name} (${ratio(prop(block, 'dim'), bg).toFixed(2)}:1)`);
+  }
+}
+
+// The token grid carries no colour of its own any more: identity is the symbol,
+// selection is inversion, exactly as .tab and .seg button already do it.
+{
+  ok(!/TOKEN_COLORS/.test(html), 'the per-asset palette is gone');
+  ok(!/inkOn|INK_DARK|INK_LIGHT/.test(html), 'and the ink-contrast machinery with it');
+  ok(!/\.crypto\{[^}]*aspect-ratio/.test(CSS), 'the tile is no longer a square canvas for a hue');
+  ok(/\.crypto\[aria-pressed=true\]\{background:var\(--fg\);color:var\(--bg\)/.test(CSS),
+    'a selected token inverts');
+  ok(!/b\.style\.background=/.test(html.split('</style>')[1]), 'no tile paints itself from JS');
+}
+
+// Disabled must not be opacity alone, and opacities must not multiply: .locked
+// at .4 times :disabled at .25 rendered a control at 10%, which is 1.02:1.
+{
+  ok(!/\.opt:disabled\{opacity:\.25/.test(CSS), 'a disabled preset is not faded to a tenth');
+  ok(/\.field\.locked \.opt:disabled[^}]*opacity:1/.test(CSS), 'nested opacities do not stack');
+  ok(/inert = S\.step<1/.test(html), 'a locked field is inert, not merely unclickable');
+  ok(/\.btn:disabled\{background:var\(--bg2\);color:var\(--dim\)/.test(CSS),
+    'disabled is a stated fill and ink, not a fade');
+  // Dashed already means "add one" on + Custom token. Disabled must not borrow
+  // it: the two sit in adjacent fields meaning opposite things.
+  ok(!/:disabled\{[^}]*border-style:dashed/.test(CSS), 'disabled does not borrow the dashed "add" affordance');
+  ok(/\.link\{[^}]*border:1px dashed/.test(CSS), 'dashed still means add');
+}
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 eq(C.SLOW.toLowerCase(), '0x000000000000888741b254d37e1b27128afeaabc', 'SLOW address');
@@ -950,7 +1013,6 @@ for (const sym of ['USDe', 'cbBTC']) {
   const a = m0(sym), b = rh.find((t) => t.symbol === sym);
   ok(a.address !== b.address, `${sym} is at a different address on each chain`);
   eq(a.decimals, b.decimals, `${sym} keeps its decimals across chains`);
-  eq(C.TOKEN_COLORS[sym], C.TOKEN_COLORS[sym], `${sym} is one colour on both`);
 }
 eq(C.presetsFor('WBTC').join(','), C.presetsFor('cbBTC').join(','), 'both BTC assets ladder alike');
 eq(C.presetsFor('wstETH').join(','), '0.01,0.1,1', 'wstETH ladders at ether scale');
@@ -963,64 +1025,20 @@ eq(rh.find(t => t.symbol === 'SPCX').address, '0x4a0e65a3eccec6dbe60ae065f2e7bb8
 eq(C.presetsFor('cbBTC').join(','), '0.001,0.01,0.1', 'cbBTC gets a bitcoin-scale ladder');
 eq(C.presetsFor('SPY').join(','), C.presetsFor('NVDA').join(','), 'SPY ladders like a share');
 eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders like a share');
-// Eight tiles side by side have to stay tellable apart. Hues are spread, and
-// the one close pair is separated by value instead.
+// Tiles are told apart by their symbols now, not by hue, so the property that
+// has to hold is that no chain lists the same symbol twice — and that every
+// symbol fits the cell. At 13px monospace the advance is ~7.8px; a 320px
+// viewport gives a cell of (320 - 24 - 18) / 4 = 69.5px, less 8px of padding.
 {
-  const hue = (h) => {
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-    if (!d) return 0;
-    const t = mx === r ? (g - b) / d % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-    return ((t * 60) + 360) % 360;
-  };
-  // EVERY tile, on EVERY chain — including native ETH, which an earlier version
-  // of this loop skipped by filtering on the zero address. That exclusion is
-  // how a shipped ETH/GME pair sat 20 degrees and 0.22 luminance apart unseen.
   for (const id of C.CHAIN_IDS) {
     const ts = C.CHAINS[id].tokens;
-    for (let i = 0; i < ts.length; i++) {
-      for (let j = i + 1; j < ts.length; j++) {
-        const a = C.TOKEN_COLORS[ts[i].symbol], b = C.TOKEN_COLORS[ts[j].symbol];
-        ok(a && b, `chain ${id}: ${ts[i].symbol} and ${ts[j].symbol} both have colours`);
-        let dh = Math.abs(hue(a) - hue(b));
-        if (dh > 180) dh = 360 - dh;
-        const dl = Math.abs(C.luminance(a) - C.luminance(b));
-        ok(dh > 25 || dl > 0.25,
-          `chain ${id}: ${ts[i].symbol} ${a} and ${ts[j].symbol} ${b} differ in hue or value (${dh.toFixed(0)}deg, ${dl.toFixed(2)})`);
-      }
+    const syms = ts.map((t) => t.symbol);
+    eq(new Set(syms).size, syms.length, `chain ${id}: every symbol is unique`);
+    for (const sym of syms) {
+      ok(sym.length * 7.8 <= 61.5, `${sym} fits a 320px cell (${(sym.length * 7.8).toFixed(1)}px of 61.5)`);
     }
   }
 }
-eq(rh.find(t => t.symbol === 'USDe').address, '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34', 'USDe on 4663');
-eq(rh.find(t => t.symbol === 'USDe').decimals, 18, 'USDe has 18 decimals, not 6');
-eq(rh.find(t => t.symbol === 'USDG').address, '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG on 4663');
-eq(rh.find(t => t.symbol === 'USDG').decimals, 6, 'USDG has 6 decimals');
-eq(rh.find(t => t.symbol === 'NVDA').address, '0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', 'NVDA on 4663');
-eq(rh.find(t => t.symbol === 'NVDA').decimals, 18, 'NVDA has 18 decimals');
-// None of the mainnet four appears on 4663, and nothing shares an address.
-for (const sym of ['USDC', 'USDT', 'BOLD']) {
-  ok(!rh.some(t => t.symbol === sym), `${sym} is not offered on 4663`);
-}
-const mainAddrs = new Set(C.CHAINS[1].tokens.filter(t => t.address !== C.ZERO).map(t => t.address));
-ok(rh.filter(t => t.address !== C.ZERO).every(t => !mainAddrs.has(t.address)),
-  'no 4663 asset reuses a mainnet address');
-
-// A tokenized share must not be laddered like a dollar: 10/100/1000 NVDA would
-// offer roughly $1.8k to $180k as the three default amounts.
-eq(C.presetsFor('NVDA').join(','), '0.1,1,10', 'NVDA gets a share-scale ladder');
-ok(C.presetsFor('NVDA').join(',') !== C.PRESETS.default.join(','),
-  'NVDA does not inherit the stablecoin ladder');
-ok(C.TOKEN_COLORS.NVDA && C.TOKEN_COLORS.USDe && C.TOKEN_COLORS.USDG,
-  'every 4663 asset has a tile colour');
-eq(new Set(rh.map(t => C.TOKEN_COLORS[t.symbol])).size, rh.length,
-  'the four 4663 tiles are four different colours');
-
-eq(C.cfg(4663).name, 'Robinhood Chain', 'cfg() resolves by id');
-eq(C.cfg(999999).id, 1, 'cfg() falls back to mainnet for an unknown chain');
-
-// Presets follow the asset, and WETH is an ether-scale asset like ETH.
-eq(C.presetsFor('WETH').join(','), C.presetsFor('ETH').join(','), 'WETH shares the ETH ladder');
-ok(C.TOKEN_COLORS.WETH === C.TOKEN_COLORS.ETH, 'WETH is painted as ether');
 
 // ─── Every styled class actually has a rule ────────────────────────────────
 // The wallet picker shipped as raw browser buttons with unconstrained images

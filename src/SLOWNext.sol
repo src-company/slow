@@ -937,27 +937,7 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
         string memory escSymbol = LibString.escapeHTML(tokenSymbol);
         string memory dispName = LibString.escapeHTML(_clipForDisplay(tokenName, 28));
 
-        // Address row is suppressed for ETH (zero address would render as 0x000…000).
-        string memory addressRow = token == address(0)
-            ? ""
-            : string(
-                abi.encodePacked(
-                    '<text x="150" y="105" font-size="9">',
-                    token.toHexStringChecksummed(),
-                    "</text>"
-                )
-            );
-        // Exact-seconds subtitle for delays over one minute, where the main
-        // label loses second-level resolution.
-        string memory secondsRow = delay > 60
-            ? string(
-                abi.encodePacked(
-                    '<text x="150" y="232" font-size="8" fill="#CCC">',
-                    delay.toString(),
-                    " seconds</text>"
-                )
-            )
-            : "";
+
 
         bytes memory svg = abi.encodePacked(
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">',
@@ -973,27 +953,30 @@ contract SLOWNext is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermi
             // The old inset border is gone — it existed to find the edge against
             // a page, and a blue plate finds its own.
             '<path d="M0 23.7C0 15.6 0 11.5 1.5 8.4C3 5.4 5.4 3 8.4 1.5C11.5 0 15.6 0 23.7 0H276.3C284.4 0 288.5 0 291.6 1.5C294.6 3 297 5.4 298.5 8.4C300 11.5 300 15.6 300 23.7V276.3C300 284.4 300 288.5 298.5 291.6C297 294.6 294.6 297 291.6 298.5C288.5 300 284.4 300 276.3 300H23.7C15.6 300 11.5 300 8.4 298.5C5.4 297 3 294.6 1.5 291.6C0 288.5 0 284.4 0 276.3V23.7Z" fill="#00F"/>',
-            '<line x1="20" y1="50" x2="280" y2="50" stroke="#fff"/>',
-            '<text x="20" y="35" font-family="Helvetica,Arial,sans-serif" font-size="24" fill="#fff">SLOW</text>',
+            // The rule needs a stated width: unstated it is 1 user unit, which at
+            // 300 lands on a half-pixel and greys out at small sizes.
+            '<line x1="20" y1="60" x2="280" y2="60" stroke="#fff" stroke-width="2"/>',
+            '<text x="20" y="44" font-family="Helvetica,Arial,sans-serif" font-size="26" fill="#fff">SLOW</text>',
             '<g font-family="monospace" text-anchor="middle" fill="#fff">',
-            addressRow,
-            '<text x="150" y="160" font-size="',
-            _fit(bytes(escSymbol).length, 210, 40, 12).toString(),
+            '<text x="150" y="150" font-size="',
+            _fit(bytes(escSymbol).length, 240, 44, 14).toString(),
             '">',
             escSymbol,
             "</text>"
         );
         bytes memory tail = abi.encodePacked(
-            '<text x="150" y="186" font-size="',
-            _fit(bytes(dispName).length, 250, 13, 7).toString(),
-            '" fill="#CCC">',
+            '<text x="150" y="185" font-size="',
+            _fit(bytes(dispName).length, 250, 14, 8).toString(),
+            // Neutral grey on a saturated blue reads as dirt however well it
+            // scores: #CCC is 5.35:1 and still looks like a smudge. A tint of
+            // the plate's own hue sits in the same light.
+            '" fill="#B9C4FF">',
             dispName,
-            '</text><text x="150" y="218" font-size="',
-            _fit(bytes(delayLabel).length, 230, 20, 10).toString(),
+            '</text><text x="150" y="240" font-size="',
+            _fit(bytes(delayLabel).length, 250, 22, 11).toString(),
             '">',
             delayLabel,
             "</text>",
-            secondsRow,
             "</g></svg>"
         );
 
