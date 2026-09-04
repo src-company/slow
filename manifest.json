@@ -3,8 +3,8 @@
   "title": "SLOW \u2014 timelocked transfers with a reverse",
   "description": "The SLOW dapp as one self-contained HTML document, served from contract bytecode over ERC-8244, ERC-5219 and ERC-4804.",
   "page": "dapp/page.html",
-  "bytes": 224641,
-  "sha256": "42106a3c437f5260843aa58d917088526792061246b43353c4a29837c656b744",
+  "bytes": 225174,
+  "sha256": "043f8f42c8cb5d36c62ad5242289be3cf720ccedf3ec7a48b4a44a87608bf9cf",
   "chunks": {
     "artifact": "SlowPage",
     "maxPayload": 24575,

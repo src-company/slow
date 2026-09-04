@@ -934,6 +934,26 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
   eq(C.clipForDisplay('x'.repeat(40), 28), 'x'.repeat(28) + '...', 'a long one is cut at the byte count');
 }
 
+// The send form is one screen on a desktop. It was 1,066px of content in a
+// 754px pane with Send at y=1050 — 412px below the fold, for the one control
+// the whole view exists to reach.
+{
+  const CSS3 = html.split('<style>')[1].split('</style>')[0];
+  ok(/\.acts\{display:grid;grid-template-columns:1fr 1fr/.test(CSS3),
+    'the three actions are two rows, not three');
+  ok(/\.acts #confirmBtn\{grid-column:1\/-1\}/.test(CSS3), 'and Send takes the width');
+  // The review is a child of the left column, not a band under both: as a band
+  // it started after the TALLER column and left a hole under the shorter one.
+  ok(!/#fReview\{grid-column:1\/-1/.test(CSS3), 'the review is not a full-width band');
+  const doc = html.split('</style>')[1];
+  const colA = doc.slice(doc.indexOf('id="colA"'), doc.indexOf('id="colB"'));
+  ok(/id="fReview"/.test(colA), 'the review sits in the left column');
+  ok(/id="fAmount"/.test(colA), 'with the amount');
+  const colB = doc.slice(doc.indexOf('id="colB"'), doc.indexOf('id="colB"') + 6000);
+  ok(/id="fTime"/.test(colB) && /id="fPreview"/.test(colB),
+    'and the delay sits with the asset and the card that draws them');
+}
+
 // ─── The design system, in numbers ─────────────────────────────────────────
 
 // A helper, so the assertions below test the values that actually ship rather
