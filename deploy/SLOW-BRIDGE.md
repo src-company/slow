@@ -103,7 +103,7 @@ set anywhere but chain 1.
 | Base 8453 | OptimismPortal `0x49048044…E97e` | OP Stack |
 | Robinhood 4663 | Delayed Inbox `0x1A07cc4B…7a2D` | Arbitrum |
 
-with `FORWARD_GAS` 2,500,000 and `FORWARD_MAX_FEE` 1 gwei.
+with `FORWARD_GAS` 2,500,000 and `FORWARD_MAX_FEE` 4 gwei.
 
 `FORWARD_GAS` matches what the page buys for a *contract* recipient, and that is
 deliberate. `depositTo` calls `onERC1155Received` on the recipient and that hook
@@ -116,6 +116,15 @@ side — so it assumes the expensive case. A shortfall was never a loss (`arrive
 `FAILURE_RESERVE` lands it in `rescue[origin]`), but the position would not
 arrive and the origin would have to discover that on a chain they may never have
 used.
+
+`FORWARD_MAX_FEE` is sized for a chain five days out, not the one measured
+today: Robinhood reads 0.39 gwei live, and 1 gwei left only 2.5x of headroom on
+a number with no setter. The two failures are not symmetric — over-buying is
+deducted up front and refunded on the far side, under-buying leaves a retryable
+whose auto-redeem fails and which somebody then has to notice within seven days.
+The cost is a floor: `gasLimit * maxFeePerGas` comes out of the payload, so a
+forward to an Arbitrum destination must be worth more than ~0.01 ETH plus the
+submission fee. Below that `_push` refuses and `rescue` holds it.
 
 **Both entrypoints must hold code, and the constructor now checks it.** A
 value-bearing call to a codeless address returns success, and `_push` reads that

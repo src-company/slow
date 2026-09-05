@@ -17,7 +17,16 @@
  *   do PAGE_HASH, PAGE_LENGTH and chunkCount agree with the file?
  *   does resolveMode()/request() answer as an ERC-4804 gateway expects?
  *
- * Usage: node test/deploy.rehearsal.mjs      (needs anvil and out/ built)
+ * Usage: node test/deploy.rehearsal.mjs      (needs anvil and `forge build`)
+ *
+ * IT BUILDS ITS OWN CHUNKS, and that is not a convenience. This read them out
+ * of `out/` and trusted whatever was there — so from the moment the page
+ * changed and nobody re-ran `chunk.mjs`, it rehearsed a page that was never
+ * going to be deployed and reported a hash mismatch as if the DEPLOYMENT were
+ * wrong. It sat broken across two page changes for exactly that reason: `out/`
+ * is gitignored build output with no freshness anyone was checking. A
+ * rehearsal whose input can be stale is a rehearsal of the wrong thing, which
+ * is the one failure this file exists to make impossible.
  */
 import {execFileSync, spawn} from 'node:child_process';
 import fs from 'node:fs';
@@ -87,6 +96,11 @@ try {
   await rpc('anvil_impersonateAccount', [D.steward]);
 
   // ── the chunks, exactly as chunk.mjs emits them ──────────────────────────
+  // Emitted HERE AND NOW rather than found. `chunk.mjs` reads the page through
+  // `readPage`, which refuses to build when the manifest does not match it, so
+  // running it is also the check that the pin and the page agree — before a
+  // single chunk is deployed rather than after the reassembly disagrees.
+  execFileSync(process.execPath, [path.join(ROOT, 'scripts/chunk.mjs')], {stdio: 'pipe'});
   const chunkFiles = fs.readdirSync(path.join(ROOT, 'out'))
     .filter((f) => /^chunk\d+\.creation\.txt$/.test(f))
     .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));

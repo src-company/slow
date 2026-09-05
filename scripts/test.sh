@@ -45,4 +45,18 @@ for t in test/*.test.mjs; do
   echo "· $t"
   node "$t" || status=1
 done
+
+# The rehearsal is not a `*.test.mjs`, so the glob above never ran it — and it
+# sat broken across two page changes because of that. It reads whatever chunk
+# set is in `out/`, which is gitignored build output, so the one thing it could
+# not notice was that it was rehearsing a page nobody was going to deploy. It
+# builds its own chunks now, and it runs here so the next page change cannot
+# quietly un-rehearse the deployment.
+if command -v anvil >/dev/null 2>&1; then
+  echo "· test/deploy.rehearsal.mjs"
+  node test/deploy.rehearsal.mjs || status=1
+else
+  echo "· test/deploy.rehearsal.mjs — SKIPPED, no anvil on PATH"
+fi
+
 exit $status

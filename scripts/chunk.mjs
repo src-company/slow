@@ -21,6 +21,17 @@ const pageHash = keccak256(bytes);
 const out = path.join(ROOT, 'out');
 fs.mkdirSync(out, {recursive: true});
 
+/* CLEAR THE OLD SET BEFORE WRITING THE NEW ONE.
+   This wrote chunk1..N and left anything above N where it was. A page that
+   SHRINKS past a chunk boundary therefore left an orphan behind — `chunk11`
+   from the last build, full of bytes from a page that no longer exists — and
+   every consumer here globs `out/chunk*.creation.txt`. The rehearsal would
+   deploy it, and so would a deployer following the same pattern by hand, on
+   the one operation that cannot be taken back. Nothing warned, because from
+   the outside a stale file and a fresh one are the same shape. */
+const stale = fs.readdirSync(out).filter((f) => /^chunk\d+\.creation\.txt$/.test(f));
+for (const f of stale) fs.rmSync(path.join(out, f));
+
 console.log(`${m.page}: ${bytes.length.toLocaleString()} B`);
 console.log(`  sha256    ${sha256}`);
 console.log(`  keccak256 ${pageHash}   <- SlowPage constructor pageHash`);

@@ -110,7 +110,30 @@ contract DeployBridge is Script {
     ///      Arbitrum leg the unused portion is refunded on the far side to an
     ///      origin that `_push` now guarantees is not one Nitro will alias.
     uint64 internal constant FORWARD_GAS = 2_500_000;
-    uint128 internal constant FORWARD_MAX_FEE = 1 gwei;
+
+    /// @dev THE CEILING IS IMMUTABLE AND THE GAS PRICE IS NOT, so this is sized
+    ///      for a chain five days from now rather than for the one measured
+    ///      today. Robinhood Chain reads 0.39 gwei live, and 1 gwei — the value
+    ///      this held — left 2.5x of headroom on a number no one can ever
+    ///      change. That is not enough room for a parameter with no setter.
+    ///
+    ///      THE TWO FAILURES ARE NOT SYMMETRIC, which is what settles the
+    ///      direction. Too high and the excess is deducted up front and REFUNDED
+    ///      on the far side, to an origin `_push` now guarantees Nitro will not
+    ///      alias. Too low and the retryable's auto-redeem fails: it stays
+    ///      manually redeemable for seven days and then refunds the call value,
+    ///      but only if somebody notices, and nobody is watching a transfer that
+    ///      already waited five days to get here. So the cost of over-buying is
+    ///      a rounding error and the cost of under-buying is the whole payload
+    ///      sitting on a timer.
+    ///
+    ///      WHAT IT COSTS, stated rather than hidden: `gasLimit * maxFeePerGas`
+    ///      is taken out of the payload before the ticket is bought, so at
+    ///      2,500,000 x 4 gwei a forward to an Arbitrum destination needs to be
+    ///      worth more than ~0.01 ETH plus the submission fee. Below that
+    ///      `_push` refuses and `rescue` holds it — recoverable, and visible,
+    ///      which is the right failure for a floor.
+    uint128 internal constant FORWARD_MAX_FEE = 4 gwei;
 
     error NotCreateX();
     error BadSalt();

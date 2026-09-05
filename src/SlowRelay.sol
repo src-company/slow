@@ -142,7 +142,8 @@ contract SlowRelay {
     /// @notice The SLOW deployment this escrows into.
     address public immutable slow;
 
-    /// @notice Contracts whose word about a far-side sender is worth money.
+    /// @notice Contracts allowed to DELIVER a cross-chain message to this one —
+    ///         the ones whose word about a far-side sender is worth money.
     /// @dev Duck-typing alone is enough for `SlowArrival`, where mis-attribution
     ///      is a gift rather than a theft. It is NOT enough here: anyone can
     ///      deploy a contract whose `l2Sender()` returns whatever they like, and
@@ -150,7 +151,6 @@ contract SlowRelay {
     ///      also arrive through a known bridge. Constructor arguments do not
     ///      enter a CREATE3 address, so this contract still lands at one address
     ///      on every chain despite holding chain-specific values.
-    /// @notice Contracts allowed to deliver a cross-chain message to this one.
     /// @dev NOT THE INBOX, WHICH IS THE TRAP THIS NAME USED TO SET. `proveFill`
     ///      sends through `OP_MESSENGER.sendMessage` and `ArbSys.sendTxToL1`,
     ///      and what arrives here is whatever DELIVERS that message — the
@@ -569,7 +569,6 @@ contract SlowRelay {
         emit Cancelled(id, i.sender, total);
         ISlow(slow).withdrawFrom(address(this), i.sender, escrowIdOf[id], total);
     }
-
 
     // ──────────────────────────────────────────────────────────── TRANSPORT
     //
