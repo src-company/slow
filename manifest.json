@@ -30,7 +30,9 @@
       8453,
       4663
     ],
-    "source": "src/SLOW.sol",
+    "source": "src/SlowPage.sol",
+    "artifact": "SlowPage",
+    "sourceNote": "This address is SlowPage, not SLOW. It read src/SLOW.sol and that was wrong in the one file that governs an irreversible deployment: chunks.artifact names SlowPage, test/deploy.rehearsal.mjs deploys out/SlowPage.sol/SlowPage.json here with this salt and asserts it lands, and the constructor encoding it builds matches SlowPage(address,address,address,address[],bytes32) argument for argument. The protocol contract is a separate deployment with its own salt; see protocol.",
     "verified": {
       "sameAddressOnAllChains": true,
       "targetFreeOnAllChains": true,
