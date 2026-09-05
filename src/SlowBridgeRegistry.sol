@@ -31,6 +31,14 @@ pragma solidity ^0.8.30;
 ///
 ///      Ownership is two-step and renounceable. Renouncing after freezing every
 ///      route makes this contract inert, which is the intended end state.
+///
+/// @dev TWO REGISTERS, ONE ARGUMENT. Alongside routes this publishes an ADDRESS
+///      BOOK — where `SlowArrival`, `SlowRelay` and whatever comes after them
+///      live on each chain — for the same reason and under the same rules. A
+///      page frozen in bytecode cannot carry a constant for a contract that is
+///      not deployed yet, and `SlowRelay` is not. See `deployments`: it is a
+///      discovery pointer, the reader verifies what it finds, the page prefers
+///      its own, and freezing is how the trust is given back.
 contract SlowBridgeRegistry {
     /// @notice Bridge families the page knows how to build calldata for.
     /// @dev NONE is the zero value, so an unset route reads as absent rather
@@ -123,6 +131,151 @@ contract SlowBridgeRegistry {
     /// @notice How many chains are registered.
     function routeCount() external view returns (uint256) {
         return chainIds.length;
+    }
+
+    // ────────────────────────────────────────────────────── THE ADDRESS BOOK
+
+    /// @notice name => chain id => where that contract lives on that chain.
+    /// @dev WHAT THIS IS FOR, AND THE ONE THING IT IS NOT.
+    ///
+    ///      The page is immutable bytecode. `SlowRelay` is not deployed yet, and
+    ///      a page shipped today can carry no constant for it — so without this
+    ///      the relay becomes reachable only by shipping a NEW page, and every
+    ///      later contract has the same problem. This is the register that lets
+    ///      a page find something that did not exist when it was written.
+    ///
+    ///      IT IS A DISCOVERY POINTER, NEVER A TRUST POINTER, and the whole
+    ///      safety argument rests on that line. `trustedMessenger` on the relay
+    ///      and `routeTo` on the arrival must stay immutable: the first accepts
+    ///      duck-typed proofs and so one added entry drains every open escrow,
+    ///      the second is where value travels. Neither may ever be reachable
+    ///      from here. What may is the ADDRESS a reader dials, which the reader
+    ///      then checks for itself.
+    ///
+    ///      THIS CONTRACT CANNOT CHECK THE ADDRESSES IT PUBLISHES, and that is
+    ///      structural rather than lazy: it sits on one chain naming contracts
+    ///      on others, where it can read no code. So `entry.code.length` — the
+    ///      check `SlowArrival`'s constructor makes about its own routes — is
+    ///      not available here at any price. The reader has to probe the
+    ///      destination chain and confirm both that there is code and that the
+    ///      selector it means to call is in it, which is what `probeArrival`
+    ///      already does before any route that needs it opens.
+    ///
+    ///      SAME ADDITIVE RULE AS ROUTES. A name the page ships a constant for
+    ///      is read from the page; an entry here for that name is ignored. So
+    ///      the trust this carries is scoped to contracts a reader opted into by
+    ///      using something the page never knew about — and `freeze` is how that
+    ///      trust is given back, one entry at a time, permanently.
+    mapping(bytes32 name => mapping(uint256 chainId => Deployment)) public deployments;
+
+    struct Deployment {
+        address at; // where it lives on that chain
+        bool frozen; // once true, this entry can never change again
+    }
+
+    /// @notice Every name ever registered, so a reader can enumerate without
+    ///         knowing what to ask for.
+    bytes32[] public names;
+    mapping(bytes32 name => bool) private _knownName;
+    mapping(bytes32 name => uint256[]) private _nameChains;
+    mapping(bytes32 name => mapping(uint256 chainId => bool)) private _knownNameChain;
+
+    error InvalidDeployment();
+    error DeploymentFrozen();
+
+    event DeploymentSet(bytes32 indexed name, uint256 indexed chainId, address at);
+    event DeploymentFrozenEvent(bytes32 indexed name, uint256 indexed chainId);
+
+    /// @notice Publish or correct where `name` lives on `chainId`.
+    /// @param name A right-padded ASCII short string — `bytes32(bytes("SlowRelay"))`.
+    ///        A plain name rather than a hash so a reader can print what it found.
+    function setDeployment(bytes32 name, uint256 chainId, address at) external onlyOwner {
+        Deployment storage d = deployments[name][chainId];
+        if (d.frozen) revert DeploymentFrozen();
+        // Zero means ABSENT, exactly as `Kind.NONE` does for a route. It never
+        // means "registered but unusable", so it cannot be written.
+        if (name == bytes32(0) || chainId == 0 || at == address(0)) revert InvalidDeployment();
+        d.at = at;
+        if (!_knownName[name]) {
+            _knownName[name] = true;
+            names.push(name);
+        }
+        if (!_knownNameChain[name][chainId]) {
+            _knownNameChain[name][chainId] = true;
+            _nameChains[name].push(chainId);
+        }
+        emit DeploymentSet(name, chainId, at);
+    }
+
+    /// @notice Make one entry permanent. There is no unfreeze.
+    /// @dev Per name AND per chain, not per name: freezing Base's relay must not
+    ///      also freeze a chain that has not been deployed to yet, or the first
+    ///      freeze would end the register.
+    function freezeDeployment(bytes32 name, uint256 chainId) external onlyOwner {
+        Deployment storage d = deployments[name][chainId];
+        if (d.at == address(0)) revert InvalidDeployment();
+        if (d.frozen) revert DeploymentFrozen();
+        d.frozen = true;
+        emit DeploymentFrozenEvent(name, chainId);
+    }
+
+    /// @notice Every chain one name is deployed to.
+    function deploymentsOf(bytes32 name)
+        external
+        view
+        returns (uint256[] memory ids, Deployment[] memory out)
+    {
+        ids = _nameChains[name];
+        out = new Deployment[](ids.length);
+        for (uint256 i; i != ids.length; ++i) {
+            out[i] = deployments[name][ids[i]];
+        }
+    }
+
+    /// @notice The whole book, flattened, so the dapp reads it in ONE call
+    ///         rather than one per name it might guess at. Parallel arrays: row
+    ///         `i` is `outNames[i]` on `outChainIds[i]`.
+    function allDeployments()
+        external
+        view
+        returns (
+            bytes32[] memory outNames,
+            uint256[] memory outChainIds,
+            address[] memory outAddrs,
+            bool[] memory outFrozen
+        )
+    {
+        uint256 n;
+        for (uint256 i; i != names.length; ++i) {
+            n += _nameChains[names[i]].length;
+        }
+        outNames = new bytes32[](n);
+        outChainIds = new uint256[](n);
+        outAddrs = new address[](n);
+        outFrozen = new bool[](n);
+        uint256 k;
+        for (uint256 i; i != names.length; ++i) {
+            bytes32 name = names[i];
+            uint256[] storage ids = _nameChains[name];
+            for (uint256 j; j != ids.length; ++j) {
+                Deployment storage d = deployments[name][ids[j]];
+                outNames[k] = name;
+                outChainIds[k] = ids[j];
+                outAddrs[k] = d.at;
+                outFrozen[k] = d.frozen;
+                ++k;
+            }
+        }
+    }
+
+    /// @notice How many distinct names are registered.
+    function nameCount() external view returns (uint256) {
+        return names.length;
+    }
+
+    /// @notice How many chains one name is registered on.
+    function chainCountFor(bytes32 name) external view returns (uint256) {
+        return _nameChains[name].length;
     }
 
     // ───────────────────────────────────────────────────────── OWNERSHIP

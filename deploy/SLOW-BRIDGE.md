@@ -210,6 +210,48 @@ The Solidity constants and the page's `BRIDGES` table are held in step by
 matters is exactly the one where the budgets are raised and the gas test carries
 on measuring against the old number.
 
+## The registry, and the one pointer an admin holds
+
+`SlowBridgeRegistry` is deployed separately, on mainnet, and is the only owned
+contract in the bridge. It publishes two registers and the page treats both the
+same way.
+
+| register | what it names | consumer |
+| --- | --- | --- |
+| `routes` | an L1 entrypoint and gas parameters per destination chain | `loadBridgeRoutes` |
+| `deployments` | where `SlowArrival`, `SlowRelay` and their successors live, per name per chain | not wired yet — see below |
+
+The address book exists because the page is immutable bytecode and `SlowRelay`
+is not deployed. A page shipped today can carry no constant for it, so without a
+register the relay is reachable only by shipping a new page, and every later
+contract has the same problem.
+
+**What the owner can and cannot do**, and the line is the whole design:
+
+- It is a **discovery** pointer, never a **trust** pointer. `SlowRelay`'s
+  `trustedMessenger` and `SlowArrival`'s `routeTo` stay immutable and are not
+  reachable from here. The first accepts duck-typed proofs, so a single added
+  messenger drains every open escrow on the chain; the second is where value
+  travels. Neither may ever sit behind a setter.
+- It **cannot verify what it publishes**, structurally: it sits on one chain
+  naming contracts on others, where it can read no code. So the reader probes —
+  `probeArrival` already fetches the destination's code and checks the selector
+  it means to call is in it, and any consumer of the book must do the same.
+- The page **prefers its own**. A name the page ships a constant for is read
+  from the page; a book entry for that name is ignored. The trust is scoped to
+  contracts a reader opted into by using something the page never knew about.
+- `freezeDeployment(name, chainId)` is one-way and **per entry**, not per name,
+  so freezing Base's relay does not end the register for a chain that has not
+  been deployed to yet.
+- Ownership is two-step and renounceable. Freeze everything, then renounce: the
+  intended end state is a read-only public record with nobody behind it.
+
+**Not wired into the page yet, deliberately.** There is no relay UI, so nothing
+consumes the book — adding a reader now would put dead code into an artifact that
+has to be re-pinned to change. Wire `SEL.allDeployments` and an
+`arrivalFor(chainId)` / `relayFor(chainId)` resolver in the same change that
+builds the relay front door, and keep the additive rule when you do.
+
 ## Known blockers
 
 **SLOW is not deployed on Base or Robinhood at an address the page accepts.**
