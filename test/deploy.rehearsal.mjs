@@ -185,11 +185,38 @@ try {
   eq('0x' + strip(await call(PAGE, await sel('steward()'))).slice(24), D.steward.toLowerCase(),
     'with the steward the manifest names');
 
-  // ERC-4804: a gateway asks these two before it will serve anything.
-  const mode = decStr(await call(PAGE, await sel('resolveMode()')));
-  ok(strip(await call(PAGE, await sel('resolveMode()'))).length > 0, 'resolveMode() answers');
-  const req = await call(PAGE, await sel('request(string[],(string,string)[])')).catch(() => null);
-  ok(true, 'request() is present in the ABI (exercised by slow_html tests)');
+  // ERC-4804 and ERC-5219: what a gateway asks before it will serve anything.
+  //
+  // `ok(true, 'request() is present in the ABI')` stood here, which passes
+  // whatever the contract does — including not having the function. The two
+  // hooks are the only way the page is reachable over the web, so they are
+  // exercised rather than asserted about.
+  const modeWord = strip(await call(PAGE, await sel('resolveMode()')));
+  eq(Buffer.from(modeWord, 'hex').toString('utf8').replace(/\0+$/, ''), '5219',
+    'resolveMode() is the ERC-5219 mode, so a gateway routes through request()');
+
+  // request(string[] resource, KeyValue[] params) -> (uint16, string, KeyValue[])
+  // Empty arrays for both: two head offsets, then two zero-length tails.
+  const emptyArrays = w(64) + w(96) + w(0) + w(0);
+  const res = strip(await call(PAGE, await sel('request(string[],(string,string)[])') + emptyArrays));
+  eq(parseInt(res.slice(0, 64), 16), 200, 'request() answers 200');
+
+  const bodyAt = parseInt(res.slice(64, 128), 16) * 2;
+  const bodyLen = parseInt(res.slice(bodyAt, bodyAt + 64), 16);
+  const bodyHex = res.slice(bodyAt + 64, bodyAt + 64 + bodyLen * 2);
+  eq(bodyLen, page.length, 'and a body the length of the page');
+  eq(createHash('sha256').update(Buffer.from(bodyHex, 'hex')).digest('hex'),
+     createHash('sha256').update(page).digest('hex'),
+     'which is the page itself, byte for byte');
+
+  const headAt = parseInt(res.slice(128, 192), 16) * 2;
+  const headCount = parseInt(res.slice(headAt, headAt + 64), 16);
+  eq(headCount, 2, 'with two headers');
+  const headerText = Buffer.from(res.slice(headAt), 'hex').toString('utf8');
+  ok(headerText.includes('Content-Type') && headerText.includes('text/html'),
+    'Content-Type: text/html, or a browser will not render it');
+  ok(headerText.includes('Cache-Control') && headerText.includes('immutable'),
+    'and an immutable cache hint, which the bytecode actually is');
   console.log(`\n${pass} passed${fail ? `, ${fail} FAILED` : ''}`);
 } catch (e) {
   console.error('\nrehearsal error:', e.message);

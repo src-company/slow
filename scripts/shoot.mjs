@@ -28,7 +28,10 @@ try {
 const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'preview/shots'));
 fs.mkdirSync(OUT, {recursive: true});
 
-const PAGE = 'file://' + path.join(ROOT, 'dapp/page.html');
+// The page to shoot. `dapp/page.min.html` is what actually gets deployed, so
+// rendering it is how the artifact is checked to look like the source rather
+// than merely to parse like it.
+const PAGE = 'file://' + path.join(ROOT, process.env.PAGE || 'dapp/page.html');
 const VIEWPORTS = {
   desktop: {width: 1280, height: 860},
   tablet: {width: 820, height: 1100},
