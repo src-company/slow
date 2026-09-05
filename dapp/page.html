@@ -1118,11 +1118,54 @@ function innerDepositCalldata(recipient, delay, destChain){
   return cd(SEL.depositTo, ['address','address','uint256','uint96','bytes'],
     [ZERO, recipient, 0n, BigInt(delay), '0x']);
 }
+/* WHERE SlowArrival LIVES ON A CHAIN THIS PAGE NEVER SHIPPED WITH.
+
+   One constant was right for the three chains compiled in — CREATE3 puts the
+   contract at the same address on each — and quietly wrong for any chain the
+   registry adds later. A salt burned on that chain, a different steward, a
+   redeployment: any of them and the arrival is somewhere else, this page dials
+   the address it was born with, `probeArrival` finds no code, and the route
+   stays closed FOREVER with nothing saying why. A silent permanent close is
+   the failure this registry exists to prevent, reached through the one address
+   it was not being asked about.
+
+   THE ADDITIVE RULE IS UNCHANGED, and it is the reason this is safe. A chain
+   the page shipped with reads the page's own constant and the book cannot move
+   it. Only a chain the page never knew about — `BRIDGES[id].registry` — asks,
+   and a reader using one of those has already opted into the registry by
+   using a destination that could only have come from it. The book still
+   proves nothing about the address it names: `probeArrival` checks for code
+   AND for the selector, exactly as it does for the compiled-in one. */
+const bookArrival = destChain =>
+  (BRIDGES[destChain] && BRIDGES[destChain].registry && S.book[destChain])
+    ? S.book[destChain] : SLOW_ARRIVAL;
+
 /* The destination-side contract a bridged deposit should call: SlowArrival
    when it is deployed there, SLOW itself otherwise. */
 const bridgeVia = destChain =>
-  (SLOW_ARRIVAL && S.arrivalDeployed[destChain] === true) ? SLOW_ARRIVAL : null;
+  (SLOW_ARRIVAL && S.arrivalDeployed[destChain] === true) ? bookArrival(destChain) : null;
 const bridgeTarget = destChain => bridgeVia(destChain) || SLOW;
+
+/* Ask the registry where the arrival is on a chain the registry itself added.
+   One call, cached, and a failure leaves the compiled-in address in play —
+   which is the same answer the page gave before there was a book at all. */
+/* `bytes32("SlowArrival")` — right-padded ASCII, written out rather than
+   computed because this page has no Buffer and a TextEncoder round trip for a
+   constant is a moving part that can only ever produce one answer. */
+const ARRIVAL_NAME = '0x536c6f774172726976616c000000000000000000000000000000000000000000';
+async function loadArrivalAddress(id){
+  if(!BRIDGE_REGISTRY || !BRIDGES[id] || !BRIDGES[id].registry) return;
+  if(S.book[id] !== undefined) return;
+  S.book[id] = null;                       // asked, and nothing came back yet
+  try {
+    const [r] = await mc([{to:BRIDGE_REGISTRY,
+      data: cd(SEL.deployments, ['bytes32','uint256'], [ARRIVAL_NAME, BigInt(id)])}], 0, MAINNET);
+    if(!r) return;
+    // deployments() returns (address at, bool frozen); the address is word one.
+    const at = '0x' + strip(r).slice(24, 64);
+    if(at !== ZERO) S.book[id] = at;
+  } catch(e){ /* the book is a convenience, never a requirement */ }
+}
 
 /* ══════════════════════════════════════════════════════════════════
    How much destination gas to buy, and why a fixed number was wrong
@@ -1277,6 +1320,7 @@ const SEL = {
   calcSubmissionFee:'0xa66b327d',
   estimateRetryableTicket:'0xc3dc5879',      // Arbitrum NodeInterface
   allRoutes:'0x71da4170',                    // SlowBridgeRegistry
+  deployments:'0x24495881',                  // deployments(bytes32,uint256)
   unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00', guardianNonces:'0xeac43b4a',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
@@ -1852,7 +1896,7 @@ async function reverseAny(addr){
 const S = {
   chain:MAINNET, theme:'system',
   account:null, ensName:null, walletName:null, chainId:null, readOk:true,
-  slowDeployed:{}, slowMismatch:null, slowUnknown:null, arrivalDeployed:{},
+  slowDeployed:{}, slowMismatch:null, slowUnknown:null, arrivalDeployed:{}, book:{},
   accountIsContract:null,
   token:null, symbol:null, decimals:18, amount:null, delay:null, delayDisplay:null,
   balance:null,
@@ -2118,8 +2162,12 @@ async function probeDeployed(id){
    whose arrival is missing is a route this page must not offer. */
 async function probeArrival(id){
   if(!SLOW_ARRIVAL || S.arrivalDeployed[id]!==undefined) return;
+  // The book first, so what is probed is what will be dialled. Probing the
+  // compiled-in address and then dialling another is how a route passes its
+  // own check and fails in the wallet.
+  await loadArrivalAddress(id);
   try {
-    const code = await rpc('eth_getCode',[SLOW_ARRIVAL,'latest'],id);
+    const code = await rpc('eth_getCode',[bookArrival(id),'latest'],id);
     S.arrivalDeployed[id] = typeof code==='string' && code.length>4
       && code.includes(SEL.arrive.slice(2));
   } catch(e){

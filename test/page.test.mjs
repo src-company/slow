@@ -71,7 +71,7 @@ const EXPORTS = [
   'fmtWhen', 'ready', 'parseRoute', 'payLink', 'txLink', 'KEEPER_GAS',
   'LOADER', 'LOADER_STILL', 'GNS', 'tldOf',
   'BRIDGES', 'aliasOf', 'unaliasOf', 'L1_ALIAS', 'innerDepositCalldata', 'destinations',
-  'SLOW_ARRIVAL', 'bridgeVia', 'bridgeTarget', 'canBridge',
+  'SLOW_ARRIVAL', 'bridgeVia', 'bridgeTarget', 'canBridge', 'bookArrival', 'ARRIVAL_NAME',
   'depositRecipe', 'recipeText', 'unlockedKey', 'exitRecipe', 'exitText',
   'renderNFT', 'formatDelay', 'fit', 'clipForDisplay',
   'RETRY_CODES', 'rpcErr', 'rpcPool',
@@ -1397,6 +1397,68 @@ eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders l
   // compares against is the case the source gave them.
   ok(/S\.resolved=toChecksum\(/.test(html), 'the resolved address is stored checksummed');
   ok(/full\.textContent = S\.resolved/.test(html), 'and the full value is what is rendered');
+}
+
+// The address book: where SlowArrival lives on a chain the page never shipped
+// with. One constant was right for the three chains compiled in and quietly
+// wrong for anything the registry adds later — and the failure is a route that
+// closes forever with nothing saying why.
+{
+  const snapBook = C.S.book;
+  const snapArr = C.S.arrivalDeployed;
+  const snapBridges = {4663: C.BRIDGES[4663], 999: C.BRIDGES[999]};
+
+  ok(/^0x536c6f774172726976616c0*$/.test(C.ARRIVAL_NAME),
+    'the name is bytes32("SlowArrival"), right-padded');
+  eq(C.ARRIVAL_NAME.length, 66, 'and is a full word');
+
+  // A chain the page SHIPPED with reads the page's own constant, and the book
+  // cannot move it. This is the additive rule, and it is the whole reason a
+  // registry entry is safe to read at all.
+  C.S.book = {4663: '0x000000000000000000000000000000000000bAd0'};
+  C.S.arrivalDeployed = {4663: true};
+  eq(C.bookArrival(4663), C.SLOW_ARRIVAL, 'a compiled-in chain ignores the book');
+  eq(C.bridgeVia(4663), C.SLOW_ARRIVAL, 'so the route still goes to the page\'s own address');
+
+  // A chain the REGISTRY added asks the book, because the page has no constant
+  // that could be right for it.
+  C.BRIDGES[999] = {kind: 'op', from: 1, entry: '0x' + '11'.repeat(20),
+    l2GasLimit: 600000n, registry: true};
+  C.S.book = {999: '0x000000000000000000000000000000000000AbCd'};
+  C.S.arrivalDeployed = {999: true};
+  eq(C.bookArrival(999), '0x000000000000000000000000000000000000AbCd',
+    'a registry-added chain uses the address the registry named');
+  eq(C.bridgeVia(999), '0x000000000000000000000000000000000000AbCd',
+    'and the route is built against it');
+
+  // Nothing in the book, or the read failed: the compiled-in address stands,
+  // which is exactly the answer the page gave before there was a book.
+  C.S.book = {999: null};
+  eq(C.bookArrival(999), C.SLOW_ARRIVAL, 'an empty book falls back, it does not break');
+  C.S.book = {};
+  eq(C.bookArrival(999), C.SLOW_ARRIVAL, 'and so does an unread one');
+
+  // The book NEVER substitutes for the probe. An address the registry named
+  // with no code behind it routes nowhere.
+  C.S.book = {999: '0x000000000000000000000000000000000000AbCd'};
+  C.S.arrivalDeployed = {};
+  eq(C.bridgeVia(999), null, 'a named address is still not a deployment');
+
+  C.S.book = snapBook;
+  C.S.arrivalDeployed = snapArr;
+  C.BRIDGES[4663] = snapBridges[4663];
+  if (snapBridges[999] === undefined) delete C.BRIDGES[999];
+}
+
+// And the page must probe what it will actually dial. Probing the compiled-in
+// address and then dialling another is how a route passes its own check and
+// fails in the wallet.
+{
+  ok(/eth_getCode'\s*,\s*\[bookArrival\(id\)/.test(html),
+    'probeArrival fetches code at the resolved address, not the constant');
+  ok(html.indexOf('await loadArrivalAddress(id);') <
+     html.indexOf("rpc('eth_getCode',[bookArrival(id)"),
+    'and resolves it before probing');
 }
 
 if (failures.length) {
