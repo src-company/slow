@@ -283,6 +283,17 @@ Independent reviews of `SLOW.sol`. None identified a critical/high fund-loss pat
 | 2026-04-29 | Zellic V12 | 3 Low (unreviewed) — 1 false positive, 1 non-finding, 1 documented | [report](./assets/audit/slow-zellic-v12-audit-report-20260429-181500.md) |
 | 2026-07-22 | GPT-5.6 Pro | 1 High, 2 Medium, rest Low/Info — all accepted or dapp-mitigable | [report](./assets/audit/slow-gpt-5.6-pro-audit-report-20260722-172206.md) |
 | 2026-07-22 | OneDollarAudit | 8 findings, all Low/Info | [report](./assets/audit/slow-onedollaraudit-audit-report-20260722-192400.md) |
+| 2026-09-04 | pashov-ai | Protocol pass alongside the bridge review below | [report](./assets/audit/slow-pashov-ai-audit-report-20260904-095600.md) |
+
+The bridge contracts — `SlowOrigin`, `SlowArrival`, `SlowRelay`,
+`SlowBridgeRegistry` — are newer and reviewed separately. Both passes ran before
+anything was deployed, so every finding was fixable at the only price that is
+ever cheap.
+
+| Date | Reviewer | Result | Report |
+| --- | --- | --- | --- |
+| 2026-09-04 | pashov-ai | 11 findings, all fixed with regressions | [report](./assets/audit/slow-bridge-pashov-ai-audit-report-20260904-120000.md) |
+| 2026-09-05 | Claude Opus 5 | 4 findings, all fixed; `PROOF_GRACE` closed by measurement | [report](./assets/audit/slow-bridge-claude-opus-5-audit-report-20260905-140000.md) |
 
 ## Build & test
 

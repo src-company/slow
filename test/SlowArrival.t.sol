@@ -321,6 +321,34 @@ contract SlowArrivalTest is Test {
         arrival.claimRescue(alice);
     }
 
+    /// @notice A deposit that SUCCEEDS must never credit `rescue`, whatever it
+    ///         returned.
+    /// @dev `ok` is the only thing that says where the money went. The branch
+    ///      here used to be `ok && rds == 32`, which put a call that succeeded
+    ///      with a short return into the FAILURE arm — crediting `rescue` for
+    ///      ETH the callee had already taken and handing the first claimant a
+    ///      claim on someone else's balance. The real SLOW always returns a
+    ///      `uint256` and the constructor's codeless check closes the path that
+    ///      made it reachable, so this is pinned against a stand-in rather than
+    ///      left resting on the callee's good manners.
+    function test_aDepositThatSucceedsIsNeverCreditedToRescue() public {
+        ShortReturningSlow stub = new ShortReturningSlow();
+        SlowArrival a =
+            new SlowArrival(address(stub), new uint256[](0), new SlowArrival.Route[](0));
+
+        bool ok = portal.finalizeWithdrawal(
+            alice, address(a), AMOUNT, _arriveCalldata(bob, DELAY, address(0), 0)
+        );
+        assertTrue(ok, "still absorbs everything");
+        assertEq(address(stub).balance, AMOUNT, "the value did leave");
+        assertEq(address(a).balance, 0, "so there is nothing here to claim");
+        assertEq(a.rescue(alice), 0, "and nothing is claimed against it");
+
+        vm.prank(alice);
+        vm.expectRevert(SlowArrival.NothingToRescue.selector);
+        a.claimRescue(alice);
+    }
+
     // ────────────────────────────────────────────────────────── the bounty
 
     function test_bountyGoesToWhoeverLandedTheMessage() public {
@@ -471,4 +499,15 @@ interface IAnswers {
 
 contract Silent {
     fallback() external {}
+}
+
+/// @dev A `slow` that takes the ETH and answers with something that is not a
+///      `uint256`. Nothing on a real chain does this — which is the point: the
+///      accounting must not depend on it not happening.
+contract ShortReturningSlow {
+    function depositTo(address, address, uint256, uint96, bytes calldata) external payable {
+        // Takes the ETH, answers with nothing: `returndatasize()` is 0, not 32.
+    }
+
+    receive() external payable {}
 }

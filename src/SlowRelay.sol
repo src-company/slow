@@ -616,6 +616,27 @@ contract SlowRelay {
     ///      Eight days clears the longer of the two challenge periods, so the
     ///      earliest possible proof always lands before the earliest possible
     ///      cancel, whenever within the window the fill happened.
+    ///
+    ///      MEASURED, NOT ASSUMED, because the earlier note guessed high on the
+    ///      wrong chain. Read live off L1:
+    ///
+    ///        Base      `OptimismPortal` (5.2.0) `proofMaturityDelaySeconds`
+    ///                  86,400 and `disputeGameFinalityDelaySeconds` 0, against
+    ///                  a game type 621 whose resolutions measure ~5.00 days
+    ///                  (game 21,000: created to resolved, 432,144s). Games are
+    ///                  created ~20 minutes apart, so the floor is ~5.1 days —
+    ///                  NOT the 7 this was sized against.
+    ///        Robinhood `Rollup.confirmPeriodBlocks` 45,818, which at 12s L1
+    ///                  blocks is ~6.36 days.
+    ///
+    ///      So Nitro is the binding constraint, not OP Stack, and eight days
+    ///      clears it by ~1.6 days. The slack that remains is what absorbs the
+    ///      L1->L2 hop and a keeper that is late to `pushProof`. What it does
+    ///      NOT absorb is a Base game invalidated after the fill: a re-prove
+    ///      restarts maturity against a new game and can push the total past
+    ///      eight days. That case is rare and loud, and the sender's refund is
+    ///      the thing it costs the relayer — worth watching rather than worth
+    ///      pricing in.
     uint256 internal constant PROOF_GRACE = 8 days;
 
     /// @dev SLOW's own timelock ceiling, mirrored so an intent that the

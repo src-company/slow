@@ -103,7 +103,28 @@ set anywhere but chain 1.
 | Base 8453 | OptimismPortal `0x49048044…E97e` | OP Stack |
 | Robinhood 4663 | Delayed Inbox `0x1A07cc4B…7a2D` | Arbitrum |
 
-with `FORWARD_GAS` 1,000,000 and `FORWARD_MAX_FEE` 1 gwei.
+with `FORWARD_GAS` 2,500,000 and `FORWARD_MAX_FEE` 1 gwei.
+
+`FORWARD_GAS` matches what the page buys for a *contract* recipient, and that is
+deliberate. `depositTo` calls `onERC1155Received` on the recipient and that hook
+spends from the same budget, so the real cost is the recipient's to set:
+`test/ArrivalGas.t.sol` measures 281,495 at zero writes, 504,085 at ten and
+726,663 at twenty. The page handles this by probing the recipient's code on the
+destination chain and buying 600,000/800,000 for an account against 2,500,000 for
+a contract. `_push` cannot probe — it runs on L1 and the recipient is on the far
+side — so it assumes the expensive case. A shortfall was never a loss (`arrive`'s
+`FAILURE_RESERVE` lands it in `rescue[origin]`), but the position would not
+arrive and the origin would have to discover that on a chain they may never have
+used.
+
+**Both entrypoints must hold code, and the constructor now checks it.** A
+value-bearing call to a codeless address returns success, and `_push` reads that
+as delivery — so a mistyped entry would take the whole payload, emit `Forwarded`,
+and credit no rescue. Routes are immutable, so that is not a bug anyone gets to
+fix afterwards. `kind` and `gasLimit` are bounded at construction for the same
+reason. `scripts/validate-bridge.mjs` still checks the entries against the
+expected set after deployment; the constructor is what stops a wrong one being
+deployable at all.
 
 **This is the one place the contract trusts an address with value**, and it is
 worth being clear about why it is different from the relay. `SlowRelay.pushProof`

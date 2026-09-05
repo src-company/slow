@@ -415,4 +415,125 @@ contract ArrivalForwardTest is Test {
         assertEq(inbox.received(), AMOUNT);
         assertEq(arrival.rescue(alice), 0);
     }
+
+    // ───────────────────────── the routes this contract is trusted with value
+
+    /* The constructor already refuses a codeless `slow_`, because a
+       value-bearing call to an address with no code RETURNS SUCCESS. `_push`
+       sends the payload with exactly that call and reads the result as
+       delivery, so the same hole was open on `entry` — and there it is worse,
+       because routes are immutable and a mistyped one is permanent. */
+
+    function _oneRoute(address entry, uint8 kind, uint64 gas)
+        internal
+        pure
+        returns (uint256[] memory ids, SlowArrival.Route[] memory routes)
+    {
+        ids = new uint256[](1);
+        routes = new SlowArrival.Route[](1);
+        ids[0] = 8453;
+        routes[0] = SlowArrival.Route(entry, kind, gas, FWD_FEE);
+    }
+
+    function test_aCodelessRouteEntryIsRefusedAtDeployment() public {
+        (uint256[] memory ids, SlowArrival.Route[] memory routes) =
+            _oneRoute(address(0xBADBAD), 1, FWD_GAS);
+        vm.expectRevert(SlowArrival.BadRoute.selector);
+        new SlowArrival(address(slow), ids, routes);
+    }
+
+    function test_aRouteWithNoFamilyIsRefusedAtDeployment() public {
+        (uint256[] memory ids, SlowArrival.Route[] memory routes) =
+            _oneRoute(address(portal), 0, FWD_GAS);
+        vm.expectRevert(SlowArrival.BadRoute.selector);
+        new SlowArrival(address(slow), ids, routes);
+
+        (ids, routes) = _oneRoute(address(portal), 3, FWD_GAS);
+        vm.expectRevert(SlowArrival.BadRoute.selector);
+        new SlowArrival(address(slow), ids, routes);
+    }
+
+    function test_aRouteThatBuysNoDestinationGasIsRefused() public {
+        (uint256[] memory ids, SlowArrival.Route[] memory routes) =
+            _oneRoute(address(portal), 1, 0);
+        vm.expectRevert(SlowArrival.BadRoute.selector);
+        new SlowArrival(address(slow), ids, routes);
+    }
+
+    function test_mismatchedRouteArraysAreRefused() public {
+        uint256[] memory ids = new uint256[](2);
+        SlowArrival.Route[] memory routes = new SlowArrival.Route[](1);
+        vm.expectRevert(SlowArrival.BadRoute.selector);
+        new SlowArrival(address(slow), ids, routes);
+    }
+
+    /// @notice What the check is actually worth: without it this burns.
+    /// @dev Deployed through the back door — a route whose entry is emptied
+    ///      after construction cannot happen on a real chain, so the value of
+    ///      the guard is shown at the only moment it can be: deployment.
+    function test_theCodelessEntryWouldHaveTakenTheWholePayload() public {
+        address codeless = address(0xBADBAD);
+        assertEq(codeless.code.length, 0);
+        // Exactly what `_push` does with an unchecked entry.
+        vm.deal(address(this), AMOUNT);
+        (bool sent,) = codeless.call{value: AMOUNT}(hex"e9e05c42");
+        assertTrue(sent, "a value call to a codeless address reports success");
+        assertEq(codeless.balance, AMOUNT, "and the ETH is gone");
+    }
+
+    // ──────────────────────── an origin the destination chain cannot pay back
+
+    /* Nitro aliases `excessFeeRefundAddress` and `callValueRefundAddress`
+       whenever they hold code on L1. The page refuses this route outright for a
+       contract account for exactly that reason; `_push` had no such guard, so a
+       contract origin's excess fee, prepaid gas and — on a ticket that is never
+       redeemed — the whole payload went to `applyAlias(origin)` on the far
+       side. */
+
+    function test_anArbitrumForwardFromAContractOriginIsRescuedNotAliased() public {
+        ForwardingWallet wallet = new ForwardingWallet();
+        vm.deal(address(wallet), AMOUNT);
+        wallet.go(arrival, 4663, bob, DELAY, AMOUNT);
+
+        assertEq(inbox.received(), 0, "nothing was handed to the inbox");
+        assertEq(
+            arrival.rescue(address(wallet)),
+            AMOUNT,
+            "held on this chain, where the origin can still reach it"
+        );
+    }
+
+    /// @notice And the guard is narrow: OP Stack names no refund address, so a
+    ///         contract origin keeps that route.
+    function test_anOpForwardFromAContractOriginIsUnaffected() public {
+        ForwardingWallet wallet = new ForwardingWallet();
+        vm.deal(address(wallet), AMOUNT);
+        wallet.go(arrival, 8453, bob, DELAY, AMOUNT);
+
+        assertEq(portal.received(), AMOUNT, "the payload still crosses");
+        assertEq(arrival.rescue(address(wallet)), 0);
+        assertEq(
+            portal.lastData(),
+            abi.encodeCall(SlowArrival.arrive, (bob, DELAY, address(wallet), uint256(0))),
+            "and still names the contract as the origin"
+        );
+    }
+
+    /// @notice An ordinary account is what the Arbitrum route is for, and it
+    ///         still works.
+    function test_anArbitrumForwardFromAnAccountStillGoes() public {
+        assertTrue(_forward(alice, 4663, bob, address(0), 0));
+        assertEq(inbox.received(), AMOUNT);
+        assertEq(arrival.rescue(alice), 0);
+    }
+}
+
+/// @dev An L1 smart account: a Safe, a batcher, any contract wallet. The
+///      address holds code on L1, which is the only thing Nitro looks at.
+contract ForwardingWallet {
+    function go(SlowArrival a, uint256 dst, address to, uint96 delay, uint256 value) external {
+        a.forward{value: value}(dst, to, delay, address(0), 0);
+    }
+
+    receive() external payable {}
 }

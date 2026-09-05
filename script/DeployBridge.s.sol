@@ -86,11 +86,30 @@ contract DeployBridge is Script {
     address internal constant BASE_PORTAL = 0x49048044D57e1C92A77f79988d21Fa8fAF74E97e;
     address internal constant ROBINHOOD_INBOX = 0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D;
 
-    /// @dev Generous on purpose. The onward call is an `arrive`, which costs
-    ///      about 285,000 for an ordinary recipient — but the recipient's
-    ///      ERC-1155 hook spends from the same budget, and buying too little
-    ///      here strands a transfer that has already waited five days.
-    uint64 internal constant FORWARD_GAS = 1_000_000;
+    /// @dev THE RECIPIENT DECIDES THE COST, AND THIS SIDE CANNOT ASK IT.
+    ///
+    ///      The onward call is an `arrive`, which costs about 285,000 for an
+    ///      ordinary recipient. But `depositTo` calls `onERC1155Received` on the
+    ///      recipient and that hook spends from the same budget, so the real
+    ///      number is the recipient's to set. Measured in `test/ArrivalGas.t.sol`:
+    ///      281,495 at zero writes, 504,085 at ten, 726,663 at twenty. The cliff
+    ///      for a 1,000,000 budget sits between ten and fifteen.
+    ///
+    ///      The page solves this by PROBING: `destGasLimit` reads the recipient's
+    ///      code on the destination chain and buys 600,000/800,000 for an
+    ///      account and 2,500,000 for a contract. `_push` cannot do that — it
+    ///      runs on L1 and the recipient is on the far side — so it has to
+    ///      assume the expensive case, which is what this number now is.
+    ///
+    ///      A 1,000,000 shortfall was not a loss: `arrive`'s FAILURE_RESERVE
+    ///      catches it and the payload lands in `rescue[origin]` on the
+    ///      destination. But the position never arrives, and the origin has to
+    ///      discover that and claim on a chain they may never have used. Buying
+    ///      the larger budget costs the finaliser some L1 gas on the OP leg —
+    ///      and they are claiming a bounty for exactly that — while on the
+    ///      Arbitrum leg the unused portion is refunded on the far side to an
+    ///      origin that `_push` now guarantees is not one Nitro will alias.
+    uint64 internal constant FORWARD_GAS = 2_500_000;
     uint128 internal constant FORWARD_MAX_FEE = 1 gwei;
 
     error NotCreateX();

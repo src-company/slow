@@ -187,6 +187,7 @@ contract SlowArrival {
     error NotOrigin();
     error NothingToRescue();
     error NoSlow();
+    error BadRoute();
     error TransferGone();
     error SendFailed();
 
@@ -196,12 +197,28 @@ contract SlowArrival {
     ///      had already left, and the first claimant would drain the rest. The
     ///      CREATE3 same-address design makes deploying this before SLOW an easy
     ///      ordering mistake, so it is refused rather than trusted.
+    ///
+    /// @dev AND SO MUST EVERY ROUTE, FOR THE SAME REASON AND IT IS THE SAME BUG.
+    ///      The check above exists because a value-bearing call to a codeless
+    ///      address RETURNS SUCCESS. `_push` sends the payload with exactly such
+    ///      a call and reads its result as delivery, so an `entry` with no code
+    ///      takes the whole forward, reports `sent`, emits `Forwarded`, and
+    ///      credits no `rescue` — the one outcome this contract is written to
+    ///      prevent, reached through the one address it was not checking. Routes
+    ///      are immutable, so a mistyped entry is not a bug that gets fixed
+    ///      later; it is a destination that is dead for the life of the
+    ///      contract. `kind` and `gasLimit` are bounded here too: both are
+    ///      unrecoverable in the same way and free to assert once.
     constructor(address slow_, uint256[] memory chainIds, Route[] memory routes) {
         require(slow_.code.length != 0, NoSlow());
         slow = slow_;
-        require(chainIds.length == routes.length, NoSlow());
+        require(chainIds.length == routes.length, BadRoute());
         for (uint256 i; i != chainIds.length; ++i) {
-            routeTo[chainIds[i]] = routes[i];
+            Route memory r = routes[i];
+            require(r.entry.code.length != 0, BadRoute());
+            require(r.kind == KIND_OP || r.kind == KIND_ARB, BadRoute());
+            require(r.gasLimit != 0, BadRoute());
+            routeTo[chainIds[i]] = r;
         }
     }
 
@@ -313,11 +330,25 @@ contract SlowArrival {
                     rds := returndatasize()
                 }
             }
-            if (ok && rds == 32) {
+            // `ok` IS THE ONLY THING THAT SAYS WHERE THE MONEY WENT, and the
+            // rescue credit has to key off exactly that. This used to branch on
+            // `ok && rds == 32`, which put a call that SUCCEEDED with an
+            // unexpected return in the failure arm — crediting `rescue` for ETH
+            // the call had already taken, and handing the first claimant a claim
+            // on somebody else's balance. Unreachable against a SLOW whose
+            // `depositTo` returns a `uint256`, and the constructor's codeless
+            // check removes the one path that made it reachable, but conflating
+            // "reverted" with "returned something odd" is the wrong shape for a
+            // contract whose whole job is knowing which of those happened.
+            if (ok) {
+                // A short return is a deposit that happened and cannot be
+                // named. Nothing can be owned, so nothing is recorded as owned —
+                // but the arrival is still reported, because the value moved.
+                uint256 landed = rds == 32 ? transferId : 0;
                 // Zero means the deposit was not delayed: it minted unlocked to
                 // `to` and there is no pending entry to own.
-                if (transferId != 0) originOf[transferId] = origin;
-                emit Arrived(transferId, origin, to, value, delay, authenticated);
+                if (landed != 0) originOf[landed] = origin;
+                emit Arrived(landed, origin, to, value, delay, authenticated);
             } else {
                 rescue[origin] += value;
                 emit ArrivalFailed(origin, to, value, delay);
@@ -430,6 +461,28 @@ contract SlowArrival {
             );
             send = value;
         } else if (r.kind == KIND_ARB) {
+            // AN ORIGIN NITRO WILL ALIAS CANNOT BE NAMED AS A REFUND ADDRESS.
+            // `createRetryableTicket` aliases `excessFeeRefundAddress` and
+            // `callValueRefundAddress` whenever they hold code on L1 — the same
+            // rule, checked the same way, that `SlowRelay.pushProof` works
+            // around with `tx.origin` and that the page refuses this route over
+            // outright. Naming a contract origin here sends its excess
+            // submission fee, its unused prepaid gas, and — if the ticket is
+            // never redeemed — THE WHOLE PAYLOAD to `applyAlias(origin)` on the
+            // destination, an address nobody holds.
+            //
+            // Passing `undoAlias(origin)` is the fix that looks right and is
+            // not: that address holds no L1 code, so Nitro would not alias it
+            // and the refund would land there instead — just as unreachable.
+            // The only sound answer is to refuse the hop, which lands the
+            // payload in `rescue[origin]` where the origin can still take it.
+            //
+            // `tx.origin` is not available as a substitute the way it is in
+            // `pushProof`: there it names the KEEPER, who funded the call. Here
+            // it names the finaliser, who is a different party from the one
+            // whose money this is.
+            if (origin.code.length != 0) return false;
+
             // A retryable is bought here and now, five days after the sender
             // chose to send, so the submission fee has to be PRICED LIVE
             // against the current base fee. Anything decided at send time would
@@ -504,10 +557,14 @@ contract SlowArrival {
         }
 
         // CHECKED AGAIN HERE, not just at the top of this function. Between the
-        // two the ARBITRUM branch makes an UNCAPPED staticcall into `r.entry`
-        // for the live submission fee, and `r.entry` is a proxy whose
-        // implementation can be replaced after this contract is deployed. If
-        // that call spends the gap, the subtraction below — which has to stay
+        // two the ARBITRUM branch staticcalls `r.entry` for the live submission
+        // fee, and `r.entry` is a proxy whose implementation can be replaced
+        // after this contract is deployed. That call is capped at
+        // `FEE_PROBE_GAS` and the check at the top reserves for it — but the cap
+        // bounds one call, not the arithmetic and encoding either branch does
+        // after it, and a second check is cheaper than an argument about
+        // whether the first one still covers everything between them. If the
+        // gap is spent, the subtraction below — which has to stay
         // unchecked to be cheap — wraps to ~2^256, `call` takes 63/64 of what
         // is left, and the `rescue` write in the caller that must survive a
         // failed forward has nothing to run on. On the OP leg the portal has
