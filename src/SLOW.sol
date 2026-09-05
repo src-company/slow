@@ -2,7 +2,6 @@
 pragma solidity ^0.8.34;
 
 import {Base64} from "@solady/src/utils/Base64.sol";
-import {SSTORE2} from "@solady/src/utils/SSTORE2.sol";
 import {ERC1155} from "@solady/src/tokens/ERC1155.sol";
 import {LibString} from "@solady/src/utils/LibString.sol";
 import {Multicallable} from "@solady/src/utils/Multicallable.sol";
@@ -53,6 +52,11 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///      harmless for a fresh deployment at a fresh address and fatal for
 ///      anything that tries to treat this as an upgrade — there is no proxy
 ///      here, and this note is why there should not be one.
+/// @dev The page contract `html()` is served from. See `SLOW.page`.
+interface ISlowPageHtml {
+    function html() external view returns (string memory);
+}
+
 contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, SlowGuardianIndex {
     using EnumerableSetLib for EnumerableSetLib.Uint256Set;
     using MetadataReaderLib for address;
@@ -182,18 +186,46 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     /// `setApprovalForAll(slow.gate(), true)` to opt into keeper-driven settlement.
     address public immutable gate;
 
-    address internal immutable htmlChunk1;
-    address internal immutable htmlChunk2;
+    /// @notice The contract serving this deployment's dapp, per ERC-8244.
+    /// @dev WHY THIS IS A POINTER AND NOT TWO CHUNKS ANY MORE.
+    ///
+    ///      This held `htmlChunk1` and `htmlChunk2` and read them with SSTORE2,
+    ///      which put the page's ceiling in the CONSTRUCTOR'S ARITY rather than
+    ///      in EIP-170 — two chunks, so 49,150 bytes, and `SlowPage` records
+    ///      that the old page reached it with 47 bytes to spare. The page is now
+    ///      253,739 bytes across eleven chunks. There is no pair of arguments
+    ///      that can serve it, and the three ways of pretending otherwise were
+    ///      all worse than fixing it: zero chunks makes `html()` REVERT on the
+    ///      canonical address, the 49KB page that does fit predates the bridge
+    ///      entirely — no `SlowArrival`, no routes, and it names the previous
+    ///      deployment — and a stub page is a second document to keep true.
+    ///
+    ///      A FIXED POINTER, NOT A FOLLOWED ONE. `SlowPage` carries a write-once
+    ///      `successor`, and this deliberately does not walk it. That contract's
+    ///      own rule is that `html()` is immutable and the successor is "a CLAIM
+    ///      ABOUT LINEAGE, never a redirect" — an address whose bytes cannot
+    ///      move under an auditor, a bookmark, or a cache. Following the chain
+    ///      here would hand this contract the mutable redirect that one refuses,
+    ///      and hand whoever holds the page's stewardship the ability to change
+    ///      what the protocol contract serves. So this points at ONE page,
+    ///      forever, and a reader wanting the newest build walks `successor`
+    ///      from there exactly as `SlowPage` intends.
+    ///
+    ///      The circularity is only apparent: `SlowPage` takes this address and
+    ///      this takes `SlowPage`'s, and both are CREATE3, so both are known
+    ///      before either exists.
+    address public immutable page;
 
-    constructor(address _htmlChunk1, address _htmlChunk2) payable {
-        htmlChunk1 = _htmlChunk1;
-        htmlChunk2 = _htmlChunk2;
+    constructor(address _page) payable {
+        page = _page;
         gate = address(new SLOWGate{salt: bytes32(0)}());
     }
 
-    /// @notice Returns the full SLOW dapp HTML reassembled from onchain SSTORE2 chunks.
+    /// @notice The SLOW dapp, as one self-contained HTML document (ERC-8244).
+    /// @dev Reverts if no page was set at deployment, which is a deployment that
+    ///      went wrong rather than a state worth serving.
     function html() public view returns (string memory) {
-        return string(bytes.concat(SSTORE2.read(htmlChunk1), SSTORE2.read(htmlChunk2)));
+        return ISlowPageHtml(page).html();
     }
 
     // METADATA

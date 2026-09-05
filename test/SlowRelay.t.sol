@@ -92,7 +92,7 @@ contract SlowRelayTest is Test {
 
     function setUp() public {
         vm.chainId(SRC);
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         inbox = new MockInbox();
         address[] memory inboxes = new address[](1);
         inboxes[0] = address(inbox);
@@ -716,7 +716,7 @@ contract SlowRelayTransportTest is Test {
 
     function setUp() public {
         vm.chainId(DST);
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         relay = new SlowRelay(address(slow), new address[](0));
         vm.deal(relayer, 100 ether);
         vm.warp(1_700_000_000);

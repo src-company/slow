@@ -33,7 +33,7 @@ contract SLOWBuildTest is Test {
     bytes4 internal constant REENTRANCY = 0xab143c06;
 
     function setUp() public {
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         token = new MockPermitToken("Test", "TEST", 18, false);
         owner = vm.addr(OWNER_PK);
         token.mint(owner, 100 ether);

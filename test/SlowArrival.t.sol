@@ -128,7 +128,7 @@ contract SlowArrivalTest is Test {
     uint256 internal constant AMOUNT = 1 ether;
 
     function setUp() public {
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         arrival = new SlowArrival(address(slow), new uint256[](0), new SlowArrival.Route[](0));
 
         portal = new MockOptimismPortal();

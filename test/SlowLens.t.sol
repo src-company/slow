@@ -28,7 +28,7 @@ contract SlowLensTest is Test {
     address internal attacker = address(0xA77E);
 
     function setUp() public {
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         lens = new SlowLens(address(slow));
         vm.deal(attacker, 100 ether);
         vm.deal(victim, 100 ether);

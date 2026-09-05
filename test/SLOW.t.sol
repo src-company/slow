@@ -31,6 +31,12 @@ contract SLOWTest is Test {
     event TransferPending(uint256 indexed transferId, uint96 indexed delay);
     event TransferReversed(uint256 indexed transferId);
 
+    /// @dev This suite runs against `SLOWv1`, whose `html()` is two SSTORE2
+    ///      chunks and stays that way — v1 is frozen source. `SLOWParityTest`
+    ///      overrides this to build the shipping contract, which serves its page
+    ///      from a page CONTRACT instead; the two-part signature survives the
+    ///      difference because what these tests check is the document that comes
+    ///      back, not how many pieces it arrived in.
     function _deploySlow(bytes memory p1, bytes memory p2) internal virtual returns (SLOW) {
         return new SLOW(SSTORE2.write(p1), SSTORE2.write(p2));
     }
@@ -3770,5 +3776,21 @@ contract LongAsciiNameToken {
 
     function symbol() external pure returns (string memory) {
         return "LNT";
+    }
+}
+
+/// @dev A minimal stand-in for `SlowPage`: SLOW only ever asks it for `html()`,
+///      so that is all this answers. The real one reassembles eleven data
+///      contracts and commits to their hash; none of that is what these tests
+///      are about.
+contract StubPage {
+    string private _html;
+
+    constructor(string memory h) {
+        _html = h;
+    }
+
+    function html() external view returns (string memory) {
+        return _html;
     }
 }

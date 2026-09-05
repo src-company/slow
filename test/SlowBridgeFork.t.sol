@@ -102,7 +102,7 @@ contract SlowArrivalEthereumForkTest is ForkBase {
     function setUp() public {
         live = _fork(ETH_RPC);
         if (!live) return;
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         arrival = new SlowArrival(address(slow), new uint256[](0), new SlowArrival.Route[](0));
     }
 
@@ -270,7 +270,7 @@ contract SlowRelayBaseForkTest is ForkBase {
     function setUp() public {
         live = _fork(BASE_RPC);
         if (!live) return;
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         relay = new SlowRelay(address(slow), new address[](0));
         vm.deal(relayer, 100 ether);
     }
@@ -324,7 +324,7 @@ contract SlowRelayRobinhoodForkTest is ForkBase {
     function setUp() public {
         live = _fork(RH_RPC);
         if (!live) return;
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         relay = new SlowRelay(address(slow), new address[](0));
         arrival = new SlowArrival(address(slow), new uint256[](0), new SlowArrival.Route[](0));
         vm.deal(relayer, 100 ether);

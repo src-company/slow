@@ -20,7 +20,7 @@ contract Tok {
 ///         re-implementation of the renderer in another language.
 contract RenderGallery is Script {
     function run() external {
-        SLOW slow = new SLOW(address(0), address(0));
+        SLOW slow = new SLOW(address(0));
 
         // The last two are not decoration. `_fit` sizes on `bytes(s).length`,
         // and a port that reaches for a language's own string length agrees on

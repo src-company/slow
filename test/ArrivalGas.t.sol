@@ -51,7 +51,7 @@ contract ArrivalGasTest is Test {
     uint256 internal constant AMOUNT = 1 ether;
 
     function setUp() public {
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         arrival = new SlowArrival(address(slow), new uint256[](0), new SlowArrival.Route[](0));
         vm.warp(1_700_000_000);
     }
@@ -113,7 +113,7 @@ contract ArrivalGasTest is Test {
     ///      its own fresh SLOW here, and the real figure is about 35,700 — the
     ///      four origin probes, the `originOf` write and the event.
     function test_theOverheadOverADirectDeposit() public {
-        SLOW s1 = new SLOW(address(0), address(0));
+        SLOW s1 = new SLOW(address(0));
         address c1 = address(0xD1);
         vm.deal(c1, AMOUNT * 2);
         vm.prank(c1, c1);
@@ -121,7 +121,7 @@ contract ArrivalGasTest is Test {
         s1.depositTo{value: AMOUNT}(address(0), address(0xB0B), 0, DELAY, "");
         uint256 direct = g - gasleft();
 
-        SLOW s2 = new SLOW(address(0), address(0));
+        SLOW s2 = new SLOW(address(0));
         SlowArrival a2 = new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
         address c2 = address(0xD2);
         vm.deal(c2, AMOUNT * 2);
@@ -148,7 +148,7 @@ contract ArrivalGasTest is Test {
     ///         The wrapper moves that threshold to about five. It makes a
     ///         pre-existing hazard modestly worse; it does not create one.
     function test_theCliffExistsWithoutTheWrapperToo() public {
-        SLOW s1 = new SLOW(address(0), address(0));
+        SLOW s1 = new SLOW(address(0));
         HungryRecipient r = new HungryRecipient(8);
         address c = address(0xD3);
         vm.deal(c, AMOUNT * 2);
@@ -199,7 +199,7 @@ contract ArrivalGasTest is Test {
     function test_whereTheContractRecipientCliffIs() public {
         uint256 last;
         for (uint256 n = 0; n <= 20; n += 5) {
-            SLOW s2 = new SLOW(address(0), address(0));
+            SLOW s2 = new SLOW(address(0));
             SlowArrival a2 =
                 new SlowArrival(address(s2), new uint256[](0), new SlowArrival.Route[](0));
             HungryRecipient r = new HungryRecipient(n);

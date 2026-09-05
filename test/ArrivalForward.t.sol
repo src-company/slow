@@ -141,7 +141,7 @@ contract ArrivalForwardTest is Test {
     uint128 internal constant FWD_FEE = 1 gwei;
 
     function setUp() public {
-        slow = new SLOW(address(0), address(0));
+        slow = new SLOW(address(0));
         portal = new MockPortalSend();
         inbox = new MockInboxSend();
 
