@@ -334,6 +334,32 @@ At the gas prices read live while writing this — Ethereum 0.105 gwei, Base 0.0
 Robinhood 0.397 — that is **0.0071 / 0.0004 / 0.0268 ETH**. Robinhood is the
 expensive one by a factor of four and the easiest to underfund.
 
+### Submitting at the trough
+
+`node scripts/gaswait.mjs <rpc> --report` samples 30 blocks and prints the
+floor, the median and the peak. `node scripts/gaswait.mjs <rpc>` blocks until
+the base fee is back within a tolerance of the floor, then exits 0 — so it drops
+straight into a deploy loop between transactions. Measured on all three:
+
+| chain | floor | median | peak | spread | worth |
+| --- | --- | --- | --- | --- | --- |
+| Ethereum | 0.06706 | 0.07820 | 0.09516 | **41.9%** | ~14% against the median |
+| Robinhood | 0.38986 | 0.40033 | 0.41077 | 5.4% | ~2.6% |
+| Base | 0.00500 | 0.00500 | 0.00501 | 0.1% | nothing |
+
+**The saving is largest where it was least expected.** Mainnet's base fee swings
+42% block to block at these levels, so waiting for the trough is worth an eighth
+of the whole page deployment. Robinhood, which looks like the chain to optimise
+because it is four times the price, is the one where waiting buys least: it
+produces ~12.5 blocks a second and already sustains **72.7 M gas/s**, so the
+entire 67.5 M-gas deployment is under one second of its throughput and moves its
+base fee not at all. Its sawtooth is the pricer's own cycle, not us.
+
+Which also settles what pacing cannot do. Spacing the eleven chunk deploys out
+does not reduce demand this chain would notice, and 5% off a number is not a way
+to deploy on a balance four times too small. Fund the chain; then use the trough
+so you are not paying its peak eleven times in a row.
+
 > `SLOW` compiles to **24,421 bytes, 155 under EIP-170**. That is the tightest
 > constraint in the repo and it is not in a test. Anything added to `SLOW.sol`
 > should be checked with `forge build --sizes` before it is written, not after.
@@ -347,7 +373,9 @@ expensive one by a factor of four and the easiest to underfund.
 3.  rehearse                  node test/deploy.rehearsal.mjs      (builds its own chunks)
 4.  per chain, in order:
       node scripts/chunk.mjs                    -> out/chunk1..11.creation.txt
-      deploy each chunk                          plain CREATE, any sender
+      for each chunk:
+        node scripts/gaswait.mjs <rpc>          block until the base fee is at its floor
+        deploy the chunk                         plain CREATE, any sender
       CreateX.deployCreate3(pageSalt,  SlowPage(slow, steward, 0, chunks, pageHash))
       CreateX.deployCreate3(slowSalt,  SLOW(slowPage))
       forge script script/DeployBridge.s.sol --sig "run(address,uint64)" <slow> 0x5107a771
