@@ -163,13 +163,30 @@ static void print_hex(const uint8_t *b, int n);
 
 typedef struct { int id; int nthreads; } arg_t;
 
+/* WHERE THE SEARCH BEGINS, AND WHY IT IS AN ARGUMENT.
+   The counter started at the thread id every run, so the search was entirely
+   deterministic — which is fine for one uninterrupted run and useless across
+   two. A mine that is killed at four hours and restarted re-walks the same
+   four hours, finds the same nothing, and dies at the same place; the second
+   run is not a continuation, it is a replay. An eight-nibble prefix is hours of
+   work on a small machine, which is exactly the length of run something else
+   gets to interrupt.
+   So the start is a parameter, printed as the run goes, and passed back in to
+   resume. It stays deterministic — the same start finds the same salt — which
+   is what lets a hit be reproduced and checked rather than merely trusted. */
+static uint64_t g_start = 0;
+
+/* How often each thread reports where it has reached, in candidates. A resume
+   point that is an hour stale costs an hour. */
+#define PROGRESS_MASK 0x3FFFFFFu
+
 static void *worker(void *vp) {
     arg_t *a = (arg_t *)vp;
     uint8_t salt[32], addr[20];
     memset(salt, 0, 32);
     memcpy(salt, g_sender, 20);            /* bytes 0..19: sender  */
     salt[20] = 0x00;                       /* byte 20: flag clear  */
-    uint64_t counter = (uint64_t)a->id;
+    uint64_t counter = g_start + (uint64_t)a->id;
     uint64_t local = 0;
     while (g_found < g_want) {
         /* bytes 21..31 are searchable; use the low 8 as the counter. */
@@ -192,6 +209,14 @@ static void *worker(void *vp) {
         }
         counter += (uint64_t)a->nthreads;
         if ((++local & 0xFFFFF) == 0) __sync_fetch_and_add(&g_tried, 0x100000);
+        /* Thread 0 alone reports, so the line is a single writer and the number
+           is a floor for every thread rather than an interleaving of several. */
+        if (a->id == 0 && (local & PROGRESS_MASK) == 0) {
+            fprintf(stderr, "progress: resume with start %llu (%llu tried)\n",
+                    (unsigned long long)counter,
+                    (unsigned long long)__sync_fetch_and_add(&g_tried, 0));
+            fflush(stderr);
+        }
     }
     return NULL;
 }
@@ -227,7 +252,7 @@ static void print_hex(const uint8_t *b, int n) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         fprintf(stderr,
-                "usage: mine <sender> <prefix-hex> [threads] [count]\n"
+                "usage: mine <sender> <prefix-hex> [threads] [count] [start]\n"
                 "       mine <sender> --check <salt32hex>\n");
         return 2;
     }
@@ -260,6 +285,9 @@ int main(int argc, char **argv) {
     if (threads < 1) threads = 1;
     g_want = argc > 4 ? atoi(argv[4]) : 1;
     if (g_want < 1) g_want = 1;
+    if (argc > 5) g_start = strtoull(argv[5], NULL, 10);
+    fprintf(stderr, "mining %d nibble(s) on %d thread(s) from start %llu\n",
+            g_nibbles, threads, (unsigned long long)g_start);
 
     pthread_t *th = calloc((size_t)threads, sizeof(pthread_t));
     arg_t *args = calloc((size_t)threads, sizeof(arg_t));
