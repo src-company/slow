@@ -12,6 +12,29 @@
     "maxPayload": 24575,
     "prefix": "00"
   },
+  "deployed": {
+    "date": "2026-09-05",
+    "deployer": "0x68575B073DE49a94e3E3ACf6F3A0d6E3b66267C7",
+    "steward": "0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20",
+    "note": "Live on all three chains at one address each, verified by scripts/validate-bridge.mjs (29/29). Stewardship was set in SlowPage's constructor, never transferred, so the deployer held nothing at any point. Chunk addresses differ per chain because they are plain CREATE; the four CREATE3 addresses do not.",
+    "contracts": {
+      "SLOW": "0x000000006513B7821171C8447ec7ECdfa3b956Fd",
+      "SlowPage": "0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc",
+      "SlowArrival": "0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f",
+      "SlowRelay": "0xC58C217791E397550492c4F84a6995Db60aDE2da"
+    },
+    "runtimeBytes": { "SLOW": 24466, "SlowPage": 3827, "SlowArrival": 4916, "SlowRelay": 10598 },
+    "chunks": {
+      "1": ["0xd742f4daadf466e4045731fe484a4d8bebfeb750", "0xea36129fc7ebd13fb59a0a4eea78b366ee1e32d3", "0x2446e8b601da2e7eedd48205b0df3f1094f3756f", "0xdd9d4f937818e42335498a83ec336a9c235db4af", "0xdc7e988b2de761a18587e93b3e9469b2e59ec3ea", "0x41e85a134016a6c4e0576ae6de1a45ac9efcedaa", "0x7877ec50b941c201c35b4234159e0d19cc4bdd0d"],
+      "8453": ["0x47355840ff4777c7e16faa31f54c9e62e60ad29e", "0xE86CC07b4e66B8A3E2f418ae77128C3276743466", "0x2F64Ec98CC6Fbf5196d8Dc49A558BD203d5EB34e", "0x2e281D1E3E978253d468C975Cc846837925FFE4D", "0x6458C53FD01de0C205885D21904d021c3c5b6ced", "0x50ba01D0B47f18e4E1692270FbB391c81DBEe8b9", "0x3569bcED79EAF85BA2ABe3c289497D28b4Cb686d"],
+      "4663": ["0x07b5C1581FB9fF2D7E04c7d120398FA751d80bd3", "0xEC406742b2B8613C05cD3088BCB5707B74C12dfe", "0x47355840FF4777c7E16Faa31f54c9e62e60ad29e", "0xE86CC07b4e66B8A3E2f418ae77128C3276743466", "0x2F64Ec98CC6Fbf5196d8Dc49A558BD203d5EB34e", "0x2e281D1E3E978253d468C975Cc846837925FFE4D", "0x6458C53FD01de0C205885D21904d021c3c5b6ced"]
+    },
+    "orphans": {
+      "note": "Deployed by mistake and referenced by nothing. Left recorded so nobody mistakes them for part of the deployment.",
+      "1": ["0x175E88B1b9a056e509Ad590DD1Ad1993e7e8894B", "0x45F3e5D1d3538f740edf66E7fF28AAB251a4BC70"],
+      "reason": "A salt nonce passed as decimal 1359136113 instead of 1359456113 (0x5107a771), which put the first bridge pair on Ethereum at unpublished addresses. Redeployed at the correct salt; these two are inert."
+    }
+  },
   "protocol": {
     "chainId": 1,
     "slow": "0x000000006513B7821171C8447ec7ECdfa3b956Fd",
