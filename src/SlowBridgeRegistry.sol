@@ -11,10 +11,9 @@ pragma solidity ^0.8.30;
 ///      new destinations appear. Baking a route in means the page is wrong the
 ///      day any of that changes, and cannot be told.
 ///
-/// @dev WHY IT CANNOT RUG YOU, which is the part that matters.
-///
-///      A registry an owner can rewrite is a registry that can point a bridge at
-///      an address which simply keeps the ETH. So this one is deliberately weak:
+/// @dev What the owner can and cannot do. A registry an owner can rewrite is a
+///      registry that can point a bridge at an address which keeps the ETH, so
+///      this one is deliberately weak:
 ///
 ///      1. IT STORES NO CALLDATA. Only an entrypoint address, a `kind` naming a
 ///         bridge FAMILY the page already knows how to talk to, and gas
@@ -144,16 +143,16 @@ contract SlowBridgeRegistry {
     ///      later contract has the same problem. This is the register that lets
     ///      a page find something that did not exist when it was written.
     ///
-    ///      IT IS A DISCOVERY POINTER, NEVER A TRUST POINTER, and the whole
-    ///      safety argument rests on that line. `trustedMessenger` on the relay
+    ///      It is a discovery pointer, not a trust pointer, and the safety
+    ///      argument rests on that distinction. `trustedMessenger` on the relay
     ///      and `routeTo` on the arrival must stay immutable: the first accepts
     ///      duck-typed proofs and so one added entry drains every open escrow,
     ///      the second is where value travels. Neither may ever be reachable
     ///      from here. What may is the ADDRESS a reader dials, which the reader
     ///      then checks for itself.
     ///
-    ///      THIS CONTRACT CANNOT CHECK THE ADDRESSES IT PUBLISHES, and that is
-    ///      structural rather than lazy: it sits on one chain naming contracts
+    ///      This contract cannot check the addresses it publishes, which is
+    ///      structural: it sits on one chain naming contracts
     ///      on others, where it can read no code. So `entry.code.length` — the
     ///      check `SlowArrival`'s constructor makes about its own routes — is
     ///      not available here at any price. The reader has to probe the
@@ -161,7 +160,7 @@ contract SlowBridgeRegistry {
     ///      selector it means to call is in it, which is what `probeArrival`
     ///      already does before any route that needs it opens.
     ///
-    ///      SAME ADDITIVE RULE AS ROUTES. A name the page ships a constant for
+    ///      The same additive rule as routes applies. A name the page ships a constant for
     ///      is read from the page; an entry here for that name is ignored. So
     ///      the trust this carries is scoped to contracts a reader opted into by
     ///      using something the page never knew about — and `freeze` is how that

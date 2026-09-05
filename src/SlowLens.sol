@@ -244,7 +244,7 @@ contract SlowLens {
 
     /// @dev The windowed form every paginating read is built on.
     ///
-    ///      IT COUNTS AND INDEXES; IT DOES NOT SLICE AN ARRAY, and that is the
+    ///      It counts and indexes rather than slicing an array, which is the
     ///      entire point of the function. The window exists because
     ///      `_inboundTransfers` is a set anyone can grow with dust deposits at a
     ///      delay the victim cannot outlast, and past a few thousand rows
@@ -256,7 +256,7 @@ contract SlowLens {
     ///      exactly as before. `inboundTransferAt(i)` is 10,065 gas at the same
     ///      size and does not grow with the set.
     ///
-    ///      POSITIONS ARE UNSTABLE, which is the price. `EnumerableSetLib`
+    ///      Positions are unstable, which is the price. `EnumerableSetLib`
     ///      swaps with the last element on remove, so a row can be missed or
     ///      repeated between two pages if something settles in between. That is
     ///      SLOW's own documented caveat on `inboundTransferAt`, it is why
@@ -316,7 +316,7 @@ contract SlowLens {
         t.token = token;
         t.delay = uint96(delay);
         t.unlockAt = uint256(ts) + delay;
-        // NO PER-ROW GUARDIAN FLAG, deliberately. A pending transfer has no
+        // No per-row guardian flag. A pending transfer has no
         // outstanding guardian decision: the approval that authorised its
         // creation was consumed and deleted at `safeTransferFrom`, under
         // `_OP_TRANSFER`. Settling it needs none — `unlock` consults no

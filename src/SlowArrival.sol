@@ -48,7 +48,7 @@ interface ISlowDeposit {
 /// @notice The far end of every bridge into SLOW, so a bridged deposit keeps the
 ///         one thing SLOW is for: the sender can take it back.
 ///
-/// @dev THE BUG THIS EXISTS TO FIX. `SLOW._finishDeposit` records
+/// @dev WHY IT EXISTS. `SLOW._finishDeposit` records
 ///      `pendingTransfers[id].from = msg.sender`, and `reverse` and `clawback`
 ///      both check that field. So whoever the destination chain thinks is
 ///      calling `depositTo` owns the right to undo the transfer — and on FIVE of
@@ -75,11 +75,11 @@ interface ISlowDeposit {
 ///      In each case `from` also has no `onERC1155Received`, so even a
 ///      cooperative bridge could not accept the wrapper back.
 ///
-/// @dev THE FIX. Be the depositor, and remember who it was really for. This
-///      contract becomes `pt.from`, holds the reverse and clawback rights that
-///      come with it, and hands them to the origin it recovered.
+/// @dev This contract becomes the depositor, so it becomes `pt.from` and holds
+///      the reverse and clawback rights, which it hands to the origin it
+///      recovered.
 ///
-/// @dev WHY IT NEEDS NO OWNER, NO ALLOWLIST AND NO CONFIGURATION. `pt.from`
+/// @dev It needs no owner, allowlist or configuration. `pt.from`
 ///      confers exactly two powers and both GIVE MONEY BACK to `from` — money
 ///      `from`'s caller supplied in the first place. Attributing an arrival to
 ///      the wrong person is a gift, never a theft, so the origin can simply be
@@ -87,7 +87,7 @@ interface ISlowDeposit {
 ///      police it. That is what lets one identical build sit at one CREATE3
 ///      address on every chain.
 ///
-/// @dev WHY `arrive` MUST NEVER REVERT, which is the sharpest edge here.
+/// @dev `arrive` must never revert.
 ///      `OptimismPortal.finalizeWithdrawalTransaction` sets
 ///      `finalizedWithdrawals[hash] = true` BEFORE calling the target and does
 ///      not revert when that call fails. A revert in here would therefore burn
@@ -271,20 +271,19 @@ contract SlowArrival {
         payable
     {
         (address origin, bool authenticated) = _recoverOrigin(originHint);
-        // ORIGIN HINTS ARE CHECKED, NEVER TAKEN ON TRUST. An unmatched hint is
+        // Origin hints are checked, never taken on trust. An unmatched hint is
         // refused and the caller owns its own deposit, which is what stops
         // anyone handing a stranger's address the reverse right by simply
         // naming it.
         //
-        // THE COST OF THAT, and it is real: on an L1->L2 leg the caller IS the
-        // aliased sender, so a message that OMITS `originHint` resolves to an
-        // address with no key on either chain, and `rescue`/`originOf` land
-        // somewhere nobody can claim from. A correct hint is honoured — the
-        // alias branch in `SlowOrigin.recover` matches it — so the requirement
-        // is that L1->L2 callers always pass one. Preferring an unmatched hint
-        // instead was considered and rejected: it would rescue the omitted-hint
-        // case not at all (there is no hint to prefer) while letting any direct
-        // caller give their deposit away, which is a worse trade.
+        // The cost: on an L1->L2 leg the caller IS the aliased sender, so a
+        // message omitting `originHint` resolves to an address with no key on
+        // either chain, and `rescue`/`originOf` land somewhere nobody can claim
+        // from. A correct hint is honoured by the alias branch in
+        // `SlowOrigin.recover`, so L1->L2 callers must always pass one.
+        // Preferring an unmatched hint would not help the omitted case — there
+        // is no hint to prefer — and would let any direct caller assign their
+        // deposit to someone else.
 
         uint256 value = msg.value;
         // A bounty at or above the payload is a malformed message. Clamping it
@@ -300,15 +299,12 @@ contract SlowArrival {
         }
 
         if (value != 0) {
-            // BAIL OUT RATHER THAN INVERT. The old form was
-            //     budget > FAILURE_RESERVE ? budget - FAILURE_RESERVE : budget
-            // which, in the one band the reserve exists for — gasleft() at or
-            // below it — kept nothing back and handed the whole remainder to a
-            // deposit that cannot finish in it. The deposit then burned 63/64,
-            // the `rescue` write had no gas, and `arrive` reverted. On the OP
-            // leg the portal has already marked the withdrawal finalized by
-            // then and will never replay it, so the bridged ETH is stranded for
-            // good — precisely what this function must never allow.
+            // Bail out rather than invert. Subtracting the reserve only when
+            // it fits, and otherwise forwarding everything, keeps nothing back
+            // in the one band the reserve exists for: the deposit then burns
+            // 63/64, the `rescue` write has no gas, and `arrive` reverts. On
+            // the OP leg the portal has already marked the withdrawal finalized
+            // by then and will never replay it, stranding the ETH.
             bool ok;
             uint256 transferId;
             uint256 rds;
@@ -320,29 +316,27 @@ contract SlowArrival {
                 address target = slow;
                 bytes memory cd =
                     abi.encodeCall(ISlowDeposit.depositTo, (address(0), to, 0, delay, ""));
-                // FIXED 32-BYTE RETURN WINDOW, not `bytes memory`. The high-level
-                // form copies the whole `returndatasize()` into this frame before
-                // anything looks at it, and `_mint` bubbles the recipient hook's
-                // revert data verbatim — so a recipient that reverts with a large
-                // buffer charges this frame quadratic memory expansion out of the
-                // very reserve that is meant to survive the failure. A caller-side
-                // window cannot be sized by the callee.
+                // A fixed 32-byte return window, not `bytes memory`. The
+                // high-level form copies the whole `returndatasize()` into this
+                // frame, and `_mint` bubbles the recipient hook's revert data
+                // verbatim, so a recipient reverting with a large buffer would
+                // charge this frame quadratic memory expansion out of the
+                // reserve meant to survive the failure. A caller-side window
+                // cannot be sized by the callee.
                 assembly ("memory-safe") {
                     ok := call(budget, target, value, add(cd, 0x20), mload(cd), 0x00, 0x20)
                     transferId := mload(0x00)
                     rds := returndatasize()
                 }
             }
-            // `ok` IS THE ONLY THING THAT SAYS WHERE THE MONEY WENT, and the
-            // rescue credit has to key off exactly that. This used to branch on
-            // `ok && rds == 32`, which put a call that SUCCEEDED with an
-            // unexpected return in the failure arm — crediting `rescue` for ETH
-            // the call had already taken, and handing the first claimant a claim
-            // on somebody else's balance. Unreachable against a SLOW whose
-            // `depositTo` returns a `uint256`, and the constructor's codeless
-            // check removes the one path that made it reachable, but conflating
-            // "reverted" with "returned something odd" is the wrong shape for a
-            // contract whose whole job is knowing which of those happened.
+            // `ok` is the only thing that says where the money went, so the
+            // rescue credit keys off exactly that. Branching on
+            // `ok && rds == 32` would put a call that SUCCEEDED with an
+            // unexpected return into the failure arm, crediting `rescue` for
+            // ETH the call had already taken and handing the first claimant a
+            // claim on someone else's balance. Unreachable against a SLOW whose
+            // `depositTo` returns a `uint256`, but conflating "reverted" with
+            // "returned something odd" is the wrong shape here.
             if (ok) {
                 // A short return is a deposit that happened and cannot be
                 // named. Nothing can be owned, so nothing is recorded as owned —
@@ -364,14 +358,13 @@ contract SlowArrival {
             // contract wrapping the call gets the bounty at the EOA behind it,
             // which is a mild loss of precision and not a hazard.
             //
-            // BUT ONLY WHEN THERE IS A FINALISER TO PAY. On the L1->L2 routes
-            // the message auto-executes: nobody pushed a button, and both
-            // stacks run it with `tx.origin == msg.sender == the ALIASED
-            // sender` — an address with no key on either chain. Paying it burns
-            // the bounty, and silently: a value call to a codeless address
-            // returns success, so `paid` is true and the rescue below never
-            // fires. Two of the six routes lost the bounty outright that way,
-            // on exactly the routes where no bounty is owed to begin with.
+            // Only when there is a finaliser to pay. On the L1->L2 routes the
+            // message auto-executes and both stacks run it with
+            // `tx.origin == msg.sender == the aliased sender`, an address with
+            // no key on either chain. Paying it would burn the bounty silently:
+            // a value call to a codeless address returns success, so `paid`
+            // would be true and the rescue below would not fire. No bounty is
+            // owed on those routes in any case.
             if (tx.origin == msg.sender) {
                 rescue[origin] += pay;
             } else {
@@ -490,25 +483,24 @@ contract SlowArrival {
             // chose to send, so the submission fee has to be PRICED LIVE
             // against the current base fee. Anything decided at send time would
             // be a working week stale by the time it is spent.
-            // THE ONLY CALL IN THIS FILE THAT HAD NEITHER PROTECTION THE REST
-            // OF IT APPLIES, and it needs both. `r.entry` is a proxy whose
-            // implementation can be replaced after this contract is deployed,
-            // so it is not the trusted constant its position in a Route makes
-            // it look like.
+            // `r.entry` is a proxy whose implementation can be replaced after
+            // this contract is deployed, so it is not the trusted constant its
+            // position in a Route suggests. The probe therefore carries both
+            // protections used elsewhere in this file:
             //
-            //   BOUNDED GAS, as `SlowOrigin._probe` bounds its probes. Uncapped,
-            //   this call takes 63/64 of everything and can spend the reserve
-            //   the failure branch is holding — the reserve is only reserved
-            //   from the FORWARD, never from this.
+            //   Bounded gas, as `SlowOrigin._probe` bounds its probes.
+            //   Uncapped, this call takes 63/64 of everything and can spend the
+            //   reserve the failure branch holds, which is reserved from the
+            //   forward and not from this.
             //
-            //   A FIXED 32-BYTE WINDOW, as `arrive` uses for the same reason.
-            //   `bytes memory` copies the whole `returndatasize()` into this
-            //   frame and charges quadratic memory expansion here, which is how
-            //   a callee held to a gas cap bills past it anyway.
+            //   A fixed 32-byte window, as `arrive` uses. `bytes memory` copies
+            //   the whole `returndatasize()` into this frame and charges
+            //   quadratic memory expansion, which is how a callee held to a gas
+            //   cap bills past it.
             //
-            // Either failure ends with `rescue` unable to run and `forward`
+            // Either failure would leave `rescue` unable to run and `forward`
             // reverting, and on the OP leg the portal has already marked the
-            // withdrawal finalised by then and will never replay it.
+            // withdrawal finalised and will never replay it.
             uint256 submission;
             {
                 bytes memory fd = abi.encodeCall(
@@ -524,12 +516,12 @@ contract SlowArrival {
                 }
                 if (!ok || rds != 32) return false;
             }
-            // BOUNDED BEFORE IT IS SCALED. `submission` is whatever `r.entry`
-            // said, and `submission * 3 / 2` on a wide answer OVERFLOWS — which
-            // under checked arithmetic REVERTS, the one thing this function may
-            // never do. So does `submission + gasCost` below. A fee already
-            // larger than the payload is refused three lines down anyway, so
-            // refusing it here costs nothing and makes both sums safe.
+            // Bounded before it is scaled. `submission` is whatever `r.entry`
+            // returned, and `submission * 3 / 2` on a wide answer overflows,
+            // which under checked arithmetic reverts — the one thing this
+            // function may never do. So does `submission + gasCost` below. A
+            // fee already larger than the payload is refused three lines down,
+            // so refusing it here costs nothing and makes both sums safe.
             if (submission > value) return false;
             submission = submission * 3 / 2; // a rising base fee must not strand it
 

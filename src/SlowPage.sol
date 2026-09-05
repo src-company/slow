@@ -46,7 +46,7 @@ pragma solidity ^0.8.30;
 ///      which carries the chunk addresses, which depend on the page — so it is
 ///      only computable after the page is final, which is too late to publish.
 ///
-///      A SUCCESSOR IS DEPLOYED WITH CREATE2, and inherits one constraint from
+///      A successor is deployed with CREATE2 and inherits one constraint from
 ///      that: it cannot embed its own address either. If it did, the address
 ///      would depend on the initcode, the initcode on the chunks, the chunks on
 ///      the page, and the page on the address — a cycle with no solution short

@@ -114,11 +114,11 @@ contract SlowRelay {
     struct Intent {
         address sender; // opens the escrow, cancels it, and keeps the far-side reverse
         address recipient; // receives the SLOW position on the destination
-        // ONE ADDRESS CANNOT NAME THE SAME ASSET ON TWO CHAINS. USDC on Base
-        // and whatever happens to sit at that address on Robinhood are
-        // unrelated contracts, so a single `token` field let a relayer deliver
-        // something worthless at the same address and then collect the real
-        // escrow. The sender names BOTH legs, and neither is inferred.
+        // One address cannot name the same asset on two chains: USDC on Base
+        // and whatever sits at that address on Robinhood are unrelated
+        // contracts. A single `token` field would let a relayer deliver
+        // something worthless at the same address and collect the real escrow.
+        // The sender names both legs; neither is inferred.
         address srcToken; // what is escrowed here. address(0) is native ETH
         address dstToken; // what must be delivered there. address(0) is native ETH
         uint256 amount; // what the recipient's leg is worth
@@ -151,7 +151,7 @@ contract SlowRelay {
     ///      also arrive through a known bridge. Constructor arguments do not
     ///      enter a CREATE3 address, so this contract still lands at one address
     ///      on every chain despite holding chain-specific values.
-    /// @dev NOT THE INBOX, WHICH IS THE TRAP THIS NAME USED TO SET. `proveFill`
+    /// @dev Not the Inbox, which the name can suggest. `proveFill`
     ///      sends through `OP_MESSENGER.sendMessage` and `ArbSys.sendTxToL1`,
     ///      and what arrives here is whatever DELIVERS that message — the
     ///      L1CrossDomainMessenger on OP Stack, and the Arbitrum BRIDGE on Nitro
@@ -350,11 +350,11 @@ contract SlowRelay {
         require(i.srcToken == address(uint160(id)), BadIntent());
         require(value == i.amount + i.fee, BadValue());
 
-        // The SAME predicate the other three doors use. This hook used to
-        // re-implement it inline and had already drifted by two checks —
-        // `amount != 0` and `recipient != address(0)` — which let an escrow be
-        // opened that no `fill` could ever satisfy, freezing the value until
-        // the deadline while looking OPEN to every relayer watching the event.
+        // The same predicate the other three doors use, in one place rather
+        // than re-implemented here. An inline copy drifts, and a door missing
+        // `amount != 0` or `recipient != address(0)` opens an escrow no `fill`
+        // can satisfy, freezing the value until the deadline while looking OPEN
+        // to every relayer watching the event.
         _validate(i);
         bytes32 key = _intentIdMem(i);
         require(statusOf[key] == Status.NONE, AlreadyOpen());
@@ -378,15 +378,15 @@ contract SlowRelay {
         require(i.dstChainId != i.srcChainId, BadIntent());
         require(i.amount != 0, BadIntent());
         require(i.recipient != address(0), BadIntent());
-        // EVERY PRECONDITION `depositTo` ENFORCES, checked here too. The escrow
-        // is committed on this chain and the only party who can discover the
-        // intent is unfillable is a relayer on the other one — after which the
-        // money sits until `fillDeadline + PROOF_GRACE`, eight days minimum.
-        // So anything the destination will refuse has to be refused at open:
-        // `to != address(this)` and the 100-year delay ceiling, alongside the
-        // zero-recipient and zero-amount cases.
+        // Every precondition `depositTo` enforces is checked here too. The
+        // escrow is committed on this chain, and the only party who can discover
+        // the intent is unfillable is a relayer on the other one, after which
+        // the money sits until `fillDeadline + PROOF_GRACE`. So anything the
+        // destination will refuse is refused at open: `to != address(this)` and
+        // the 100-year delay ceiling, alongside the zero-recipient and
+        // zero-amount cases.
         require(i.recipient != slow, BadIntent());
-        // AND NOT THIS CONTRACT, which `depositTo` does NOT refuse. A fill to
+        // And not this contract, which `depositTo` does not refuse. A fill to
         // `address(this)` with a zero delay deposits straight into
         // `unlockedBalances[this][dstToken]` — the destination chain's own
         // escrow pool — where no function can ever withdraw it, while the
@@ -395,7 +395,7 @@ contract SlowRelay {
         require(i.recipient != address(this), BadIntent());
         require(i.delay <= MAX_DELAY, BadIntent());
         require(i.fillDeadline > block.timestamp, DeadlinePassed());
-        // AN UPPER BOUND, because `cancel` is gated on
+        // An upper bound, because `cancel` is gated on
         // `fillDeadline + PROOF_GRACE` and nothing else. A `fillDeadline` far
         // enough out makes that condition unreachable, so the escrow has
         // exactly one exit — a relayer choosing to fill — and no refund, ever.
@@ -611,27 +611,23 @@ contract SlowRelay {
 
     /// @dev How long after `fillDeadline` the sender must wait before a refund.
     ///
-    ///      WITHOUT THIS THE RELAYER IS ROBBED, and no amount of relayer care
-    ///      helps. `provenBy` is the only thing standing between a filled intent
-    ///      and a refund, and the only writer of `provenBy` is `receiveRelay`,
-    ///      reachable only through a canonical L2->L1 exit plus an L1->L2 hop:
-    ///      roughly seven days on OP Stack, 6.4 on Nitro. `_checkOpen` accepts
-    ///      any `fillDeadline` one second in the future. So a sender could open
+    ///      Without it a relayer can be refunded out from under. `provenBy` is
+    ///      the only thing standing between a filled intent and a refund, and
+    ///      its only writer is `receiveRelay`, reachable only through a
+    ///      canonical L2->L1 exit plus an L1->L2 hop: roughly seven days on OP
+    ///      Stack, 6.4 on Nitro. `_checkOpen` accepts any `fillDeadline` one
+    ///      second in the future, so without a grace period a sender could open
     ///      with a one-hour window, let a relayer deliver real funds, and refund
-    ///      the escrow an hour later while the proof was still six days out —
-    ///      and then `release` would revert `NotOpen` forever.
-    ///
-    ///      The old note here told relayers to protect themselves by not filling
-    ///      close to the deadline. That advice cannot be followed: for any
-    ///      deadline shorter than the challenge period there is NO fill time
-    ///      that is safe, including the first block.
+    ///      the escrow while the proof was still days out, after which `release`
+    ///      reverts `NotOpen` permanently. Relayer caution is not a defence: for
+    ///      any deadline shorter than the challenge period there is no safe fill
+    ///      time, including the first block.
     ///
     ///      Eight days clears the longer of the two challenge periods, so the
     ///      earliest possible proof always lands before the earliest possible
     ///      cancel, whenever within the window the fill happened.
     ///
-    ///      MEASURED, NOT ASSUMED, because the earlier note guessed high on the
-    ///      wrong chain. Read live off L1:
+    ///      Read live off L1:
     ///
     ///        Base      `OptimismPortal` (5.2.0) `proofMaturityDelaySeconds`
     ///                  86,400 and `disputeGameFinalityDelaySeconds` 0, against
@@ -642,14 +638,12 @@ contract SlowRelay {
     ///        Robinhood `Rollup.confirmPeriodBlocks` 45,818, which at 12s L1
     ///                  blocks is ~6.36 days.
     ///
-    ///      So Nitro is the binding constraint, not OP Stack, and eight days
-    ///      clears it by ~1.6 days. The slack that remains is what absorbs the
-    ///      L1->L2 hop and a keeper that is late to `pushProof`. What it does
-    ///      NOT absorb is a Base game invalidated after the fill: a re-prove
-    ///      restarts maturity against a new game and can push the total past
-    ///      eight days. That case is rare and loud, and the sender's refund is
-    ///      the thing it costs the relayer — worth watching rather than worth
-    ///      pricing in.
+    ///      Nitro is therefore the binding constraint, and eight days clears it
+    ///      by ~1.6 days. That slack absorbs the L1->L2 hop and a keeper late to
+    ///      `pushProof`. It does not absorb a Base game invalidated after the
+    ///      fill, where a re-prove restarts maturity against a new game and can
+    ///      push the total past eight days; in that case the relayer loses the
+    ///      fill to the sender's refund.
     uint256 internal constant PROOF_GRACE = 8 days;
 
     /// @dev SLOW's own timelock ceiling, mirrored so an intent that the
@@ -711,7 +705,7 @@ contract SlowRelay {
         bytes memory message = abi.encodeCall(SlowRelay.receiveRelay, (id, relayer));
 
         if (kind == Kind.OP_STACK) {
-            // NO VALUE ON THIS BRANCH. An OP deposit needs no ETH — the L2 gas
+            // No value on this branch. An OP deposit needs no ETH: the L2 gas
             // is paid by burning L1 gas in the portal — and `depositTransaction`
             // treats what it is sent as a MINT to `from`, not as postage. `from`
             // here is `applyAlias(address(this))`, the address this contract
@@ -724,7 +718,7 @@ contract SlowRelay {
                 address(this), 0, uint64(gasLimit), false, message
             );
         } else if (kind == Kind.ARBITRUM) {
-            // REFUNDS GO TO AN ADDRESS THAT EXISTS ON THE FAR SIDE. Nitro
+            // Refunds go to an address that exists on the far side. Nitro
             // aliases a refund address when it is a contract, so naming
             // `msg.sender` sends a keeper's excess submission fee and unused
             // prepaid gas to its own L2 alias — unreachable. Callers must

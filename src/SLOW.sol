@@ -118,7 +118,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     ///      all gate on `pt.timestamp + delay`, which never arrives, while
     ///      `reverse` stays with the sender.
     ///
-    ///      WHAT THIS DOES NOT FIX, so that nobody reads it as fixed. Anyone can
+    ///      What this does not fix. Anyone can
     ///      still pin a row into a stranger's `_inboundTransfers` for the cost of
     ///      a dust deposit, and the recipient still cannot remove it: `unlock`
     ///      needs `pt.timestamp + delay` and `clawback` needs another 30 days on
@@ -168,7 +168,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     mapping(address user => address) public guardians;
 
     /// @notice Freshness counter for guardian approval preimages.
-    /// @dev SEPARATE FROM `nonces` ON PURPOSE. Approvals used to be keyed on
+    /// @dev Separate from `nonces` on purpose. Keying approvals on
     ///      `nonces[from]`, which `_finishDeposit` also advances — and deposits
     ///      are not guardian-gated. So the compromised key the guardian exists
     ///      to defend against could void every standing approval for 1 wei plus
@@ -200,7 +200,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     ///      entirely — no `SlowArrival`, no routes, and it names the previous
     ///      deployment — and a stub page is a second document to keep true.
     ///
-    ///      A FIXED POINTER, NOT A FOLLOWED ONE. `SlowPage` carries a write-once
+    ///      A fixed pointer, not a followed one. `SlowPage` carries a write-once
     ///      `successor`, and this deliberately does not walk it. That contract's
     ///      own rule is that `html()` is immutable and the successor is "a CLAIM
     ///      ABOUT LINEAGE, never a redirect" — an address whose bytes cannot
@@ -438,7 +438,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     ///      costs you the listing, not the transfer — settle it by id, or let
     ///      the sender clawback after the grace.
     ///
-    ///      IT TAKES NO EXTERNAL CALL, deliberately. Every design that hands the
+    ///      It takes no external call. Every design that hands the
     ///      dust back to the sender — mint, safeTransfer, safeTransferETH —
     ///      routes through code the sender controls, and a sender who reverts on
     ///      receipt would keep the row pinned exactly as before. A griefer must
@@ -519,7 +519,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         PendingGuardian memory p = pendingGuardian[user];
         require(p.effectiveAt != 0, NoGuardianChangePending());
         require(block.timestamp >= p.effectiveAt, GuardianChangeNotReady());
-        // NOT PERMISSIONLESS. The natspec above offers a late abort — propose
+        // Not permissionless. The natspec above offers a late abort: propose
         // someone else, then cancel inside the new window — and a permissionless
         // commit defeats it: the guardian being installed watches the mempool,
         // front-runs that abort with this call, and is then the sitting guardian
@@ -710,7 +710,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
         // land in this function, so one check covers them and cannot drift.
         require(delay <= _MAX_DELAY, InvalidDeposit());
         // And `to`, for the same reason and now at the same price. These two
-        // used to sit in `depositTo` and `depositToWithTip` and nowhere else,
+        // sat in `depositTo` and `depositToWithTip` and nowhere else,
         // which left the permit pair leaning on Solady's `_mint` to refuse the
         // zero address and on the receiver hook to refuse this contract. Both
         // hold, and neither is a property the entrypoint states — it is a
@@ -1236,7 +1236,7 @@ contract SLOWGate {
     /// Keepers must filter ids off-chain (timelock-expired, no guardian on `pt.to`).
     function claimMany(uint256[] calldata transferIds) public {
         for (uint256 i; i != transferIds.length; ++i) {
-            // PER-ID ISOLATION, because the failure is not hypothetical. Every
+            // Per-id isolation. Every
             // id in the batch belongs to a recipient who may `unlock` it at any
             // moment, and that is ordinary, honest behaviour — not an attack.
             // Settled ids make `claimTipped` revert `TransferDoesNotExist`, and
@@ -1246,20 +1246,17 @@ contract SLOWGate {
             // Filtering off-chain, which the note above prescribes, cannot fix
             // it — the kill is a front-run, so no pre-flight read can see it.
             //
-            // AND A GAS CAP, because the isolation is not isolation without
-            // one. `_doClaim` pays the recipient with `safeTransferETH`, which
-            // forwards everything it has, and `catch` swallows an out-of-gas
-            // exactly as it swallows a revert. So one recipient whose
-            // `receive()` spins until the budget is nearly gone consumes the
-            // gas every later id in the batch needed, and the keeper pays for
-            // a batch that settles almost none of it. Measured: a single
-            // hostile id in a batch of twelve burned 11.4M gas and took the
-            // whole call down with it.
+            // The gas cap is what makes the isolation real. `_doClaim` pays the
+            // recipient with `safeTransferETH`, which forwards everything it
+            // has, and `catch` swallows an out-of-gas exactly as it swallows a
+            // revert. Uncapped, one recipient whose `receive()` spins consumes
+            // the gas every later id needed, and the keeper pays for a batch
+            // that settles almost none of it — a single hostile id in a batch
+            // of twelve burns ~11.4M gas and takes the whole call with it.
             //
-            // The cap is what a claim can honestly need, not what one might
-            // like: an ordinary settlement is under 100,000, and 250,000
-            // leaves room for a contract recipient doing real work on receipt
-            // while bounding a hostile one to its own share.
+            // 250,000 is what a claim can need: an ordinary settlement is under
+            // 100,000, and the remainder leaves room for a contract recipient
+            // doing real work on receipt while bounding a hostile one.
             try this.claimOne{gas: _CLAIM_GAS}(transferIds[i], msg.sender) {} catch {}
         }
     }
