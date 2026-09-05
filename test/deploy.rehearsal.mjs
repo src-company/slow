@@ -106,10 +106,12 @@ try {
     .sort((a, b) => parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]));
   ok(chunkFiles.length > 0, `chunk initcode is built (${chunkFiles.length} chunks)`);
   const chunks = [];
+  let chunkGas = 0n;
   for (const f of chunkFiles) {
     const initcode = fs.readFileSync(path.join(ROOT, 'out', f), 'utf8').trim();
     const r = await mined({from: DEPLOYER, data: initcode.startsWith('0x') ? initcode : '0x' + initcode, gas: '0x1000000'});
     chunks.push(r.contractAddress);
+    chunkGas += BigInt(r.gasUsed);
   }
   eq(chunks.length, chunkFiles.length, 'every chunk deployed');
 
@@ -143,6 +145,23 @@ try {
   const r = await mined({from: D.steward, to: D.create3Deployer, data, gas: '0x2000000'});
   const logged = '0x' + r.logs[r.logs.length - 1].topics[1].slice(26);
   eq(logged, D.contract, 'CREATE3 lands on the address the manifest promises');
+
+  // MEASURED, so the runbook never has to quote a number it guessed. The page
+  // moves often and the wrapper's cost tracks the PAGE — it reassembles the
+  // whole document in memory and hashes it — so a figure written down once is
+  // wrong by the next edit. This one is produced by the run that proves the
+  // deployment works, against the page that is actually pinned.
+  const pageGas = BigInt(r.gasUsed);
+  const total = chunkGas + pageGas;
+  const at = (gwei) => Number(total) * gwei * 1e9 / 1e18;
+  console.log(`\n  page deployment, measured on ${chunkFiles.length} chunks` +
+    ` + the wrapper, for a ${page.length.toLocaleString()} B page:`);
+  console.log(`    chunks   ${chunkGas.toLocaleString()} gas`);
+  console.log(`    wrapper  ${pageGas.toLocaleString()} gas`);
+  console.log(`    total    ${total.toLocaleString()} gas` +
+    `   ~${at(0.1).toFixed(5)} ETH at 0.1 gwei` +
+    `   ~${at(0.4).toFixed(5)} ETH at 0.4 gwei`);
+  console.log('    (SLOW and the bridge pair are separate deploys, not counted here)\n');
 
   // ── the questions verify.mjs will ask mainnet ────────────────────────────
   const PAGE = D.contract;

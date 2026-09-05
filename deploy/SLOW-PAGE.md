@@ -73,11 +73,14 @@ The proxy initcode hash it uses is checked against the canonical
 2. **Write the address into the page** and pin it:
 
    ```sh
-   node -e 'const f="manifest.json",m=require("./"+f),fs=require("fs"),
-     b=fs.readFileSync(m.page);m.bytes=b.length;
-     m.sha256=require("crypto").createHash("sha256").update(b).digest("hex");
-     fs.writeFileSync(f,JSON.stringify(m,null,2)+"\n")'
+   node scripts/pin.mjs
    ```
+
+   Not the inline `JSON.parse`/`stringify` one-liner this used to print. That
+   round-trips the whole file to change two numbers, which re-encodes the em
+   dash in `title` — valid JSON, identical once parsed, and a spurious diff on
+   every release. `pin.mjs` edits the two fields as raw text for exactly that
+   reason, and its docblock says so.
 
    From here every command fails if the page and the manifest disagree. That is
    deliberate: a chunk set built from a page nobody pinned is how a deployment
@@ -114,15 +117,17 @@ The proxy initcode hash it uses is checked against the canonical
    scale that way — it reassembles the whole document in memory and hashes it,
    so its cost tracks the PAGE, and the figure above is for a 246,562 B one.
 
-   That build — ten full chunks, one part-full, and the wrapper — is
-   **55,376,205 gas, about 0.0055 ETH at 0.1 gwei**. Re-measure rather than
-   scaling this if the page has moved much; it moves often.
+   **Do not read a total from here.** `node test/deploy.rehearsal.mjs` prints
+   one, measured on the page that is actually pinned, from the same run that
+   proves the deployment works. At 260,572 B it reports 11 chunks at 56,947,724
+   gas plus a 1,531,203-gas wrapper — **58,478,927 total** — and it will report
+   a different number the next time the page moves, which is the point.
 
 5. **Deploy the wrapper through CREATE3** with the mined salt:
 
    ```
    SlowPage(slow, initialSteward, previous, chunks, pageHash)
-     slow    = 0x000000000000888741B254d37e1b27128AfEAaBC
+     slow     = <the freshly mined SLOW, from step 0 — NOT 0x0000...AaBC>
      previous = 0x0   (generation 1)
    ```
 
@@ -313,6 +318,25 @@ chunks are the exception and do not need to be known: they are plain CREATE, so
 their addresses differ per chain with the deployer's nonce, and that is fine
 precisely because they are constructor *arguments* to `SlowPage` rather than
 part of its address.
+
+**What the whole thing costs, per chain.** Measured sizes, not estimates —
+`forge build --sizes` and the rehearsal:
+
+| | gas |
+| --- | --- |
+| the page: 11 chunks + wrapper | 58,478,927 |
+| `SLOW` (24,421 B) plus the `SLOWGate` its constructor creates | ~5,601,000 |
+| `SlowArrival` (4,799 B) | ~1,108,000 |
+| `SlowRelay` (10,550 B) | ~2,311,000 |
+| **total** | **~67,500,000** |
+
+At the gas prices read live while writing this — Ethereum 0.105 gwei, Base 0.006,
+Robinhood 0.397 — that is **0.0071 / 0.0004 / 0.0268 ETH**. Robinhood is the
+expensive one by a factor of four and the easiest to underfund.
+
+> `SLOW` compiles to **24,421 bytes, 155 under EIP-170**. That is the tightest
+> constraint in the repo and it is not in a test. Anything added to `SLOW.sol`
+> should be checked with `forge build --sizes` before it is written, not after.
 
 ```
 0.  mine SLOW's salt          scripts/mine.c <steward> 00000000
