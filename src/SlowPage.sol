@@ -36,13 +36,22 @@ pragma solidity ^0.8.30;
 ///      ever broadcast.
 ///
 /// @dev DEPLOY THROUGH CREATE3.
-///      The page embeds its own address so its footer can name the contract
-///      that served it, and CREATE2 cannot supply that: under CREATE2 the
-///      address depends on the initcode, the initcode carries the chunk
-///      addresses, the chunk addresses depend on the page, and the page
-///      contains the address. CREATE3 derives the address from the deployer and
-///      the salt alone, so the salt is mined once, before any content exists,
-///      and the page is written around an address that is already known.
+///      Not because the page contains this address — it does not, and must not.
+///      The page discovers where it is being served from at runtime, off
+///      `location.hostname`, so nothing in the document depends on the contract
+///      holding it. The reason is publication: a CREATE3 address comes from the
+///      deployer and the salt alone, never from the initcode, so it can be
+///      mined and written into `manifest.json` and the runbook before any
+///      content exists. Under CREATE2 the address depends on the initcode,
+///      which carries the chunk addresses, which depend on the page — so it is
+///      only computable after the page is final, which is too late to publish.
+///
+///      A SUCCESSOR IS DEPLOYED WITH CREATE2, and inherits one constraint from
+///      that: it cannot embed its own address either. If it did, the address
+///      would depend on the initcode, the initcode on the chunks, the chunks on
+///      the page, and the page on the address — a cycle with no solution short
+///      of a 160-bit search. Keeping the document independent of its host is
+///      what makes the lineage extensible at all.
 ///
 /// HOW TO READ THE DAPP
 ///   cast call <addr> "html()(string)" --rpc-url <rpc> > slow.html

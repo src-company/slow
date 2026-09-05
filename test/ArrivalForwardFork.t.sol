@@ -30,8 +30,16 @@ contract ArrivalForwardForkTest is Test {
 
     uint96 internal constant DELAY = 3 days;
     uint256 internal constant AMOUNT = 1 ether;
-    uint64 internal constant FWD_GAS = 1_000_000;
-    uint128 internal constant FWD_FEE = 1 gwei;
+    // THE DEPLOYED VALUES, not a rounder pair. These were 1,000,000 and 1 gwei
+    // while `DeployBridge` shipped 2,500,000 and 4 gwei, so the one thing this
+    // file exists to measure — what a forward actually costs against the real
+    // portal and inbox — was measured against parameters that no longer ship.
+    // The OP branch's cost is `depositTransaction`'s ResourceMetering burn,
+    // which scales with the L2 gas limit bought, so raising `FORWARD_GAS`
+    // raised the L1 gas a finaliser must supply. Keep these equal to
+    // `DeployBridge.FORWARD_GAS` / `FORWARD_MAX_FEE`.
+    uint64 internal constant FWD_GAS = 2_500_000;
+    uint128 internal constant FWD_FEE = 4 gwei;
 
     SlowArrival internal arrival;
     bool internal live;

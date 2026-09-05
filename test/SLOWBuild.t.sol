@@ -573,6 +573,72 @@ contract SLOWBuildTest is Test {
 
     /// `wardsAt` documents "pass a big count for the rest of the list", so the
     /// clamp has to survive a count that would overflow `start + count`.
+    // ───────────────────── the ward list a stranger could write to
+
+    /// @notice `setGuardian` is unilateral, so anyone can push rows into a
+    ///         stranger's ward list. Before `forgetWard` the stranger had no
+    ///         way to take one out, and `wardsOf` grew until it fell off an
+    ///         `eth_call` budget permanently. Same shape as the inbound-index
+    ///         grief `forgetInbound` exists for, on the other side.
+    function testAStrangerCanStuffTheWardListAndTheVictimCanClearIt() public {
+        address victim = address(0xC1C71);
+        for (uint256 i; i != 8; ++i) {
+            address squatter = address(uint160(0xBAD0000 + i));
+            vm.prank(squatter);
+            slow.setGuardian(victim);
+        }
+        assertEq(slow.wardCount(victim), 8, "anyone can push rows in");
+
+        vm.startPrank(victim);
+        for (uint256 i; i != 8; ++i) {
+            slow.forgetWard(address(uint160(0xBAD0000 + i)));
+        }
+        vm.stopPrank();
+        assertEq(slow.wardCount(victim), 0, "and the victim can take them out");
+    }
+
+    /// @notice Forgetting edits a LISTING. It does not resign a duty: the ward's
+    ///         own `guardians` pointer is untouched, so the guardian still gates
+    ///         that ward's withdrawals exactly as before.
+    /// @notice Forgetting edits a LISTING. It does not resign a duty: the ward's
+    ///         own `guardians` pointer is untouched, so the guardian still gates
+    ///         that ward's withdrawals exactly as before.
+    function testForgettingAWardDoesNotReleaseTheWardsFunds() public {
+        address g = address(0x6A6D);
+        address ward = address(0xA11CE);
+        vm.prank(ward);
+        slow.setGuardian(g);
+        assertEq(slow.guardians(ward), g);
+
+        vm.prank(g);
+        slow.forgetWard(ward);
+
+        assertEq(slow.wardCount(g), 0, "the row is gone");
+        assertEq(slow.guardians(ward), g, "but the guardian still guards");
+        assertTrue(slow.isWithdrawalApprovalNeeded(ward, address(0xB0B), 0, 1),
+            "and approval is still required");
+    }
+
+    function testForgettingIsIdempotentAndTouchesOnlyYourOwnList() public {
+        address g1 = address(0x6001);
+        address g2 = address(0x6002);
+        address w1 = address(0xA11CE);
+        address w2 = address(0xB0B);
+        vm.prank(w1);
+        slow.setGuardian(g1);
+        vm.prank(w2);
+        slow.setGuardian(g2);
+
+        vm.startPrank(g1);
+        slow.forgetWard(w1);
+        slow.forgetWard(w1); // no-op, not a revert
+        slow.forgetWard(w2); // never was g1's ward
+        vm.stopPrank();
+
+        assertEq(slow.wardCount(g1), 0);
+        assertEq(slow.wardCount(g2), 1, "g2's list is untouched");
+    }
+
     function testWardsAtClampsAndDoesNotOverflow() public {
         address[3] memory wards = [address(0x21), address(0x22), address(0x23)];
         for (uint256 i; i < wards.length; ++i) {

@@ -37,7 +37,7 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///                            shown the accounts it guards instead of being
 ///                            asked to type them in.
 ///
-/// @dev SIZE. 24,421 bytes of runtime against EIP-170's 24,576 — 155 to spare,
+/// @dev SIZE. 24,466 bytes of runtime against EIP-170's 24,576 — 110 to spare,
 ///      up from 21,648. The DAI-style and Permit2 entrypoints were already
 ///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
 ///      spent: anything added from here has to come out of those 294 bytes, or

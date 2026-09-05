@@ -1560,6 +1560,20 @@ eq(C.presetsFor('GME').join(','), C.presetsFor('NVDA').join(','), 'GME ladders l
     'and resolves it before probing');
 }
 
+// The page must not name the contract that serves it. `SlowPage.deployNext`
+// uses CREATE2, whose address depends on the initcode, which carries the chunk
+// addresses, which depend on the page — so a page containing its own host
+// address is a cycle with no solution, and the lineage could never be extended.
+// The page reads `location.hostname` instead.
+{
+  const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  const host = man.deployment.contract.slice(2).toLowerCase();
+  ok(!html.toLowerCase().includes(host),
+    'the page does not embed the address of the contract serving it');
+  ok(/location\.hostname/.test(html),
+    'it discovers where it is served from at runtime instead');
+}
+
 if (failures.length) {
   console.error(`\n${failures.length} failing:\n${failures.join('\n')}\n`);
   process.exit(1);

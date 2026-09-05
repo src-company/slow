@@ -49,6 +49,7 @@ contract BridgeAddressTest is Test {
         script_ = new DeployBridge();
     }
 
+
     function test_theScriptProducesThePublishedArrival() public view {
         assertEq(
             script_.predict(STEWARD, script_._salt(STEWARD, ARRIVAL_NONCE)),

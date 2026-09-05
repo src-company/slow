@@ -90,6 +90,28 @@ abstract contract SlowGuardianIndex {
     ///      wherever `guardians[user]` is assigned, with the value it held
     ///      before and the value it is taking. Either side may be zero, and a
     ///      no-op change costs nothing.
+    /// @notice Drop `ward` from your own listing.
+    /// @dev WHAT DEFENDS. `SLOW.setGuardian` is unilateral — nobody named as a
+    ///      guardian consents to it — and `_removeWard` was reachable only when
+    ///      the ward itself changed its own guardian. So anyone could push rows
+    ///      into a stranger's `_wards` and the stranger had no way to take one
+    ///      out: minimal contracts calling `setGuardian(victim)` from their
+    ///      constructors cost about 50,000 gas each, and enough of them put
+    ///      `wardsOf` past an `eth_call` budget permanently. That is the same
+    ///      shape as the inbound-index grief `forgetInbound` exists for, on the
+    ///      other side of the same relationship.
+    ///
+    ///      THIS REMOVES THE ROW AND NOTHING ELSE. `guardians[ward]` is the
+    ///      ward's own setting and is untouched, so a guardian who forgets a
+    ///      real ward still guards them — approvals still gate that ward's
+    ///      withdrawals exactly as before. Forgetting edits a listing, it does
+    ///      not resign a duty, and it cannot move or unlock anyone's funds.
+    ///      Idempotent, and it returns no value, so a ward that reverts on
+    ///      receipt has no way to hold the row in place.
+    function forgetWard(address ward) public {
+        _removeWard(msg.sender, ward);
+    }
+
     function _indexGuardian(address user, address previous, address next) internal {
         if (previous == next) return;
         if (previous != address(0)) _removeWard(previous, user);

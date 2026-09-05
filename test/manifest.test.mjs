@@ -138,6 +138,34 @@ const m = loadManifest();
   }
 }
 
+// ─── the fork test measures the parameters that ship ──────────────────────
+// `ArrivalForwardFork` exists to measure what a forward costs against the real
+// Base portal and Robinhood inbox. It pinned 1,000,000 / 1 gwei while
+// `DeployBridge` shipped 2,500,000 / 4 gwei, so it was measuring a
+// configuration nobody deploys — and the OP branch's L1 cost is
+// `depositTransaction`'s ResourceMetering burn, which scales with exactly the
+// number that had drifted. Compared across the two sources, because a Solidity
+// test can only compare a constant with itself.
+{
+  const grab = (file, name) => {
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const m = src.match(new RegExp(`constant\\s+${name}\\s*=\\s*([0-9_]+)\\s*(gwei)?`));
+    if (!m) return null;
+    const n = BigInt(m[1].replace(/_/g, ''));
+    return m[2] === 'gwei' ? n * 1000000000n : n;
+  };
+  const pairs = [
+    ['FORWARD_GAS', 'FWD_GAS', 'destination gas limit'],
+    ['FORWARD_MAX_FEE', 'FWD_FEE', 'fee ceiling'],
+  ];
+  for (const [shipName, forkName, label] of pairs) {
+    const shipped = grab('script/DeployBridge.s.sol', shipName);
+    const forked = grab('test/ArrivalForwardFork.t.sol', forkName);
+    ok(shipped !== null && forked !== null, `both ${label} constants are readable`);
+    eq(forked, shipped, `the fork test's ${label} is the one that ships`);
+  }
+}
+
 // ─── the pin still describes the page, and the page still fits ─────────────
 {
   const bytes = fs.readFileSync(path.join(ROOT, m.page));
