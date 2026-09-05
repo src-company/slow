@@ -125,6 +125,46 @@ contract SlowRelayTest is Test {
         });
     }
 
+    // ────────────────────── intents the destination would swallow whole
+
+    /// @notice A fill to this contract with no delay lands in the escrow POOL,
+    ///         which has no withdrawal path. `depositTo` does not refuse it —
+    ///         only `slow` and the zero address — so the refusal has to be here.
+    /// @dev Without the guard the relayer is still repaid `amount + fee` from
+    ///      the source escrow, so the sender pays in full for a delivery that
+    ///      went nowhere and can never be recovered by anyone.
+    function test_anIntentPayingThisContractIsRefusedAtOpen() public {
+        SlowRelay.Intent memory i = _intent(address(0));
+        i.recipient = address(relay);
+        vm.deal(alice, AMOUNT + FEE);
+        vm.prank(alice);
+        vm.expectRevert(SlowRelay.BadIntent.selector);
+        relay.open{value: AMOUNT + FEE}(i);
+    }
+
+    /// @notice `cancel` is gated on `fillDeadline + PROOF_GRACE` and nothing
+    ///         else, so a deadline far enough out makes a refund unreachable
+    ///         forever. The escrow would have exactly one exit: a relayer
+    ///         choosing to fill.
+    function test_aDeadlineBeyondTheWindowIsRefused() public {
+        SlowRelay.Intent memory i = _intent(address(0));
+        i.fillDeadline = type(uint64).max;
+        vm.deal(alice, AMOUNT + FEE);
+        vm.prank(alice);
+        vm.expectRevert(SlowRelay.BadIntent.selector);
+        relay.open{value: AMOUNT + FEE}(i);
+    }
+
+    /// @notice And the bound is not so tight it refuses a real intent.
+    function test_aMonthOutIsStillAcceptable() public {
+        SlowRelay.Intent memory i = _intent(address(0));
+        i.fillDeadline = uint64(block.timestamp + 30 days);
+        vm.deal(alice, AMOUNT + FEE);
+        vm.prank(alice);
+        relay.open{value: AMOUNT + FEE}(i);
+        assertEq(uint8(relay.statusOf(relay.intentId(i))), uint8(SlowRelay.Status.OPEN));
+    }
+
     function _id(address tok, uint96 delay) internal pure returns (uint256) {
         return (uint256(delay) << 160) | uint256(uint160(tok));
     }

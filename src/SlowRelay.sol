@@ -386,8 +386,22 @@ contract SlowRelay {
         // `to != address(this)` and the 100-year delay ceiling, alongside the
         // zero-recipient and zero-amount cases.
         require(i.recipient != slow, BadIntent());
+        // AND NOT THIS CONTRACT, which `depositTo` does NOT refuse. A fill to
+        // `address(this)` with a zero delay deposits straight into
+        // `unlockedBalances[this][dstToken]` — the destination chain's own
+        // escrow pool — where no function can ever withdraw it, while the
+        // relayer is still repaid `amount + fee` from the source escrow. The
+        // sender loses the whole amount to a pool that pays it to nobody.
+        require(i.recipient != address(this), BadIntent());
         require(i.delay <= MAX_DELAY, BadIntent());
         require(i.fillDeadline > block.timestamp, DeadlinePassed());
+        // AN UPPER BOUND, because `cancel` is gated on
+        // `fillDeadline + PROOF_GRACE` and nothing else. A `fillDeadline` far
+        // enough out makes that condition unreachable, so the escrow has
+        // exactly one exit — a relayer choosing to fill — and no refund, ever.
+        // A fat-fingered value or a front-end bug is enough; the funds are the
+        // sender's own and there is no recovery.
+        require(i.fillDeadline <= block.timestamp + MAX_FILL_WINDOW, BadIntent());
     }
 
     function _record(bytes32 id, Intent calldata i, uint256 slowId) private {
@@ -641,6 +655,10 @@ contract SlowRelay {
     /// @dev SLOW's own timelock ceiling, mirrored so an intent that the
     ///      destination would refuse cannot be opened here in the first place.
     uint96 internal constant MAX_DELAY = 3155760000; // 100 years.
+
+    /// @dev How far out a `fillDeadline` may sit. Long enough for any relay
+    ///      anyone would wait for, short enough that `cancel` stays reachable.
+    uint64 internal constant MAX_FILL_WINDOW = 30 days;
 
     enum Kind {
         NONE,

@@ -37,7 +37,7 @@ import {SlowGuardianIndex} from "./SlowGuardianIndex.sol";
 ///                            shown the accounts it guards instead of being
 ///                            asked to type them in.
 ///
-/// @dev SIZE. 24,282 bytes of runtime against EIP-170's 24,576 — 294 to spare,
+/// @dev SIZE. 24,421 bytes of runtime against EIP-170's 24,576 — 155 to spare,
 ///      up from 21,648. The DAI-style and Permit2 entrypoints were already
 ///      dropped to buy that room (see `SlowPermit`), so the cheap headroom is
 ///      spent: anything added from here has to come out of those 294 bytes, or
@@ -193,7 +193,7 @@ contract SLOW is ERC1155, Multicallable, ReentrancyGuardTransient, SlowPermit, S
     ///      which put the page's ceiling in the CONSTRUCTOR'S ARITY rather than
     ///      in EIP-170 — two chunks, so 49,150 bytes, and `SlowPage` records
     ///      that the old page reached it with 47 bytes to spare. The page is now
-    ///      253,739 bytes across eleven chunks. There is no pair of arguments
+    ///      168,356 bytes across seven chunks. There is no pair of arguments
     ///      that can serve it, and the three ways of pretending otherwise were
     ///      all worse than fixing it: zero chunks makes `html()` REVERT on the
     ///      canonical address, the 49KB page that does fit predates the bridge
@@ -1220,6 +1220,9 @@ contract SLOWGate {
         _claimAndPay(transferId, msg.sender);
     }
 
+    /// @dev What one id in a batch may spend. See the note in `claimMany`.
+    uint256 internal constant _CLAIM_GAS = 250_000;
+
     /// @notice One id, on behalf of `payee`. Callable only by this contract.
     /// @dev The isolation primitive `claimMany` needs: a `try` needs an external
     ///      call, an external call rewrites `msg.sender`, and the tip has to
@@ -1242,7 +1245,22 @@ contract SLOWGate {
             // `unlock` destroyed it, ~18x leverage that scales with batch size.
             // Filtering off-chain, which the note above prescribes, cannot fix
             // it — the kill is a front-run, so no pre-flight read can see it.
-            try this.claimOne(transferIds[i], msg.sender) {} catch {}
+            //
+            // AND A GAS CAP, because the isolation is not isolation without
+            // one. `_doClaim` pays the recipient with `safeTransferETH`, which
+            // forwards everything it has, and `catch` swallows an out-of-gas
+            // exactly as it swallows a revert. So one recipient whose
+            // `receive()` spins until the budget is nearly gone consumes the
+            // gas every later id in the batch needed, and the keeper pays for
+            // a batch that settles almost none of it. Measured: a single
+            // hostile id in a batch of twelve burned 11.4M gas and took the
+            // whole call down with it.
+            //
+            // The cap is what a claim can honestly need, not what one might
+            // like: an ordinary settlement is under 100,000, and 250,000
+            // leaves room for a contract recipient doing real work on receipt
+            // while bounding a hostile one to its own share.
+            try this.claimOne{gas: _CLAIM_GAS}(transferIds[i], msg.sender) {} catch {}
         }
     }
 

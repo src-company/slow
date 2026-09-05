@@ -105,7 +105,6 @@ interface ISlowDeposit {
 ///      side, so wrapping it would silently mint a SLOW position in a token
 ///      that is not the one the sender named.
 contract SlowArrival {
-    using SlowOrigin for address;
 
     /// @notice The SLOW deployment this fronts.
     address public immutable slow;
@@ -188,6 +187,7 @@ contract SlowArrival {
     error NothingToRescue();
     error NoSlow();
     error BadRoute();
+    error BadRecipient();
     error TransferGone();
     error SendFailed();
 
@@ -218,6 +218,9 @@ contract SlowArrival {
             require(r.entry.code.length != 0, BadRoute());
             require(r.kind == KIND_OP || r.kind == KIND_ARB, BadRoute());
             require(r.gasLimit != 0, BadRoute());
+            // Same class as the two above: a zero ceiling on an Arbitrum route
+            // buys a ticket that can never auto-redeem, and there is no setter.
+            require(r.kind != KIND_ARB || r.maxFeePerGas != 0, BadRoute());
             routeTo[chainIds[i]] = r;
         }
     }
@@ -589,6 +592,11 @@ contract SlowArrival {
     function claimRescue(address to) external {
         uint256 amount = rescue[msg.sender];
         require(amount != 0, NothingToRescue());
+        // A send to the zero address succeeds and burns the balance, and a send
+        // to this contract lands in `receive()` where nothing can reach it.
+        // Both zero `rescue` first and emit `Rescued`, so the loss would read
+        // as a successful claim.
+        require(to != address(0) && to != address(this), BadRecipient());
         rescue[msg.sender] = 0;
         emit Rescued(msg.sender, amount);
         _sendETH(to, amount);
@@ -603,6 +611,7 @@ contract SlowArrival {
     ///      `onERC1155Received` here — hence the hooks below. The wrapper is
     ///      then burnt straight through to `to`.
     function reverse(uint256 transferId, address to) external {
+        require(to != address(this), BadRecipient());
         (address origin, uint256 id, uint256 amount) = _take(transferId);
         ISlowDeposit(slow).reverse(transferId);
         ISlowDeposit(slow).withdrawFrom(address(this), to, id, amount);
@@ -611,6 +620,7 @@ contract SlowArrival {
 
     /// @notice The same, 30 days past expiry, for a recipient who never settled.
     function clawback(uint256 transferId, address to) external {
+        require(to != address(this), BadRecipient());
         (address origin, uint256 id, uint256 amount) = _take(transferId);
         ISlowDeposit(slow).clawback(transferId);
         ISlowDeposit(slow).withdrawFrom(address(this), to, id, amount);
