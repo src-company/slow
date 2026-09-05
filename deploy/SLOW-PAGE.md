@@ -224,12 +224,15 @@ permanently.
 
 ## The next protocol build
 
-`src/SLOWNext.sol` is `SLOW.sol` with both extensions folded in, for the
-redeployment that puts one identical build on every chain. It is a separate file
-so the deployed source stays byte-reproducible: compiling `src/SLOW.sol` under
-solc 0.8.34, via-IR, 200 runs, prague still yields the **21,648-byte** runtime
-that is live on mainnet today — which is how the settings above were confirmed
-rather than assumed.
+`src/SLOW.sol` is the build for the redeployment that puts one identical
+contract on every chain. `src/SLOWv1.sol` is the frozen source of what is live
+on mainnet today, kept separate so the deployed source stays byte-reproducible:
+compiling it under solc 0.8.34, via-IR, 200 runs, prague still yields the
+**21,648-byte** runtime at `0x0000…AaBC` — which is how the settings above were
+confirmed rather than assumed.
+
+*(These two files were `SLOW.sol` and `SLOWNext.sol` before the rename. Older
+audit reports name `SLOWNext`; they mean what is now `src/SLOW.sol`.)*
 
 | build | runtime | under EIP-170 |
 | --- | --- | --- |
@@ -270,13 +273,18 @@ Read off the three chains directly, not assumed:
 | 4663 | **0 B** | free |
 
 **The canonical address is occupied on Base.** A CREATE3 deploy to an address
-that already holds code fails, so `SLOWNext` cannot land at `0x0000…AaBC` on
+that already holds code fails, so `src/SLOW.sol` cannot land at `0x0000…AaBC` on
 8453 — which means the address cannot be the one canonical address across all
 three chains. Either the new build goes to a freshly mined address on all three
 (and the page's `SLOW` constant moves with it, leaving mainnet's existing
 positions at the old address), or Base is dropped from the "same address
 everywhere" claim. This is a decision, not a detail: the address gets baked into
 an immutable page.
+
+**DECIDED: a freshly mined address on all three.** Mainnet's existing positions
+stay where they are, at `0x0000…AaBC`, reachable through the v1 page; the new
+build is a separate deployment that shares no state with it. Base is not
+dropped. The order that follows is what makes that safe to execute.
 
 The page already fails loudly here rather than silently — `probeDeployed`
 (`dapp/page.html:1824`) requires all five of `depositTo`, `getOutboundTransfers`,
@@ -285,6 +293,50 @@ Base's build is missing two, so it reports a mismatch instead of calling an
 entrypoint that is not there. The comment above that probe describes Base's old
 build in the past tense, as something fixed by a redeployment; that redeployment
 has not happened, and the old build is still live there today.
+
+### The order, for a fresh deployment on all three chains
+
+Four contracts, and the dependencies between them look circular until you notice
+that CREATE3 makes every address knowable before the code exists.
+
+| | contract | address from | needs |
+| --- | --- | --- | --- |
+| 1 | 11 chunks | plain CREATE, nonce-dependent | the pinned page |
+| 2 | `SlowPage` | CREATE3 salt `…67eb8140` | chunk addresses + SLOW's address |
+| 3 | `SLOW` | CREATE3, freshly mined salt | SlowPage's address |
+| 4 | `SlowArrival`, `SlowRelay` | CREATE3 salts `…5107a771`, `…772` | SLOW deployed, with code |
+
+The circularity is only apparent. `SlowPage` takes SLOW's address and SLOW takes
+`SlowPage`'s, but both are CREATE3 — derived from the steward and the salt alone,
+never from the initcode — so both are known before either is deployed. The
+chunks are the exception and do not need to be known: they are plain CREATE, so
+their addresses differ per chain with the deployer's nonce, and that is fine
+precisely because they are constructor *arguments* to `SlowPage` rather than
+part of its address.
+
+```
+0.  mine SLOW's salt          scripts/mine.c <steward> 00000000
+                              verify it against scripts/address.mjs before trusting it
+1.  set the constants         dapp/page.html   const SLOW = <mined address>
+                              manifest.json    protocol.slow, and the new salt
+2.  re-pin                    node scripts/pin.mjs
+3.  rehearse                  node test/deploy.rehearsal.mjs      (builds its own chunks)
+4.  per chain, in order:
+      node scripts/chunk.mjs                    -> out/chunk1..11.creation.txt
+      deploy each chunk                          plain CREATE, any sender
+      CreateX.deployCreate3(pageSalt,  SlowPage(slow, steward, 0, chunks, pageHash))
+      CreateX.deployCreate3(slowSalt,  SLOW(slowPage))
+      forge script script/DeployBridge.s.sol --sig "run(address,uint64)" <slow> 0x5107a771
+5.  validate                  node scripts/validate-bridge.mjs
+                              node scripts/verify.mjs
+```
+
+Step 1 before step 2 before step 4 is not a preference. The page embeds SLOW's
+address, the chunks are cut from the page, and `SlowPage`'s constructor reverts
+unless the chunks reassemble to `pageHash` — so a constant changed after the pin
+is a deployment that cannot be built, which is the failure landing in the right
+place. `SlowArrival`'s constructor likewise rejects a codeless `slow`, so step 4
+cannot run out of order either.
 
 ### If the deployer is CreateX
 

@@ -31,6 +31,16 @@ contract BridgeAddressTest is Test {
     address internal constant PUBLISHED_ARRIVAL = 0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918;
     address internal constant PUBLISHED_RELAY = 0x4eF8416ceaC4Bf23fe1804Dcc95be7B37a61aca6;
 
+    /// @dev The page contract, from `manifest.deployment`. Its counter is not
+    ///      part of the bridge's `+1` pair — it was mined separately — but the
+    ///      salt SHAPE is identical, so the same `_salt` derives it and the same
+    ///      assertion protects it. The manifest read `src/SLOW.sol` for this
+    ///      address while `chunks.artifact` read `SlowPage` and the rehearsal
+    ///      deployed SlowPage here; pinning the address is what makes the
+    ///      remaining question about naming rather than about which contract.
+    uint64 internal constant PAGE_NONCE = 0x67eb8140;
+    address internal constant PUBLISHED_PAGE = 0x000000006B4537003a5E0e550E44927b560a4854;
+
     function setUp() public {
         script_ = new DeployBridge();
     }
@@ -49,6 +59,27 @@ contract BridgeAddressTest is Test {
             PUBLISHED_RELAY,
             "SlowRelay is not where the manifest says it is"
         );
+    }
+
+    function test_theScriptProducesThePublishedPage() public view {
+        assertEq(
+            script_.predict(STEWARD, script_._salt(STEWARD, PAGE_NONCE)),
+            PUBLISHED_PAGE,
+            "SlowPage is not where the manifest and the rehearsal put it"
+        );
+    }
+
+    /// @notice Four contracts, one steward, four different addresses. A counter
+    ///         collision would put two of them on top of each other and the
+    ///         second deploy would simply revert, after the first had spent the
+    ///         address.
+    function test_theFourAddressesAreDistinct() public view {
+        address[3] memory a = [
+            script_.predict(STEWARD, script_._salt(STEWARD, ARRIVAL_NONCE)),
+            script_.predict(STEWARD, script_._salt(STEWARD, RELAY_NONCE)),
+            script_.predict(STEWARD, script_._salt(STEWARD, PAGE_NONCE))
+        ];
+        assertTrue(a[0] != a[1] && a[1] != a[2] && a[0] != a[2], "two share an address");
     }
 
     /// @notice `run` takes ONE nonce and derives the relay's as `+1`. If that

@@ -8,8 +8,11 @@ import {SSTORE2} from "@solady/src/utils/SSTORE2.sol";
 
 /// @notice The whole `SLOW.t.sol` suite, re-run against the build that ships.
 ///
-/// @dev WHY. `SLOW.t.sol` deploys `src/SLOW.sol` — the 21,648-byte runtime frozen
-///      on mainnet. It is not what the multichain deployment puts on chain.
+/// @dev WHY. `SLOW.t.sol` deploys `src/SLOWv1.sol` — the 21,648-byte runtime
+///      frozen on mainnet at `0x0000…AaBC`. It is not what the multichain
+///      deployment puts on chain. (Both files were renamed: what this comment
+///      used to call `SLOW.sol` is now `SLOWv1.sol`, and `SLOWNext.sol` is now
+///      `SLOW.sol`.)
 ///      `SLOWBuild` is the same source with two extensions folded in, but folding
 ///      them in moved every storage slot `SLOW` declares down by two and
 ///      recompiled the lot, so "the logic is unchanged" is an assertion, not a
