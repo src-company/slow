@@ -46,6 +46,15 @@ for t in test/*.test.mjs; do
   node "$t" || status=1
 done
 
+# The page suite again, against the artifact that actually gets deployed. This
+# is the equivalence check for `scripts/minify.mjs`: not an argument that the
+# strip preserves behaviour, but the same six-hundred-odd assertions passing on
+# its output. `dapp/page.min.html` is what `manifest.page` points at.
+if [ -f dapp/page.min.html ]; then
+  echo "· test/page.test.mjs  (against dapp/page.min.html)"
+  PAGE=dapp/page.min.html node test/page.test.mjs || status=1
+fi
+
 # The rehearsal is not a `*.test.mjs`, so the glob above never ran it — and it
 # sat broken across two page changes because of that. It reads whatever chunk
 # set is in `out/`, which is gitignored build output, so the one thing it could

@@ -25,6 +25,15 @@ import {MetadataReaderLib} from "@solady/src/utils/MetadataReaderLib.sol";
 interface ISlow {
     function getOutboundTransfers(address user) external view returns (uint256[] memory);
     function getInboundTransfers(address user) external view returns (uint256[] memory);
+    /// @dev The counted reads. These are what the windowed functions here run
+    ///      on, and the reason they can bound their gas at all — see the note
+    ///      on `_loadWindow`. Present on the deployed build as well as on the
+    ///      one being shipped, so pointing this lens at 0x0000...AaBC still
+    ///      works.
+    function outboundTransferCount(address user) external view returns (uint256);
+    function inboundTransferCount(address user) external view returns (uint256);
+    function outboundTransferAt(address user, uint256 index) external view returns (uint256);
+    function inboundTransferAt(address user, uint256 index) external view returns (uint256);
     function pendingTransfers(uint256 transferId)
         external
         view
@@ -136,8 +145,8 @@ contract SlowLens {
         account.guardian = SLOW.guardians(user);
         (account.pendingGuardian, account.pendingEffectiveAt) = SLOW.pendingGuardian(user);
 
-        outbound = _loadRange(SLOW.getOutboundTransfers(user), start, count);
-        inbound = _loadRange(SLOW.getInboundTransfers(user), start, count);
+        outbound = _loadWindow(user, true, start, count);
+        inbound = _loadWindow(user, false, start, count);
         account.outboundCount = outbound.length;
         account.inboundCount = inbound.length;
 
@@ -150,7 +159,7 @@ contract SlowLens {
         view
         returns (Transfer[] memory)
     {
-        return _loadRange(SLOW.getOutboundTransfers(user), start, count);
+        return _loadWindow(user, true, start, count);
     }
 
     /// @notice Inbound window.
@@ -159,16 +168,24 @@ contract SlowLens {
         view
         returns (Transfer[] memory)
     {
-        return _loadRange(SLOW.getInboundTransfers(user), start, count);
+        return _loadWindow(user, false, start, count);
     }
 
     /// @notice Raw set lengths, so a caller knows how far to page. These are
     ///         the unfiltered lengths SLOW keeps, unlike the counts in
     ///         `Account`, which describe a returned window after stale ids are
     ///         dropped.
+    /// @dev COUNTED, NOT MEASURED OFF THE ARRAY. This is the function a caller
+    ///      reaches for FIRST when the whole read has already failed, so it is
+    ///      the one that must not fail the same way. Asking
+    ///      `getInboundTransfers(user).length` materialises the entire set to
+    ///      learn a number SLOW keeps in a storage slot: measured at 2,000
+    ///      planted rows, 4,789,584 gas against 10,614 for
+    ///      `inboundTransferCount`. Past a few thousand rows the paging
+    ///      primitive was the most expensive call on the contract.
     function counts(address user) external view returns (uint256 outbound, uint256 inbound) {
-        outbound = SLOW.getOutboundTransfers(user).length;
-        inbound = SLOW.getInboundTransfers(user).length;
+        outbound = SLOW.outboundTransferCount(user);
+        inbound = SLOW.inboundTransferCount(user);
     }
 
     /// @notice Confirm, in one call, which of `candidates` this account guards.
@@ -206,30 +223,70 @@ contract SlowLens {
     ///      or clawed back — and those read as `timestamp == 0`. They are
     ///      dropped here so the interface never has to filter, and the array is
     ///      shortened in place rather than copied.
+    ///
+    ///      This is the WHOLE-SET form, and it inherits the whole set's cost on
+    ///      purpose: `viewOf` promises everything in one call and there is no
+    ///      way to keep that promise cheaply. A caller whose account has been
+    ///      stuffed uses `viewOfAt` / `inboundOfAt`, which do not come through
+    ///      here.
     function _load(uint256[] memory ids) internal view returns (Transfer[] memory out) {
-        return _loadRange(ids, 0, ids.length);
+        uint256 len = ids.length;
+        out = new Transfer[](len);
+        uint256 n;
+        for (uint256 i; i != len; ++i) {
+            (Transfer memory t, bool live) = _one(ids[i]);
+            if (live) out[n++] = t;
+        }
+        assembly ("memory-safe") {
+            mstore(out, n)
+        }
     }
 
-    /// @dev The windowed form every public read is built on. `start` past the
-    ///      end returns empty and `count` is clamped to what remains, so a
-    ///      caller can walk a list it cannot size in advance without ever
-    ///      reverting. The clamp is computed BEFORE the add, outside
-    ///      `unchecked`: `start + count` with a large count wraps, and the
-    ///      wrapped value can land below `len`, which would turn "pass a big
+    /// @dev The windowed form every paginating read is built on.
+    ///
+    ///      IT COUNTS AND INDEXES; IT DOES NOT SLICE AN ARRAY, and that is the
+    ///      entire point of the function. The window exists because
+    ///      `_inboundTransfers` is a set anyone can grow with dust deposits at a
+    ///      delay the victim cannot outlast, and past a few thousand rows
+    ///      `getInboundTransfers` no longer fits in an `eth_call`. Reading that
+    ///      getter and then slicing the result in memory pays the whole cost to
+    ///      return one row — measured at 2,000 planted rows, 4,796,911 gas for a
+    ///      one-row window against 4,806,920 for the entire set, 99.8% of it —
+    ///      so the escape hatch escaped nothing and the account view stayed dead
+    ///      exactly as before. `inboundTransferAt(i)` is 10,065 gas at the same
+    ///      size and does not grow with the set.
+    ///
+    ///      POSITIONS ARE UNSTABLE, which is the price. `EnumerableSetLib`
+    ///      swaps with the last element on remove, so a row can be missed or
+    ///      repeated between two pages if something settles in between. That is
+    ///      SLOW's own documented caveat on `inboundTransferAt`, it is why
+    ///      `viewOf` still exists for accounts small enough to read whole, and
+    ///      it is a far smaller problem than not being able to read at all.
+    ///
+    ///      `start` past the end returns empty and `count` is clamped to what
+    ///      remains, so a caller can walk a list it cannot size in advance
+    ///      without ever reverting. The clamp is computed BEFORE the add,
+    ///      outside `unchecked`: `start + count` with a large count wraps, and
+    ///      the wrapped value can land below `len`, which would turn "pass a big
     ///      count for the rest" into an underflowed length.
-    function _loadRange(uint256[] memory ids, uint256 start, uint256 count)
+    function _loadWindow(address user, bool outbound, uint256 start, uint256 count)
         internal
         view
         returns (Transfer[] memory out)
     {
-        uint256 len = ids.length;
+        uint256 len = outbound ? SLOW.outboundTransferCount(user) : SLOW.inboundTransferCount(user);
         if (start >= len) return new Transfer[](0);
         uint256 room = len - start;
         uint256 take = count < room ? count : room;
         out = new Transfer[](take);
         uint256 n;
         for (uint256 i; i != take; ++i) {
-            (Transfer memory t, bool live) = _one(ids[start + i]);
+            // `start + i < len` by the clamp above, so this cannot wrap and
+            // cannot ask SLOW for an index it does not have.
+            uint256 tid = outbound
+                ? SLOW.outboundTransferAt(user, start + i)
+                : SLOW.inboundTransferAt(user, start + i);
+            (Transfer memory t, bool live) = _one(tid);
             if (live) out[n++] = t;
         }
         assembly ("memory-safe") {

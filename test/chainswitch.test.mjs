@@ -66,7 +66,7 @@ const captured = {};
 globalThis.__capture = captured;
 new Function(`${logic}\n;Object.assign(globalThis.__capture,{
   S, el, cfg, CHAINS, CHAIN_IDS, MAINNET, SLOW, switchChain, renderList, renderGuard,
-  buildTokenGrid, wardsKey, ZERO,
+  buildTokenGrid, wardsKey, ZERO, canBridge,
 });`)();
 const C = captured;
 
@@ -107,6 +107,16 @@ const PER_CHAIN = [
   // position on a different chain. Carried across, the Withdraw dialog would
   // offer a withdrawal that cannot exist.
   'exit', 'exitPlan',
+  // Whether the connected account holds CODE is a fact about one chain, and it
+  // is the fact `canBridge` uses to decide whether an OP Stack bridge keeps the
+  // reverse. It was probed once per account, against whichever chain was active
+  // when the wallet connected, and never cleared here — so a smart account
+  // deployed on Base but still counterfactual on mainnet read `false` on Base
+  // and KEPT that reading after the reader switched the portal to Ethereum to
+  // send. That is the one configuration where the answer matters, answered from
+  // the wrong chain, in the direction that offers a route whose position lands
+  // under `applyAlias(account)` with no reverse and no clawback.
+  'accountIsContract',
 ];
 // `guard` is checked field by field: its transient flags are expected to be
 // true straight after a switch, because the switch starts the reload.
@@ -125,6 +135,7 @@ Object.assign(C.S, {
   out: [{id: '1'}], inb: [{id: '2'}],
   hasGuardian: true,
   balance: 123n,
+  accountIsContract: false,
   autoClaim: true, tip: 675000000000000n, unlocked: [{id: '1', raw: 5n}],
   token: '0xabc', symbol: 'X', amount: '1.5', step: 2,
   guard: {
@@ -190,6 +201,50 @@ for (const from of C.CHAIN_IDS) {
     eq(C.S.token, null, `${from} -> ${to}: asset cleared`);
     eq(C.S.detail, null, `${from} -> ${to}: open detail cleared`);
   }
+}
+
+/* ─── The stale answer, played out as the session that produces it ─────────
+ *
+ * The field-by-field check above proves `accountIsContract` is cleared. This
+ * proves it MATTERED, because the shape of the bug is not obvious from the
+ * field list: the stale value is not merely wrong, it is wrong in the one
+ * direction that opens a route rather than closing one.
+ *
+ * A smart account — a Safe — deployed on Base and still counterfactual on
+ * mainnet. The reader lands with their wallet on Base, so the probe runs
+ * against Base and answers "no code". They switch the portal to Ethereum to
+ * send. `OptimismPortal` aliases a depositor whenever `msg.sender != tx.origin`,
+ * so the position that lands on Base belongs to `applyAlias(account)` — an
+ * address with no key on either side — and the review screen has promised a
+ * reverse and a recovery that do not exist.
+ */
+{
+  const snap = {...C.S};
+  Object.assign(C.S, {
+    chain: 8453,
+    account: '0x00000000000000000000000000000000000005Af',
+    accountIsContract: false,          // what eth_getCode said ON BASE
+    slowDeployed: {1: true, 8453: true, 4663: true},
+    arrivalDeployed: {1: false, 8453: false, 4663: false},
+  });
+
+  C.switchChain(1);
+
+  eq(C.S.accountIsContract, null,
+    'the answer does not survive the switch: it was read on the wrong chain');
+  eq(C.canBridge(1, 8453), false,
+    'and the route stays shut until the mainnet probe answers');
+
+  // Once it answers, and the account really is a contract, it stays shut for
+  // the right reason.
+  C.S.accountIsContract = true;
+  eq(C.canBridge(1, 8453), false, 'a contract account cannot keep its reverse on OP Stack');
+  // An EOA on the same path is unaffected — the fix must not close a route that
+  // was always safe.
+  C.S.accountIsContract = false;
+  eq(C.canBridge(1, 8453), true, 'and an EOA still bridges');
+
+  Object.assign(C.S, snap);
 }
 
 // ─── The ward list is keyed by chain and account ───────────────────────────

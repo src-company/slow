@@ -1076,22 +1076,40 @@ async function loadBridgeRoutes(){
    This is also what the built-in bridge routes use, so the two cannot drift:
    there is one construction, and the bridge is just its first caller.
 */
+/* THE RECIPE AND THE BRIDGE ARE ONE CONSTRUCTION, and they had drifted under
+   the comment above saying they could not: this called `innerDepositCalldata`
+   without `destChain`, so `bridgeVia(undefined)` always answered null, and
+   hardcoded `to: SLOW`. The prose offers this call to "bridges this page has
+   never heard of", and the un-wrapped shape is the one whose `pt.from` becomes
+   the bridge — the defect SlowArrival exists to fix, handed out by the page
+   that fixed it.
+
+   ROUTED ON `S.dest`, NOT ON THE CHAIN. A local call stays on `depositTo`: the
+   caller is the depositor, `SLOW.reverse` is theirs directly, and a failure
+   reverts where they can see it. `arrive` is right only when something
+   cross-chain stands in between, which is what `S.dest` says. */
 function depositRecipe(){
   if(!ready()) return null;
   const isETH = S.token===ZERO;
   let wei;
   try { wei = parseUnits(S.amount, S.decimals); } catch(e){ return null; }
   const chain = S.dest || S.chain;
+  // Only a cross-chain delivery goes through the arrival; a local recipe is a
+  // plain deposit and keeps the plain reverse.
+  const via = S.dest ? bridgeVia(S.dest) : null;
   return {
     chainId: chain,
     chainName: cfg(chain).name,
-    to: SLOW,
+    to: isETH && via ? via : SLOW,
     data: isETH
-      ? innerDepositCalldata(S.resolved, S.delay)
+      ? innerDepositCalldata(S.resolved, S.delay, S.dest || undefined)
       : cd(SEL.depositTo, ['address','address','uint256','uint96','bytes'],
           [S.token, S.resolved, wei, BigInt(S.delay), '0x']),
     value: isETH ? wei : 0n,
     note: isETH ? null : `Requires an allowance of ${S.amount} ${S.symbol} to ${SLOW} first.`,
+    // Named, because the reverse does not land where a plain deposit puts it.
+    via: isETH ? via : null,
+    origin: isETH && via ? (S.account || ZERO) : null,
   };
 }
 function recipeText(r){
@@ -1101,6 +1119,12 @@ function recipeText(r){
     `value: ${r.value} wei`,
     `data:  ${r.data}`,
     r.note ? `note:  ${r.note}` : null,
+    r.via ? `note:  Through SlowArrival ${r.via}, so the reverse survives the crossing.`
+          : null,
+    r.via ? `       Held for ${r.origin} — the originHint in the calldata, and the only`
+          : null,
+    r.via ? `       address SlowArrival.reverse/.clawback answer to. Send via a bridge.`
+          : null,
   ].filter(Boolean).join('\n');
 }
 
@@ -1211,23 +1235,18 @@ async function destGasLimit(destChain, recipient){
   }
 }
 
-async function bridgePlan(destChain, recipient, delay, weiAmount){
+/* What a bridged send costs BEYOND the amount sent. Split out of `bridgePlan`
+   because `maxSpendable` needs the same number and was not asking for it: Max
+   reserved only a local deposit's gas, so Max-then-bridge to Arbitrum built a
+   `msg.value` of the whole balance plus submission fee plus prepaid L2 gas.
+   One computation, two callers, so they cannot disagree. */
+async function bridgeCosts(destChain, recipient, delay){
   const b = BRIDGES[destChain];
-  if(!b) throw new Error(`No bridge route to ${cfg(destChain).name}`);
   const inner = innerDepositCalldata(recipient, delay, destChain);
-  const target = bridgeTarget(destChain);
   const l2Gas = await destGasLimit(destChain, recipient);
-
-  if(b.kind==='op'){
-    // depositTransaction(to, value, gasLimit, isCreation, data); msg.value funds it.
-    return {
-      to:b.entry,
-      data: cd(SEL.depositTransaction, ['address','uint256','uint256','bool','bytes'],
-        [target, weiAmount, l2Gas, false, inner]),
-      value: weiAmount,
-      parts: [['Bridged', weiAmount]],
-    };
-  }
+  // OP Stack takes no ETH beyond the payload: the destination gas is paid by
+  // burning L1 gas inside the portal, which is charged as gas and not as value.
+  if(b.kind!=='arb') return {inner, l2Gas, submission:0n, maxFee:0n, prepaid:0n, extra:0n};
 
   // Arbitrum: the ticket is bought on L1, so msg.value carries the call value
   // plus the submission fee plus the L2 gas it is prepaying for.
@@ -1248,13 +1267,32 @@ async function bridgePlan(destChain, recipient, delay, weiAmount){
   catch(e){ maxFee = cfg(destChain).fallbackGasPrice * 2n; }
   if(maxFee < cfg(destChain).minGasPrice) maxFee = cfg(destChain).minGasPrice;
 
-  const gasLimit = l2Gas;
-  const prepaid = gasLimit * maxFee;
+  const prepaid = l2Gas * maxFee;
+  return {inner, l2Gas, submission, maxFee, prepaid, extra: submission + prepaid};
+}
+
+async function bridgePlan(destChain, recipient, delay, weiAmount){
+  const b = BRIDGES[destChain];
+  if(!b) throw new Error(`No bridge route to ${cfg(destChain).name}`);
+  const target = bridgeTarget(destChain);
+  const {inner, l2Gas, submission, maxFee, prepaid} = await bridgeCosts(destChain, recipient, delay);
+
+  if(b.kind==='op'){
+    // depositTransaction(to, value, gasLimit, isCreation, data); msg.value funds it.
+    return {
+      to:b.entry,
+      data: cd(SEL.depositTransaction, ['address','uint256','uint256','bool','bytes'],
+        [target, weiAmount, l2Gas, false, inner]),
+      value: weiAmount,
+      parts: [['Bridged', weiAmount]],
+    };
+  }
+
   return {
     to:b.entry,
     data: cd(SEL.createRetryableTicket,
       ['address','uint256','uint256','address','address','uint256','uint256','bytes'],
-      [target, weiAmount, submission, S.account, S.account, gasLimit, maxFee, inner]),
+      [target, weiAmount, submission, S.account, S.account, l2Gas, maxFee, inner]),
     value: weiAmount + submission + prepaid,
     parts: [['Bridged', weiAmount], ['Ticket', submission], ['Destination gas', prepaid]],
   };
@@ -1279,8 +1317,16 @@ const canBridge = (fromChain, toChain) => {
   // account bridging to Base without SlowArrival lands under an address nobody
   // holds, and its reverse and clawback are just as dead as on Nitro — while
   // the review screen promises both. An EOA is unaffected and keeps bridging.
+  //
+  // NOT KNOWN TO BE AN EOA IS NOT KNOWN TO BE ONE. Both tests below read
+  // `=== true` and so treated an unanswered `eth_getCode` — a cold RPC, a probe
+  // still in flight — as proof of an EOA, opening the one route where being
+  // wrong kills the reverse. `slowDeployed` and `arrivalDeployed` both treat
+  // unknown as closed; so does this. With no wallet there is nothing to probe
+  // and nothing to send, so the row stays open until `setAccount` answers.
+  const notProvenEOA = !!S.account && S.accountIsContract !== false;
   if(S.arrivalDeployed[toChain] !== true
-     && (b.kind === 'arb' || S.accountIsContract === true)) return false;
+     && (b.kind === 'arb' || notProvenEOA)) return false;
   // A SECOND REASON TO REFUSE THE SAME ROUTE, and SlowArrival does not fix this
   // one. `Inbox.createRetryableTicket` ALIASES both refund addresses when they
   // hold code on L1, so a smart account named there has its excess submission
@@ -1292,7 +1338,7 @@ const canBridge = (fromChain, toChain) => {
   // only honest option: the alternative is offering a send that quietly costs
   // more than the review screen says, on a page whose whole claim is that the
   // money comes back.
-  if(b.kind === 'arb' && S.accountIsContract === true) return false;
+  if(b.kind === 'arb' && notProvenEOA) return false;
   return true;
 };
 const cfg = id => CHAINS[id ?? S.chain] || CHAINS[MAINNET];
@@ -1318,10 +1364,9 @@ const SEL = {
   depositTransaction:'0xe9e05c42',           // OP Stack portal
   createRetryableTicket:'0x679b6ded',        // Arbitrum Orbit inbox
   calcSubmissionFee:'0xa66b327d',
-  estimateRetryableTicket:'0xc3dc5879',      // Arbitrum NodeInterface
   allRoutes:'0x71da4170',                    // SlowBridgeRegistry
   deployments:'0x24495881',                  // deployments(bytes32,uint256)
-  unlockedBalances:'0x5b96484e', nonces:'0x7ecebe00', guardianNonces:'0xeac43b4a',
+  unlockedBalances:'0x5b96484e', guardianNonces:'0xeac43b4a',
   gateAddr:'0x7a0ebc88', tips:'0xa5c68c59', refundTip:'0xd27e1e72',
   // ERC-20
   approve:'0x095ea7b3', allowance:'0xdd62ed3e', decimals:'0x313ce567',
@@ -2114,6 +2159,10 @@ function switchChain(id){
   // chain it was read from.
   S.guard={guardian:null, pending:null, wards:[], open:null, loading:false, scanning:false};
   S.detail=null; S.dest=null; S.unlocked=[]; S.exit=null; S.exitPlan=null;
+  // Whether the account holds code is a fact about ONE chain, and it decides
+  // whether an OP Stack bridge keeps the reverse. Carried across it is stale in
+  // the direction that OPENS a route. See probeAccountCode.
+  probeAccountCode();
   // Priced from cfg().minGasPrice/minTip, so inherently per-chain.
   S.autoClaim=false; S.tip=0n;
   if(el.autoClaimChk) el.autoClaimChk.checked=false;
@@ -2186,6 +2235,29 @@ async function checkDeployed(){
   ]);
   if(S.chain===id){ paintDeployed(); buildDestRow(); }
 }
+/* Does this account hold code ON THE CHAIN IT WOULD SEND FROM? It decides
+   whether an OP Stack bridge keeps the reverse: the portal aliases a depositor
+   only when `msg.sender != tx.origin`.
+
+   PER CHAIN, NOT PER ACCOUNT, and that is the fix. This ran only from
+   `setAccount`, against whichever chain was active when the wallet connected,
+   and `switchChain` did not clear it — so a smart account deployed on Base but
+   counterfactual on mainnet read `false` on Base and kept it after switching to
+   Ethereum to send. Left null on a failed read; `canBridge` refuses on null. */
+function probeAccountCode(){
+  const acct=S.account, chain=S.chain;
+  S.accountIsContract=null;
+  if(!acct) return;
+  rpc('eth_getCode',[acct,'latest'],chain).then(c=>{
+    if(S.account!==acct||S.chain!==chain) return;
+    S.accountIsContract = typeof c==='string' && c.length>4;
+    // The destination row is gated on this: a contract account loses its
+    // reverse on OP Stack too, so the row has to be rebuilt once the answer
+    // lands rather than left showing what it showed while unknown.
+    buildDestRow();
+    render();
+  }).catch(()=>{});
+}
 function setAccount(a){
   const acct=a;
   S.account=acct; S.ensName=null; S.balance=null;
@@ -2198,19 +2270,7 @@ function setAccount(a){
   hideAllModals();
   paintWallet(); paintNet();
   reverseAny(acct).then(n=>{ if(S.account===acct){ S.ensName=n; paintWallet(); } }).catch(()=>{});
-  // Does this account have code? It decides whether an OP-stack bridge keeps
-  // the reverse: the portal aliases a depositor only when it is a contract, so
-  // an EOA lands as itself and a smart account does not. Left null on any
-  // failure — the guard tests for `=== true`, so an unknown never blocks.
-  rpc('eth_getCode',[acct,'latest'],S.chain).then(c=>{
-    if(S.account!==acct) return;
-    S.accountIsContract = typeof c==='string' && c.length>4;
-    // The destination row is gated on this: a contract account loses its
-    // reverse on OP Stack too, so the row has to be rebuilt once the answer
-    // lands rather than left showing what it showed while unknown.
-    buildDestRow();
-    render();
-  }).catch(()=>{});
+  probeAccountCode();
   if(S.view==='take') loadTransfers(true);
   if(S.view==='guard') loadGuard();
   if(S.token) refreshBalance();
@@ -2498,6 +2558,16 @@ async function deposit(){
   const value = isETH ? wei + S.tip : S.tip;
   const valueHex = value>0n ? '0x'+value.toString(16) : '0x0';
 
+  /* CHECKED WHERE THE NUMBER IS FINAL. `maxSpendable` reserves for the tip and
+     the bridge fees, but nothing stops a reader taking Max and THEN ticking
+     auto-claim or picking a destination, against a reserve computed for a
+     cheaper transaction. Whatever order the form was filled in, this names the
+     shortfall instead of leaving the wallet to reject it. */
+  const shortfall = need => S.balance!==null && need>S.balance
+    ? `This needs ${fmtAmt(need,18)} ETH and you have ${fmtAmt(S.balance,18)}. `
+      + `Lower the amount — Max leaves room for the fees.`
+    : null;
+
   // One L1 transaction that bridges the ETH and lands inside depositTo on the
   // far side, rather than bridging and then depositing.
   if(S.dest){
@@ -2514,12 +2584,19 @@ async function deposit(){
     if(!canBridge(S.chain, S.dest))
       throw new Error(`A transfer to ${cfg(S.dest).short} could not be reversed or recovered from this account`);
     const b = await bridgePlan(S.dest, S.resolved, S.delay, wei);
+    const short = shortfall(b.value);
+    if(short) throw new Error(short);
     txShow(`Sending to ${cfg(S.dest).short}`, 'Confirm in your wallet');
     const h = await sendTx({from:S.account, to:b.to, data:b.data, value:'0x'+b.value.toString(16)});
     S.lastHash=h;
     txShow(`Sending to ${cfg(S.dest).short}`, 'Waiting for the L1 confirmation', h);
     await waitTx(h);
     return;
+  }
+
+  if(isETH){
+    const short = shortfall(value);
+    if(short) throw new Error(short);
   }
 
   const plan = await planDeposit(wei);
@@ -3225,8 +3302,13 @@ function buildDestRow(){
     b.type='button'; b.className='opt'; b.dataset.dest=String(id);
     b.textContent=label;
     b.disabled=!live;
+    // Three reasons, not the same news. The third — the account's code is not
+    // known yet — used to read as the second, blaming the reader's account for
+    // a question the page had not finished asking.
     b.title = live ? ''
       : S.slowDeployed[id]!==true ? `SLOW is not deployed on ${cfg(id).name} yet`
+      : (S.account && S.accountIsContract===null)
+        ? `Still checking whether this account can be reversed from on ${cfg(id).name}`
       : `A transfer bridged to ${cfg(id).name} from this account could not be reversed or recovered`;
     b.setAttribute('aria-pressed', String((S.dest||MAINNET)===id));
     row.appendChild(b);
@@ -3240,10 +3322,11 @@ function buildDestRow(){
   // neither must not be offerable.
   for(const id of opts) mk(id, cfg(id).short, canBridge(S.chain, id));
   const live = opts.filter(id=>canBridge(S.chain, id)).length;
+  const checking = !!S.account && S.accountIsContract===null;
   // A destination that stopped qualifying (the account turned out to be a
   // contract, a probe came back) must not stay selected underneath the row.
   if(S.dest && !canBridge(S.chain, S.dest)) S.dest=null;
-  el.destHint.textContent = live ? '' : 'awaiting deployment';
+  el.destHint.textContent = live ? '' : checking ? 'checking…' : 'awaiting deployment';
 }
 
 function buildTokenGrid(){
@@ -3856,7 +3939,13 @@ function renderGuard(){
     const a=document.createElement('span');
     a.textContent = g.pending.guardian.toLowerCase()===ZERO ? 'Remove the guardian' : `→ ${g.pending.guardian}`;
     const b=document.createElement('span'); b.className='sub';
-    b.textContent = ready ? 'Ready to commit. Anyone may commit it.'
+    // NOT "anyone may commit it", which the shipping build deliberately stopped
+    // being true: `commitGuardian` now requires `msg.sender == user ||
+    // msg.sender == guardians[user]`, because a permissionless commit lets the
+    // guardian being installed front-run the late abort described above.
+    // Naming the two parties is also true on the older deployment, where anyone
+    // may commit — it is simply not exhaustive there.
+    b.textContent = ready ? 'Ready to commit. You or your current guardian can land it.'
                           : `Commits in ${fmtTime(g.pending.at-nw())}. Either you or your current guardian can still cancel.`;
     p.append(a,b);
     el.gCommit.disabled=!ready;
@@ -3985,13 +4074,24 @@ function guardWritable(){
   }
   return true;
 }
+/* THREE OUTCOMES, NOT TWO. `SLOW.setGuardian` has a branch this had no label
+   for: submitting the address that is ALREADY the guardian stages nothing — it
+   cancels any in-flight rotation and returns. The page said "Staged. Commit it
+   after 1 day.", the opposite of what happened, and said nothing about the
+   rotation it had just withdrawn. */
 async function setGuardianTx(addr){
   if(!guardWritable()) return;
-  const staged = !!S.guard.guardian;
+  const cur = (S.guard.guardian||'').toLowerCase();
+  const same = !!cur && addr.toLowerCase()===cur;
+  const staged = !!S.guard.guardian && !same;
+  const hadPending = !!S.guard.pending;
   try {
     await slowTx(cd(SEL.setGuardian,['address'],[addr]),
-      staged?'Staging the change…':'Setting your guardian…','Confirm in your wallet');
-    toast(staged
+      same ? 'Keeping your guardian…' : staged ? 'Staging the change…' : 'Setting your guardian…',
+      'Confirm in your wallet');
+    toast(same
+      ? (hadPending ? 'Kept. The pending change was cancelled.' : 'No change — that is already your guardian.')
+      : staged
       ? `Staged. Commit it after ${fmtTime(GUARD_DELAY)}.`
       : (addr.toLowerCase()===ZERO?'Guardian removed.':'Guardian set.'), 6000);
     loadGuard();
@@ -4279,9 +4379,18 @@ async function previewPlan(){
 /* ══════════════════════════════════════════════════════════════════
    Amount
    ══════════════════════════════════════════════════════════════════ */
+/* Max must leave room for everything the transaction actually costs, and it
+   left room for one of three. `deposit()` spends `wei + tip` locally and
+   `wei + submission + prepaid` bridged, on a much larger L1 gas bill; this
+   reserved a flat 220,000 units. Over-reserving leaves dust behind,
+   under-reserving wastes the send. */
 async function maxSpendable(){
   if(S.balance===null) return null;
   if(S.token!==ZERO) return S.balance;
+  // A bridge deposit is a bigger L1 transaction than a local one: OP Stack
+  // BURNS L1 gas in the portal in proportion to the destination gas bought, and
+  // the Arbitrum ticket is a large calldata payload. Neither is 220,000.
+  const units = S.dest ? 600_000n : 220_000n;
   // Native ETH has to keep enough back to pay for its own deposit.
   let reserve=3_000_000_000_000_000n;
   try {
@@ -4289,8 +4398,20 @@ async function maxSpendable(){
     const base=BigInt(fh.baseFeePerGas.at(-1));
     let prio=BigInt(fh.reward?.at(-1)?.[0]||0);
     if(prio<1_000_000_000n) prio=1_000_000_000n;
-    reserve=220_000n*(base*2n+prio);
+    reserve=units*(base*2n+prio);
   } catch(e){}
+  // The keeper tip rides in the same `msg.value` as the amount.
+  if(S.autoClaim){
+    try {
+      if(!S.tip) S.tip = await estimateTip(S.token);
+      reserve += S.tip;
+    } catch(e){}
+  }
+  // And so do the Arbitrum ticket's submission fee and prepaid destination gas.
+  if(S.dest && BRIDGES[S.dest]){
+    try { reserve += (await bridgeCosts(S.dest, S.resolved || S.account, S.delay || 0)).extra; }
+    catch(e){}
+  }
   return S.balance>reserve ? S.balance-reserve : 0n;
 }
 function setAmount(v){

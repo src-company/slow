@@ -13,11 +13,19 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const html = fs.readFileSync(path.join(ROOT, 'dapp/page.html'), 'utf8');
+// The page under test, so the SAME assertions can be run against the built
+// artifact. `dapp/page.min.html` is what gets pinned, chunked and deployed, and
+// an argument that it behaves like the source is worth less than these
+// six-hundred-odd checks passing on both. See scripts/minify.mjs.
+const PAGE = process.env.PAGE || 'dapp/page.html';
+const html = fs.readFileSync(path.join(ROOT, PAGE), 'utf8');
 
 // ─── Extract the logic half of the page script ─────────────────────────────
 const body = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
-const cut = body.indexOf('   Wiring');
+// 'Wiring', not '   Wiring'. The banner is preserved in the built artifact but
+// its indentation is not — `minify.mjs` strips leading whitespace, which is
+// four chunks of the saving. The word appears exactly once in either file.
+const cut = body.indexOf('Wiring');
 if (cut < 0) throw new Error('Wiring banner not found — did the page structure change?');
 const logic = body.slice(body.indexOf('{') + 1, body.lastIndexOf('/*', cut));
 
@@ -506,6 +514,58 @@ ok(!'alice.gwei'.endsWith('.wei'), 'the suffix collision the dispatch avoids doe
   Object.assign(C.S, snap);
 }
 
+/* THE RECIPE AND THE BRIDGE ARE ONE CONSTRUCTION, and they had silently
+   stopped being one. `bridgePlan` calls `innerDepositCalldata(recipient, delay,
+   destChain)` and targets `bridgeTarget(destChain)`; `depositRecipe` called it
+   with the third argument missing — so `bridgeVia(undefined)` always answered
+   null — and hardcoded `to: SLOW`. The comment above the function claimed the
+   two could not drift, and nothing checked it.
+
+   What that cost: the prose offers this call to "bridges this page has never
+   heard of", and the un-wrapped shape is exactly the one whose
+   `pendingTransfers[id].from` becomes the bridge or an address with no key.
+   The page would have been handing out the defect SlowArrival exists to fix. */
+{
+  const snap = {...C.S};
+  Object.assign(C.S, {chain: 1, token: C.ZERO, symbol: 'ETH', decimals: 18,
+    amount: '0.5', delay: 3600, resolved: '0x000000000000000000000000000000000000dEaD',
+    account: '0x000000000000000000000000000000000000bEEF',
+    arrivalDeployed: {8453: true}});
+
+  // Local: still a plain deposit. Routing a same-chain call through `arrive`
+  // would move its reverse behind SlowArrival.reverse and turn a revert into a
+  // silent rescue credit, for nothing.
+  C.S.dest = null;
+  const local = C.depositRecipe();
+  eq(local.to, C.SLOW, 'a local recipe still targets SLOW directly');
+  eq(local.data.slice(0, 10), C.SEL.depositTo, 'and calls depositTo');
+  ok(!local.via, 'and names no arrival');
+
+  // Cross-chain: through SlowArrival, exactly as bridgePlan builds it.
+  C.S.dest = 8453;
+  const viaArrival = C.depositRecipe();
+  eq(viaArrival.to, C.bridgeTarget(8453), 'a cross-chain recipe targets the arrival');
+  eq(viaArrival.data, C.innerDepositCalldata(C.S.resolved, C.S.delay, 8453),
+    'with byte-identical calldata to the one the bridge route builds');
+  eq(viaArrival.data.slice(0, 10), C.SEL.arrive, 'which is arrive(), not depositTo()');
+  eq(viaArrival.value, 500000000000000000n, 'the ETH still rides as value');
+
+  // And the copied text has to say so: whoever runs this needs to know the
+  // reverse is held for the originHint and not for them.
+  const txt = C.recipeText(viaArrival);
+  ok(txt.includes(C.bridgeTarget(8453)), 'the text names the arrival it routes through');
+  ok(txt.includes(C.S.account), 'and the origin the reverse is held for');
+
+  // With no arrival deployed there, it falls back to the plain shape rather
+  // than dialling an address that is not there.
+  C.S.arrivalDeployed = {};
+  const bare = C.depositRecipe();
+  eq(bare.to, C.SLOW, 'no arrival on the destination: back to SLOW');
+  eq(bare.data.slice(0, 10), C.SEL.depositTo, 'and to depositTo');
+
+  Object.assign(C.S, snap);
+}
+
 // ─── What the second hunt found ────────────────────────────────────────────
 
 // The `el` map is built last-wins from every [id]. A dead modal carrying the
@@ -779,16 +839,22 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
 // aliases the sender of every retryable, so without SlowArrival the position
 // that lands there can never be reversed.
 {
-  const snap = {chain: C.S.chain, deployed: C.S.slowDeployed, arrival: C.S.arrivalDeployed};
+  const snap = {chain: C.S.chain, deployed: C.S.slowDeployed, arrival: C.S.arrivalDeployed,
+                isC: C.S.accountIsContract};
   C.S.slowDeployed = {8453: true, 4663: true};
   C.S.arrivalDeployed = {};
+  // A PROVEN EOA, stated rather than inherited. The OP Stack case turns on
+  // whether the account holds code, so a test about the OP Stack case that
+  // leaves that unset is testing whatever the previous block happened to leave.
+  C.S.accountIsContract = false;
   eq(C.canBridge(1, 8453), true, 'Base is offered: OP Stack passes an EOA through unaliased');
   eq(C.canBridge(1, 4663), false, 'Robinhood is refused while the reverse would be dead');
   C.S.arrivalDeployed = {4663: true};
   eq(C.canBridge(1, 4663), true, 'and offered once SlowArrival is there to hold the reverse');
   C.S.slowDeployed = {8453: true, 4663: false};
   eq(C.canBridge(1, 4663), false, 'SLOW itself is still required');
-  Object.assign(C.S, {chain: snap.chain, slowDeployed: snap.deployed, arrivalDeployed: snap.arrival});
+  Object.assign(C.S, {chain: snap.chain, slowDeployed: snap.deployed, arrivalDeployed: snap.arrival,
+                      accountIsContract: snap.isC});
 }
 
 // The same argument reaches one case on OP Stack. The portal aliases a
@@ -804,8 +870,13 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
 
   C.S.accountIsContract = false;
   eq(C.canBridge(1, 8453), true, 'an EOA still bridges to Base without SlowArrival');
+  // NOT KNOWN TO BE AN EOA IS NOT KNOWN TO BE ONE. This asserted the opposite —
+  // "an unknown account never blocks" — which made a failed or in-flight
+  // `eth_getCode` open a route whose reverse the page cannot vouch for, on the
+  // one account shape where the reverse dies. Every other gate here (
+  // `slowDeployed`, `arrivalDeployed`) treats unknown as closed; so does this.
   C.S.accountIsContract = null;
-  eq(C.canBridge(1, 8453), true, 'an unknown account never blocks: the guard tests === true');
+  eq(C.canBridge(1, 8453), false, 'an unknown account is refused: unknown is not proof of an EOA');
   C.S.accountIsContract = true;
   eq(C.canBridge(1, 8453), false, 'a contract account is refused while its reverse would be dead');
   C.S.arrivalDeployed = {8453: true};
@@ -851,9 +922,20 @@ eq(C.BRIDGES[4663].entry, '0x1A07cc4BD17E0118BdB54D70990D2158AbAD7a2D', 'the Rob
   // The reverse of the same mistake: the guard reading a stale answer. S.dest
   // survives an account change, and whether the reverse survives the crossing
   // depends on the account.
-  ok(/buildDestRow\(\)/.test(body.slice(body.indexOf('function setAccount('),
-                                        body.indexOf('function disconnect('))),
-    'setAccount rebuilds the destination row once it knows if the account has code');
+  ok(/buildDestRow\(\)/.test(src('probeAccountCode')),
+    'the code probe rebuilds the destination row once it knows if the account has code');
+  ok(/probeAccountCode\(\)/.test(body.slice(body.indexOf('function setAccount('),
+                                            body.indexOf('function disconnect('))),
+    'setAccount probes the account for code');
+  // AND ON EVERY CHAIN SWITCH. An account's code is a fact about ONE chain, and
+  // this probe used to run only on an account change. A smart account deployed
+  // on Base but counterfactual on mainnet read `false` on Base and kept it after
+  // switching the portal to Ethereum to send — the exact configuration where
+  // the answer decides whether the bridged position can be reversed, answered
+  // from the wrong chain.
+  ok(/probeAccountCode\(\)/.test(body.slice(body.indexOf('function switchChain('),
+                                            body.indexOf('const REQUIRED_SELECTORS'))),
+    'switchChain re-probes it: account code is a per-chain fact');
 }
 
 // The inbound index is the one part of an account's state a stranger can write
@@ -974,7 +1056,12 @@ ok(C.SEL.approveTransfer !== C.SEL.predictWithdrawalId,
 // chain without one becomes a blank square with no way to tell where you are.
 {
   for (const id of C.CHAIN_IDS) {
-    ok(new RegExp(`\\n  ${id}:'<svg`).test(html), `chain ${id} has a mark`);
+    // `\n\s*`, not `\n  `. The property being asserted is that the chain HAS a
+    // mark, not that its line is indented two spaces — and the deployed
+    // artifact has no leading indentation at all, which is four chunks of the
+    // page's cost. The newline still anchors it to the start of a property, so
+    // `14663:` cannot satisfy a check for `4663:`.
+    ok(new RegExp(`\\n\\s*${id}:'<svg`).test(html), `chain ${id} has a mark`);
   }
 }
 
