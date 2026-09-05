@@ -6,7 +6,7 @@
   "pageSource": "dapp/page.html",
   "pageNote": "`page` is what is pinned, chunked and deployed; `pageSource` is what is read and tested. They differ by comments and indentation only - 82,651 bytes of them, four chunks, about 30% of the deployment. scripts/minify.mjs builds one from the other and test/minify.test.mjs holds them together; scripts/test.sh runs the whole page suite against BOTH.",
   "bytes": 168356,
-  "sha256": "00f1c38193046277296577acebabad2f7579e246e6ad23a4a1c1e7139dda3a07",
+  "sha256": "64ee99e0f2f07828aadf4f598e891a0f67cfbe36ef5d3232cb76793f1c035eb4",
   "chunks": {
     "artifact": "SlowPage",
     "maxPayload": 24575,
@@ -14,8 +14,8 @@
   },
   "protocol": {
     "chainId": 1,
-    "slow": "0x000000000000888741B254d37e1b27128AfEAaBC",
-    "note": "0x0000...AaBC is v1, live on Ethereum and named by the page until the redeployment lands. The build being deployed is src/SLOW.sol; v1's source is src/SLOWv1.sol. See `deployment` for the address it goes to.",
+    "slow": "0x000000006513B7821171C8447ec7ECdfa3b956Fd",
+    "note": "This is the canonical SLOW: one build at one address on every chain listed. Source is src/SLOW.sol. src/SLOWv1.sol is the frozen source of an earlier, separate deployment that shares no state with this one and is not referenced by this page.",
     "chains": {
       "1": "Ethereum",
       "8453": "Base",
@@ -23,10 +23,11 @@
     }
   },
   "deployment": {
-    "contract": "0x000000006B4537003a5E0e550E44927b560a4854",
-    "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20000000000000000067eb8140",
+    "contract": "0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc",
+    "salt": "0x68575b073de49a94e3e3acf6f3a0d6e3b66267c7000000000000000067eb8140",
     "create3Deployer": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
-    "steward": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20",
+    "deployer": "0x68575B073DE49a94e3E3ACf6F3A0d6E3b66267C7",
+    "initialSteward": "0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20",
     "chains": [
       1,
       8453,
@@ -48,25 +49,28 @@
   "bridge": {
     "note": "SlowArrival and SlowRelay, CREATE3 through the same steward and deployer as the page. Addresses derived before deployment and checked free on all three chains.",
     "create3Deployer": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
-    "steward": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20",
+    "deployer": "0x68575B073DE49a94e3E3ACf6F3A0d6E3b66267C7",
+    "initialSteward": "0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20",
     "chains": [
       1,
       8453,
       4663
     ],
+    "slowSalt": "0x68575b073de49a94e3e3acf6f3a0d6e3b66267c700000000000000003f111306",
+    "slowAddress": "0x000000006513B7821171C8447ec7ECdfa3b956Fd",
     "saltNonce": "0x5107a771",
     "contracts": {
       "SlowArrival": {
-        "address": "0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918",
-        "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a2000000000000000005107a771",
+        "address": "0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f",
+        "salt": "0x68575b073de49a94e3e3acf6f3a0d6e3b66267c700000000000000005107a771",
         "source": "src/SlowArrival.sol",
         "constructorArgs": [
           "SLOW on that chain"
         ]
       },
       "SlowRelay": {
-        "address": "0x4eF8416ceaC4Bf23fe1804Dcc95be7B37a61aca6",
-        "salt": "0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a2000000000000000005107a772",
+        "address": "0xC58C217791E397550492c4F84a6995Db60aDE2da",
+        "salt": "0x68575b073de49a94e3e3acf6f3a0d6e3b66267c700000000000000005107a772",
         "source": "src/SlowRelay.sol",
         "constructorArgs": [
           "SLOW on that chain",

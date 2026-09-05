@@ -43,9 +43,13 @@ const m = loadManifest();
 // A published address nobody can reproduce is a route that never opens: the
 // page probes for code, finds none, and reports a chain that is not ready.
 {
-  const steward = m.deployment.steward;
+  // THE DEPLOYER AND THE STEWARD ARE DIFFERENT KEYS, and conflating them is
+  // how a deployment ends up owned by the wrong one. `deployer` prefixes the
+  // salt and sends the transaction; `initialSteward` is passed to SlowPage's
+  // constructor and is the only one that holds anything afterwards.
+  const steward = m.deployment.deployer;
   eq(m.deployment.salt.slice(0, 42), steward,
-    'the page salt is sender-prefixed to the steward');
+    'the page salt is sender-prefixed to the deployer');
   ok(m.deployment.salt.slice(42, 44) === '00',
     'and byte 20 is clear, so block.chainid stays out of CreateX\'s guard');
   eq(createxAddress(m.deployment.salt, steward, 1), m.deployment.contract,
@@ -59,16 +63,37 @@ const m = loadManifest();
   }
 }
 
+// ─── the protocol contract's own mined salt ───────────────────────────────
+{
+  const b = m.bridge;
+  eq(b.slowSalt.slice(0, 42), b.deployer, 'the SLOW salt is sender-prefixed');
+  ok(b.slowSalt.slice(42, 44) === '00', 'and chain-independent');
+  eq(createxAddress(b.slowSalt, b.deployer, 1), b.slowAddress,
+    'bridge.slowAddress is what the mined salt derives');
+  eq(b.slowAddress.toLowerCase(), m.protocol.slow.toLowerCase(),
+    'and it is the address the page transacts against');
+  for (const id of b.chains) {
+    eq(createxAddress(b.slowSalt, b.deployer, id), b.slowAddress,
+      `SLOW is the same address on chain ${id}`);
+  }
+  // Four contracts, four salts, four distinct addresses. A counter collision
+  // would put the second deploy on top of the first, after the first had
+  // already spent the address.
+  const all = [m.deployment.contract, b.slowAddress,
+    ...Object.values(b.contracts).map((c) => c.address)].map((a) => a.toLowerCase());
+  eq(new Set(all).size, all.length, 'all four addresses are distinct');
+}
+
 // ─── the bridge pair, same treatment ───────────────────────────────────────
 {
   const b = m.bridge;
   for (const [name, c] of Object.entries(b.contracts)) {
-    eq(c.salt.slice(0, 42), b.steward, `${name}: salt is sender-prefixed`);
+    eq(c.salt.slice(0, 42), b.deployer, `${name}: salt is sender-prefixed`);
     ok(c.salt.slice(42, 44) === '00', `${name}: byte 20 is clear`);
-    eq(createxAddress(c.salt, b.steward, 1), c.address,
+    eq(createxAddress(c.salt, b.deployer, 1), c.address,
       `${name}: the published address is what the salt derives`);
     for (const id of b.chains) {
-      eq(createxAddress(c.salt, b.steward, id), c.address,
+      eq(createxAddress(c.salt, b.deployer, id), c.address,
         `${name}: identical on chain ${id}`);
     }
   }
@@ -100,9 +125,9 @@ const m = loadManifest();
   }
   if (mine) {
     const known = [
-      ['SlowPage', m.deployment.salt, m.deployment.steward, m.deployment.contract],
+      ['SlowPage', m.deployment.salt, m.deployment.deployer, m.deployment.contract],
       ...Object.entries(m.bridge.contracts).map(([n, c]) =>
-        [n, c.salt, m.bridge.steward, c.address]),
+        [n, c.salt, m.bridge.deployer, c.address]),
     ];
     for (const [name, salt, sender, want] of known) {
       const out = execFileSync(mine, [sender, '--check', salt], {encoding: 'utf8'});

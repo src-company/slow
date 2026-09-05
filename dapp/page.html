@@ -813,7 +813,7 @@ body{overscroll-behavior:none}
 /* ══════════════════════════════════════════════════════════════════
    Constants
    ══════════════════════════════════════════════════════════════════ */
-const SLOW    = '0x000000000000888741B254d37e1b27128AfEAaBC';
+const SLOW    = '0x000000006513B7821171C8447ec7ECdfa3b956Fd';
 const ZERO    = '0x0000000000000000000000000000000000000000';
 const ENS_REG = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e';
 const WNS     = '0x0000000000696760E15f265e828DB644A0c242EB';
@@ -1036,7 +1036,7 @@ const BRIDGE_REGISTRY = null;   // set once deployed on mainnet
    Until it is deployed, `probeArrival` finds no code and every route that
    needs it stays closed. The address being wrong is therefore a route that
    never opens, not a route that sends somewhere else. */
-const SLOW_ARRIVAL = '0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918';
+const SLOW_ARRIVAL = '0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f';
 const KIND_BY_ID = {1:'op', 2:'arb'};
 async function loadBridgeRoutes(){
   if(!BRIDGE_REGISTRY || S.routesLoaded) return;

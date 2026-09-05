@@ -20,16 +20,20 @@ import {DeployBridge} from "../script/DeployBridge.s.sol";
 contract BridgeAddressTest is Test {
     DeployBridge internal script_;
 
-    /// @dev The steward the page's own address rests on. Salt bytes 0..19.
-    address internal constant STEWARD = 0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20;
+    /// @dev The DEPLOYER, which is what salt bytes 0..19 must equal — CreateX
+    ///      guards as `keccak256(sender ++ salt)`, so this address and the
+    ///      published ones stand or fall together. It is NOT the steward:
+    ///      stewardship is a constructor argument and goes to a different key,
+    ///      so the deployer holds nothing once the transaction is mined.
+    address internal constant STEWARD = 0x68575B073DE49a94e3E3ACf6F3A0d6E3b66267C7;
 
     /// @dev The counters from the runbook. `run` derives the relay's as +1.
     uint64 internal constant ARRIVAL_NONCE = 0x5107a771;
     uint64 internal constant RELAY_NONCE = 0x5107a772;
 
     /// @dev What the page, the manifest and the runbook all name.
-    address internal constant PUBLISHED_ARRIVAL = 0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918;
-    address internal constant PUBLISHED_RELAY = 0x4eF8416ceaC4Bf23fe1804Dcc95be7B37a61aca6;
+    address internal constant PUBLISHED_ARRIVAL = 0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f;
+    address internal constant PUBLISHED_RELAY = 0xC58C217791E397550492c4F84a6995Db60aDE2da;
 
     /// @dev The page contract, from `manifest.deployment`. Its counter is not
     ///      part of the bridge's `+1` pair — it was mined separately — but the
@@ -39,7 +43,7 @@ contract BridgeAddressTest is Test {
     ///      deployed SlowPage here; pinning the address is what makes the
     ///      remaining question about naming rather than about which contract.
     uint64 internal constant PAGE_NONCE = 0x67eb8140;
-    address internal constant PUBLISHED_PAGE = 0x000000006B4537003a5E0e550E44927b560a4854;
+    address internal constant PUBLISHED_PAGE = 0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc;
 
     function setUp() public {
         script_ = new DeployBridge();

@@ -3,13 +3,13 @@
  * The whole deployment, on a throwaway chain, before any of it costs money.
  *
  * The manifest names a mined CREATE3 address, a salt, CreateX as the deployer
- * and a steward. Each of those has been checked on its own; none of them has
+ * and a deployer. Each of those has been checked on its own; none of them has
  * been exercised together, and the parts that can go wrong only go wrong in
  * combination — a salt CreateX guards differently than expected, a chunk list
  * in the wrong order, a page hash committed before the page it describes.
  *
  * So: put the real CreateX runtime at its canonical address, impersonate the
- * steward, deploy the chunks, deploy SlowPage through CREATE3 with the manifest
+ * deployer, deploy the chunks, deploy SlowPage through CREATE3 with the manifest
  * salt, and then ask the chain the questions verify.mjs will ask mainnet:
  *
  *   does it land on the address the manifest promises?
@@ -91,9 +91,11 @@ try {
   await rpc('anvil_setCode', [D.create3Deployer, live]);
   ok((await rpc('eth_getCode', [D.create3Deployer, 'latest'])) !== '0x', 'CreateX is at its canonical address');
 
-  // The salt is permissioned: only the steward may use it. Fund and impersonate.
-  await rpc('anvil_setBalance', [D.steward, '0x21e19e0c9bab2400000']);
-  await rpc('anvil_impersonateAccount', [D.steward]);
+  // The salt is permissioned: only the DEPLOYER may use it. That is a different
+  // key from the steward — the deployer sends the transaction and holds nothing
+  // afterwards; the steward is a constructor argument and holds the lineage.
+  await rpc('anvil_setBalance', [D.deployer, '0x21e19e0c9bab2400000']);
+  await rpc('anvil_impersonateAccount', [D.deployer]);
 
   // ── the chunks, exactly as chunk.mjs emits them ──────────────────────────
   // Emitted HERE AND NOW rather than found. `chunk.mjs` reads the page through
@@ -134,7 +136,7 @@ try {
   };
   const pageHash = await keccak(page);
 
-  const ctor = w(m.protocol.slow) + w(D.steward) + w(0) + w(160) + strip(pageHash)
+  const ctor = w(m.protocol.slow) + w(D.initialSteward) + w(0) + w(160) + strip(pageHash)
     + w(chunks.length) + chunks.map((c) => w(c)).join('');
   const initcode = art.bytecode.object + ctor;
 
@@ -142,7 +144,7 @@ try {
   const SEL = '0x9c36a286';
   const data = SEL + w(D.salt) + w(64) + w((initcode.length - 2) / 2)
     + strip(initcode).padEnd(Math.ceil((initcode.length - 2) / 64) * 64, '0');
-  const r = await mined({from: D.steward, to: D.create3Deployer, data, gas: '0x2000000'});
+  const r = await mined({from: D.deployer, to: D.create3Deployer, data, gas: '0x2000000'});
   const logged = '0x' + r.logs[r.logs.length - 1].topics[1].slice(26);
   eq(logged, D.contract, 'CREATE3 lands on the address the manifest promises');
 
@@ -182,8 +184,12 @@ try {
   eq(BigInt(await call(PAGE, await sel('chunkCount()'))), BigInt(chunks.length), 'chunkCount agrees');
   eq('0x' + strip(await call(PAGE, await sel('SLOW()'))).slice(24), m.protocol.slow.toLowerCase(),
     'and it names the protocol contract the page transacts against');
-  eq('0x' + strip(await call(PAGE, await sel('steward()'))).slice(24), D.steward.toLowerCase(),
-    'with the steward the manifest names');
+  // THE POINT OF THE SPLIT: the page is deployed by one key and stewarded by
+  // another, and the deployer must hold nothing when the transaction is done.
+  eq('0x' + strip(await call(PAGE, await sel('steward()'))).slice(24), D.initialSteward.toLowerCase(),
+    'stewardship lands with the steward, not the deployer');
+  ok(D.initialSteward.toLowerCase() !== D.deployer.toLowerCase(),
+    'and those are genuinely different keys');
 
   // ERC-4804 and ERC-5219: what a gateway asks before it will serve anything.
   //

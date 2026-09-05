@@ -1253,7 +1253,19 @@ const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lu
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
-eq(C.SLOW.toLowerCase(), '0x000000000000888741b254d37e1b27128afeaabc', 'SLOW address');
+// The canonical SLOW, one address on every chain. Pinned against the manifest
+// rather than against a literal, so the page and the deployment cannot drift
+// apart — a page naming an address the deployment does not use is a dapp that
+// builds every transaction against the wrong contract.
+{
+  const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+  eq(C.SLOW.toLowerCase(), man.protocol.slow.toLowerCase(),
+    'the page names the SLOW the manifest deploys');
+  eq(C.SLOW_ARRIVAL.toLowerCase(), man.bridge.contracts.SlowArrival.address.toLowerCase(),
+    'and the SlowArrival the manifest deploys');
+  ok(C.SLOW.toLowerCase() !== '0x000000000000888741b254d37e1b27128afeaabc',
+    'and is not the earlier, separate deployment');
+}
 eq(C.MC3, '0xcA11bde05977b3631167028862bE2a173976CA11', 'Multicall3 canonical address');
 eq(C.ENS_REG, '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e', 'ENS registry');
 eq(C.WNS, '0x0000000000696760E15f265e828DB644A0c242EB', 'WNS registry');

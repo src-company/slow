@@ -7,11 +7,11 @@ Chain. This is the runbook; the reasoning lives in the contracts.
 
 |              | address                                      | salt tail    |
 | ------------ | -------------------------------------------- | ------------ |
-| SlowArrival  | `0xCd42F279E58bdc1de6aE84D9ea2636fDc6eC8918` | `0x5107a771` |
-| SlowRelay    | `0x4eF8416ceaC4Bf23fe1804Dcc95be7B37a61aca6` | `0x5107a772` |
+| SlowArrival  | `0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f` | `0x5107a771` |
+| SlowRelay    | `0xC58C217791E397550492c4F84a6995Db60aDE2da` | `0x5107a772` |
 
-Deployer `CreateX` `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, steward
-`0x1c0aa8ccd568d90d61659f060d1bfb1e6f855a20` — the same pair the page's own
+Deployer `CreateX` `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, deployer
+`0x68575B073DE49a94e3E3ACf6F3A0d6E3b66267C7` — the same pair the page's own
 address rests on. Both derived before deployment, identical on all three chains,
 and checked free on all three.
 
