@@ -12,11 +12,37 @@ Wrap once, then send, hold, and reverse with safety rails. Any token, any delay,
 ## Try it
 
 - **Contract:** [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://contractscan.xyz/contract/0x000000006513B7821171C8447ec7ECdfa3b956Fd) — the same address on Ethereum, Base and Robinhood Chain
-- **Onchain dapp (served by the contract via `html()`):** https://0x000000000000888741b254d37e1b27128afeaabc.w4eth.io/
+- **Onchain dapp (served by the contract via `html()`):** https://0x6e2ca0ebf103fb2a2a7ebe2cb12f7de3a88bdcbc.w4eth.io/
 - **Hosted dapp:** https://slow.wei.limo/
 - **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skills/slow) (`SKILL.md` + JSON CLI).
 
-The contract embeds its own frontend in two SSTORE2 chunks; `w4eth.io` resolves the on-chain HTML over the web for convenience, but the dapp can be reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](./erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
+### Deployed
+
+One build, one address per contract, on all three chains.
+
+| contract | address | runtime |
+| --- | --- | --- |
+| `SLOW` | [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://etherscan.io/address/0x000000006513B7821171C8447ec7ECdfa3b956Fd) | 24,466 B |
+| `SlowPage` | [`0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc`](https://etherscan.io/address/0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc) | 3,827 B |
+| `SlowArrival` | [`0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f`](https://etherscan.io/address/0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f) | 4,916 B |
+| `SlowRelay` | [`0xC58C217791E397550492c4F84a6995Db60aDE2da`](https://etherscan.io/address/0xC58C217791E397550492c4F84a6995Db60aDE2da) | 10,598 B |
+
+Deployed through CreateX with sender-prefixed, chain-independent salts, so the
+addresses come from the deployer and salt alone and are identical on Ethereum,
+Base and Robinhood Chain — which `SlowRelay.receiveRelay` depends on, since it
+authenticates a cross-chain proof by checking the origin equals its own address.
+Verified on Etherscan for Ethereum and Base; Robinhood Chain's explorer is a
+Blockscout instance behind a challenge that blocks automated submission.
+
+`SlowPage`'s stewardship — the only privileged role anywhere in the system — was
+set in its constructor rather than transferred afterwards, so the deploying key
+never held it. `SLOW`, `SlowArrival` and `SlowRelay` have no owner at all.
+
+`node scripts/validate-bridge.mjs` checks the live deployment: 29/29.
+
+The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
+`w4eth.io` resolves that over the web for convenience, but the dapp can be
+reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](./erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
 
 This repo ships its own resolver in [`gateway/`](./gateway) so you can host it yourself. It's a zero-dependency Node server (`node gateway/server.js`) that reads the target contract from the leftmost DNS label of `<0xADDRESS>.<yourdomain>`, makes one `eth_call` to `html()`, and serves the decoded document. It round-robins a pool of keyless public mainnet RPCs and fails over on any transient error, so it boots with no configuration; set `RPC_URL` (comma-separated) to put your own endpoints first. `index.html` is a client-only variant of the same resolver.
 
