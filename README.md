@@ -26,12 +26,17 @@ One build, one address per contract, on all three chains.
 | `SlowPage` | [`0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc`](https://etherscan.io/address/0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc) | 3,827 B |
 | `SlowArrival` | [`0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f`](https://etherscan.io/address/0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f) | 4,916 B |
 | `SlowRelay` | [`0xC58C217791E397550492c4F84a6995Db60aDE2da`](https://etherscan.io/address/0xC58C217791E397550492c4F84a6995Db60aDE2da) | 10,598 B |
+| `SlowLens` | [`0xC9C4a3d3dd3714B08b2138080F1d143585531d4D`](https://etherscan.io/address/0xC9C4a3d3dd3714B08b2138080F1d143585531d4D) | 5,918 B |
+| `SLOWGate` | [`0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34`](https://etherscan.io/address/0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34) | 1,808 B |
 
 Deployed through CreateX with sender-prefixed, chain-independent salts, so the
 addresses come from the deployer and salt alone and are identical on Ethereum,
 Base and Robinhood Chain — which `SlowRelay.receiveRelay` depends on, since it
 authenticates a cross-chain proof by checking the origin equals its own address.
-Verified on Etherscan for Ethereum and Base; Robinhood Chain's explorer is a
+`SLOWGate` is not deployed by hand — `SLOW`'s constructor creates it at a fixed
+CREATE2 salt, so it lands at the same address wherever `SLOW` does, and it
+custodies relayer tips. All six are verified on Etherscan for Ethereum and Base;
+Robinhood Chain's explorer is a
 Blockscout instance behind a challenge that blocks automated submission.
 
 `SlowPage`'s stewardship — the only privileged role anywhere in the system — was
