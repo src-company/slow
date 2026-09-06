@@ -38,7 +38,15 @@ Blockscout instance behind a challenge that blocks automated submission.
 set in its constructor rather than transferred afterwards, so the deploying key
 never held it. `SLOW`, `SlowArrival` and `SlowRelay` have no owner at all.
 
-`node scripts/validate-bridge.mjs` checks the live deployment: 29/29.
+`node scripts/validate-bridge.mjs` checks the live deployment: 29/29, and
+`node scripts/watch.mjs` re-checks it any time — runtimes, wiring, stewardship,
+and whether anything has started using the unwired relay.
+
+**[Operating rules](./deploy/OPERATING-RULES.md)** — eight rules that make the
+deployed contracts safe without changing them. Three matter to anyone
+integrating directly: an L2→L1 `arrive` message carries no bounty, relayers fill
+from an EOA, and relay senders are EOAs. Breaking one costs the integrator, not
+the protocol.
 
 The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
 `w4eth.io` resolves that over the web for convenience, but the dapp can be
