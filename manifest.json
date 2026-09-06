@@ -172,7 +172,40 @@
         "L2 -> L1 OP finalisation (SlowArrival.forward): needs the ~7 day withdrawal window",
         "L2 -> L1 ArbSys exit on Orbit (SlowRelay.proveFill): needs the ~6.4 day challenge period",
         "SlowRelay end to end: needs a funded relayer with inventory on both legs"
-      ]
+      ],
+      "pending": {
+        "note": "Both initiated 2026-09-06 with dust and bounty zero (operating rule 1). Each exercises a SlowOrigin.recover branch no live transaction has taken yet. Neither can be hurried; both need a second L1 transaction once their window opens.",
+        "base-to-ethereum": {
+          "leg": "L2 -> L1, OptimismPortal withdrawal",
+          "branch": "branch 1 — msg.sender is the OptimismPortal, so l2Sender() answers and the origin is AUTHENTICATED",
+          "initiatedTx": "0x94e289816c7b0a7d4878fc379ab430a35167632821d56869b1e1c0f9dcd3f22b",
+          "initiatedBlock": 50958655,
+          "target": "SlowArrival.arrive on chain 1",
+          "value": "20000000000000",
+          "l1GasLimit": 600000,
+          "remaining": "prove once the output root posts (~1-2h), then finalise after the 7 day challenge period",
+          "hazard": "finalizeWithdrawalTransaction marks the withdrawal finalized BEFORE calling the target and does not revert on failure, so a revert in arrive would strand the ETH permanently. Bounty is zero, which is what keeps the EIP-7702 finaliser defect out of reach."
+        },
+        "robinhood-to-ethereum": {
+          "leg": "L2 -> L1, ArbSys.sendTxToL1",
+          "branch": "branch 3 — msg.sender is the BRIDGE, so activeOutbox() then l2ToL1Sender() answers; also AUTHENTICATED",
+          "initiatedTx": "0xf66a81ef9390ade075a6bb38622b7de1a74f04f9a20b81ef767d35af40beca9d",
+          "initiatedBlock": 56066628,
+          "outboxIndex": 2058,
+          "target": "SlowArrival.arrive on chain 1",
+          "value": "20000000000000",
+          "remaining": "execute through the Outbox with a merkle proof after the ~6.4 day challenge period",
+          "note": "Arbitrum reverts atomically on a failed execution, so unlike the OP leg this message stays replayable."
+        }
+      },
+      "relay-open": {
+        "leg": "SlowRelay.open on Base — the first live use of the relay contract",
+        "tx": "0x24de6f195064328f2f92df15faf679f55537cabc1a0e99c472513bc11ad05362",
+        "intentId": "0x768630df2bc90e4cbc1fbbbbe4cdcaaf11c7434b2ec9b59a73f805bef4ce40e2",
+        "route": "Base -> Robinhood, 100000000000000 wei at 100bps",
+        "verified": "statusOf reads OPEN; the id in the Opened event equals the one derived from the fields independently. relayer/index.mjs found it on chain, recomputed the id, read the escrow from the source and the fill state from the destination, priced it at ~57% apr over the 6.4 day return leg and reported WOULD FILL.",
+        "escrowUnlocks": "fillDeadline + PROOF_GRACE (8 days) — cancellable from 2026-09-14, recovering the dust"
+      }
     }
   }
 }

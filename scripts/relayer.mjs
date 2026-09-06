@@ -278,7 +278,11 @@ if (invokedDirectly) {
   const key = process.env.RELAYER_KEY;
   console.log(key ? 'LIVE — will send fills' : 'DRY RUN — reads only, sends nothing');
   console.log('');
-  console.log('SlowRelay is not deployed yet, so there is nothing to watch.');
+  console.log('This file is the DECISION, not the watcher: it decides whether an');
+  console.log('intent is worth filling and explains why not. The loop that watches');
+  console.log('for intents and signs the fills is relayer/index.mjs, which imports');
+  console.log('`assess` from here rather than restating it.');
+  console.log('');
   console.log('The decision logic is exercised by test/relayer.test.mjs, and the');
   console.log('rules it enforces are documented at the top of this file.');
   console.log('');
