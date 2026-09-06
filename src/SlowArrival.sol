@@ -122,7 +122,7 @@ contract SlowArrival {
     /// @dev Enough to take the failure branch — one SSTORE to a cold slot, the
     ///      event, and the return — after the deposit attempt has been given
     ///      everything else.
-    uint256 private constant FAILURE_RESERVE = 60_000;
+    uint256 private constant FAILURE_RESERVE = 100_000;
 
     /// @dev A bounty goes to an EOA. Bounded so a hostile finaliser contract
     ///      cannot consume the reserve the failure branch is holding.
@@ -365,7 +365,20 @@ contract SlowArrival {
             // a value call to a codeless address returns success, so `paid`
             // would be true and the rescue below would not fire. No bounty is
             // owed on those routes in any case.
-            if (tx.origin == msg.sender) {
+            // A `tx.origin` carrying code is paid through `rescue`, not called.
+            // Under EIP-7702 an EOA can hold a delegation and still send
+            // transactions, so a finaliser controls both `tx.origin` and how
+            // much gas resolving it costs. The delegation lookup plus the
+            // callee's own burn pushes the failure tail past what the reserve
+            // holds, and on the OP leg the portal has already marked the
+            // withdrawal finalized — the message is gone. Measured: a
+            // delegated finaliser reverted `arrive` across a 275,000-291,000
+            // gas band where a plain one succeeded.
+            //
+            // Refusing the call removes the lever rather than out-reserving it,
+            // which is the treatment `_push` already gives a code-bearing
+            // origin. The bounty is not lost: it is claimable from `rescue`.
+            if (tx.origin == msg.sender || tx.origin.code.length != 0) {
                 rescue[origin] += pay;
             } else {
                 (bool paid,) = tx.origin.call{value: pay, gas: BOUNTY_GAS}("");

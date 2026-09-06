@@ -94,26 +94,37 @@ route covers the gas limit, so freezing remains a complete handback.
 
 ---
 
-## One finding neither confirmed nor refuted
+## The one High finding: confirmed, and mitigated without a redeploy
 
-An agent reports that a finaliser whose `tx.origin` carries an **EIP-7702
-delegation** can force `arrive` to revert on the OP L2→L1 leg inside a ~13,000-gas
-band, permanently stranding the withdrawal — the delegation lookup adds ~2,600
-gas and puts the failure tail at ~68–74k against a 60,000 reserve.
+A finaliser whose `tx.origin` carries an **EIP-7702 delegation** can force
+`arrive` to revert on the OP L2→L1 leg, permanently stranding the withdrawal.
+The delegation lookup plus the callee's burn pushes the failure tail past the
+60,000-gas reserve.
 
-**Attempted reproduction failed, and the harness was faulty**, so this is
-recorded as open rather than as confirmed or dismissed: no deposit landed at any
-gas level in the reproduction, meaning there was nothing for a divergence to
-appear in.
+**Reproduced.** Against the deployed behaviour, with `bounty = 0.01 ether`, a
+delegated finaliser reverted `arrive` across **275,000–291,000 gas** where a
+plain one succeeded. A first reproduction attempt failed and was discarded as
+unsound — its harness landed no deposit at any gas level, so there was nothing
+for a divergence to appear in.
 
-Scope, if real: it needs `bounty != 0` on an **L2→L1** arrival. The dapp builds
-no L2→L1 arrivals — every route is `from: 1` — and `SlowArrival.forward` has no
-caller. The L1→L2 leg was swept separately (150k–400k gas, hostile recipients,
-non-zero bounty) with **zero reverts**, because there the bounty credits `rescue`
-with no external call. It must be settled before anyone builds an L2→L1 arrival
-carrying a bounty.
+**It needs no redeploy to close.** The starvable branch is entered only when
+`pay != 0`, and `pay` derives from `bounty` — a parameter in the calldata of the
+withdrawal message, fixed by whoever *initiates* it. A finaliser cannot change
+it. Tested on the same deployed behaviour: with `bounty = 0` there is **no
+divergence anywhere from 150,000 to 450,000 gas**.
 
----
+Every message the system can currently produce already satisfies this.
+`SlowArrival._push` builds `arrive` with a bounty of zero, and the dapp builds no
+L2→L1 arrivals at all. So the live contract is safe as long as that holds, and
+the rule is: **an L2→L1 `arrive` message must carry no bounty.** Anyone
+integrating `SlowArrival` directly needs to be told that.
+
+The source is fixed for a future deployment — the bounty call is refused when
+`tx.origin` carries code, which is the treatment `_push` already gives a
+code-bearing origin, and the reserve is raised to 100,000. Both the defect and
+the mitigation are pinned by a gas sweep in `test/ArrivalFinaliser.t.sol`; a
+single gas value would have sat either side of a 17,000-wide band and reported
+nothing.
 
 ## Assessment
 
