@@ -11,94 +11,110 @@ Wrap once, then send, hold, and reverse with safety rails. Any token, any delay,
 
 ## Try it
 
+- **Use it:** https://slow.wei.limo/ — the document `SLOW.html()` returns, nothing else
 - **Contract:** [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://contractscan.xyz/contract/0x000000006513B7821171C8447ec7ECdfa3b956Fd) — the same address on Ethereum, Base and Robinhood Chain
-- **Onchain dapp (served by the contract via `html()`):** https://0x6e2ca0ebf103fb2a2a7ebe2cb12f7de3a88bdcbc.w4eth.io/
-- **Hosted dapp:** https://slow.wei.limo/
+- **Read the dapp yourself:** one `eth_call` to `html()` on that address returns the whole thing. Or fetch it from the page contract directly at https://0x6e2ca0ebf103fb2a2a7ebe2cb12f7de3a88bdcbc.w4eth.io/
 - **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skills/slow) (`SKILL.md` + JSON CLI).
+
+There is no build to trust and no server to compromise: the page is bytes in
+contract storage, `SLOW.page` is `immutable`, and `manifest.json` pins the
+SHA-256 so anyone can check the served document against the chain.
 
 ### Deployed
 
-One build, one address per contract, on all three chains.
+Production on three chains since 2026-09-05. One build, one address per
+contract, identical everywhere.
 
-| contract | address | runtime |
-| --- | --- | --- |
-| `SLOW` | [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://etherscan.io/address/0x000000006513B7821171C8447ec7ECdfa3b956Fd) | 24,466 B |
-| `SlowPage` | [`0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc`](https://etherscan.io/address/0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc) | 3,827 B |
-| `SlowArrival` | [`0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f`](https://etherscan.io/address/0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f) | 4,916 B |
-| `SlowRelay` | [`0xC58C217791E397550492c4F84a6995Db60aDE2da`](https://etherscan.io/address/0xC58C217791E397550492c4F84a6995Db60aDE2da) | 10,598 B |
-| `SlowLens` | [`0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D`](https://etherscan.io/address/0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D) | 5,918 B |
-| `SLOWGate` | [`0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34`](https://etherscan.io/address/0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34) | 1,808 B |
+| contract | address | runtime | role |
+| --- | --- | --- | --- |
+| `SLOW` | [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://etherscan.io/address/0x000000006513B7821171C8447ec7ECdfa3b956Fd) | 24,466 B | the protocol |
+| `SlowPage` | [`0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc`](https://etherscan.io/address/0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc) | 3,827 B | serves the dapp |
+| `SlowArrival` | [`0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f`](https://etherscan.io/address/0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f) | 4,916 B | keeps the reverse across a bridge |
+| `SlowRelay` | [`0xC58C217791E397550492c4F84a6995Db60aDE2da`](https://etherscan.io/address/0xC58C217791E397550492c4F84a6995Db60aDE2da) | 10,598 B | escrowed fast transfers |
+| `SlowLens` | [`0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D`](https://etherscan.io/address/0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D) | 5,918 B | batched reads |
+| `SLOWGate` | [`0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34`](https://etherscan.io/address/0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34) | 1,808 B | custodies keeper tips |
 
 Deployed through CreateX with sender-prefixed, chain-independent salts, so the
-addresses come from the deployer and salt alone and are identical on Ethereum,
-Base and Robinhood Chain — which `SlowRelay.receiveRelay` depends on, since it
-authenticates a cross-chain proof by checking the origin equals its own address.
-`SLOWGate` is not deployed by hand — `SLOW`'s constructor creates it at a fixed
-CREATE2 salt, so it lands at the same address wherever `SLOW` does, and it
-custodies relayer tips. All six are verified on Etherscan for Ethereum and Base,
-and on Sourcify for all three chains — 17 of 18 exact matches. The exception is
-`SlowArrival` on Robinhood Chain, where Sourcify reports a creation-bytecode
-length mismatch; its runtime is byte-identical across all three chains and the
-same source is an exact match on the other two, so what is missing there is the
-attestation, not the correspondence.
+address comes from deployer and salt alone. `SlowRelay.receiveRelay` depends on
+that: it authenticates a cross-chain proof by checking the origin equals its own
+address. `SLOWGate` is created by `SLOW`'s constructor at a fixed CREATE2 salt,
+so it follows `SLOW` wherever it lands.
 
-`SlowPage`'s stewardship — the only privileged role anywhere in the system — was
-set in its constructor rather than transferred afterwards, so the deploying key
-never held it. `SLOW`, `SlowArrival` and `SlowRelay` have no owner at all.
+**No admin.** `SLOW`, `SlowArrival`, `SlowRelay` and `SlowLens` have no owner at
+all. The only privileged role in the system is `SlowPage` stewardship, which
+decides who may append the *next* page version — and the served page does not
+follow `successor`, so it cannot reach anyone already using this one.
+`SLOW.page` is `immutable`, so what `SLOW.html()` returns is fixed permanently.
 
-`node scripts/validate-bridge.mjs` checks the live deployment: 29/29, and
-`node scripts/watch.mjs` re-checks it any time — runtimes, wiring, stewardship,
-and whether anything has started using the unwired relay.
-
-**[Operating rules](./deploy/OPERATING-RULES.md)** — eight rules that make the
-deployed contracts safe without changing them. Three matter to anyone
-integrating directly: an L2→L1 `arrive` message carries no bounty, relayers fill
-from an EOA, and relay senders are EOAs. Breaking one costs the integrator, not
-the protocol.
-
-**[Admin console](./admin/index.html)** — a single self-contained file, no build
-step and no dependencies, for the jobs the on-chain page does not cover:
-stewardship handover, the deployment health checks, the relayer intent
-lifecycle, and `SlowArrival.claimRescue`. That last one matters. When a bridged
-arrival cannot be deposited, the ETH is credited to `rescue[origin]` rather than
-reverted, because reverting inside an OP withdrawal destroys the message
-permanently — and nothing in the served dapp claims it back. Open the file in a
-browser holding the relevant key; it talks to whichever chain the wallet is on.
-Its hard-coded selectors, addresses and runtime sizes are checked against the
-compiled ABIs and the manifest by `test/admin.test.mjs`, so a renamed function
-fails a test rather than a steward's transaction.
-
-#### Proven on mainnet
-
-Ethereum → Robinhood Chain exercises `SlowOrigin.recover` branch 4: Nitro
-aliases every retryable sender, EOAs included, so the origin comes from the
-checked hint. Ethereum → Base exercises branch 5 instead — OP Stack aliases only
-contract senders, so an EOA arrives unaliased and is its own origin. On Base the
-round trip was completed: the arrival recorded `originOf[tid]` as the true L1
-sender, and that sender then called `SlowArrival.reverse` and got the ETH back.
-That is the whole point of the contract, demonstrated end to end on mainnet
-rather than on a fork.
-
-`SlowRelay` has been exercised too: an intent opened on Base was found, priced
-and filled on Robinhood by the relayer in [`relayer/`](./relayer), which then
-pushed the proof — all without being told the intent existed.
-
-Three things remain in flight, each on its own multi-day clock and each needing
-one more transaction. The Base withdrawal is proved; the other two are waiting
-on challenge periods:
+Verified on Etherscan for Ethereum and Base, and on Sourcify for all three —
+17 of 18 exact matches. The exception is `SlowArrival` on Robinhood Chain, where
+Sourcify cannot reconstruct creation bytecode for a CREATE3 deployment; the
+runtime is byte-identical on all three chains and the same source is an exact
+match on the other two, so the attestation is missing, not the correspondence.
+[`deploy/verify-4663/`](./deploy/verify-4663) has everything prepared for a
+manual submission.
 
 ```
-node scripts/pending.mjs     # what is owed, and whether it can be collected yet
+node scripts/watch.mjs      # runtimes, wiring, stewardship, on all three chains
+node scripts/pending.mjs    # anything owed across the bridges, and whether it is collectable
 ```
 
-That is the whole answer in one read-only command. Behind it,
-`scripts/opprove.mjs` builds the storage proof for an OP withdrawal and checks
-the recomputed output root against the dispute game's claim before sending;
-`scripts/opfinalize.mjs` reports both of the OP clocks when it is not ready; and
-`scripts/arbexecute.mjs` checks `Outbox.roots` rather than whether a proof can
-be built, because `constructOutboxProof` answers within seconds of a message
-being sent and says nothing about confirmation. Transaction hashes are in
+### Bridging
+
+Native ETH, Ethereum to either L2, in one transaction. The dapp builds a
+`SlowArrival.arrive` call and delivers it through the canonical bridge:
+
+| route | stack | how the sender is recovered |
+| --- | --- | --- |
+| Ethereum → Base | OP Stack | arrives unaliased; the sender is its own origin |
+| Ethereum → Robinhood Chain | Arbitrum Nitro | arrives aliased; origin comes from a hint checked against the alias |
+
+Without `SlowArrival` the second route has no reverse at all: Nitro aliases every
+retryable sender including EOAs, so `pt.from` would be an address with no key on
+either chain. `SlowArrival` becomes the depositor, recovers who the deposit was
+really for, and hands the reverse and clawback rights back to them.
+
+Two paths are deliberately closed. The dapp always sends `bounty = 0`, which puts
+an EIP-7702 hazard in the deployed `arrive` out of reach. And the Arbitrum route
+is refused for any sender not *provably* an EOA, because
+`Inbox.createRetryableTicket` aliases both refund addresses when they hold L1
+code — a smart account would have its refunds stranded. Unknown counts as closed.
+
+**Proven on mainnet, not on forks.** Four arrivals across both stacks, every one
+attributing `originOf` to the true L1 sender, from both a plain EOA and a 7702
+smart account. On Base the round trip was completed: arrived, then the recovered
+sender called `SlowArrival.reverse` and the ETH came back. `SlowRelay` has been
+exercised too — an intent opened on Base was found, priced, filled on Robinhood
+and proved by the relayer in [`relayer/`](./relayer), unprompted. Hashes are in
 `manifest.json` under `bridge.proven`.
+
+L2→L1 exits are not in the dapp. They work, and
+[`scripts/opprove.mjs`](./scripts/opprove.mjs),
+[`opfinalize.mjs`](./scripts/opfinalize.mjs) and
+[`arbexecute.mjs`](./scripts/arbexecute.mjs) drive them, but each needs a second
+transaction days later — `scripts/pending.mjs` says when.
+
+### Operating and recovery
+
+**[Operating rules](./deploy/OPERATING-RULES.md)** — eight rules that keep the
+deployed contracts safe without changing them. Three matter to anyone
+integrating directly: an L2→L1 `arrive` carries no bounty, relayers fill from an
+EOA, and relay senders are EOAs. Breaking one costs the integrator.
+
+**[Admin console](./admin/index.html)** — one self-contained file, no build step,
+no dependencies, for what the on-chain page does not cover: stewardship
+handover, deployment health checks, the relayer intent lifecycle, and
+`SlowArrival.claimRescue`. That last one matters — a bridged arrival that cannot
+be deposited credits `rescue[origin]` instead of reverting, because reverting
+inside an OP withdrawal destroys the message permanently, and nothing in the
+served dapp claims it back. `test/admin.test.mjs` checks its hard-coded
+selectors against the compiled ABIs, so a renamed function fails a test rather
+than a steward's transaction.
+
+**[relayer/](./relayer)** — the live half of `SlowRelay`, a background worker
+that watches all three chains, fills from its own inventory and collects the
+escrow. Dry run unless `RELAYER_KEY` is set, and bounded by `MAX_FILL_WEI` even
+when live.
 
 The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
 `w4eth.io` resolves that over the web for convenience, but the dapp can be
@@ -421,40 +437,43 @@ See [`deploy/SLOW-PAGE.md`](./deploy/SLOW-PAGE.md) for the CREATE3 deployment.
 ## Layout
 
 ```txt
-dapp/page.html     — the dapp (single self-contained file; the current source of truth)
-manifest.json      — release pin: the page's byte length and SHA-256
-SLOW.html          — frozen v1, as deployed inside the protocol contract's html()
-SLOW-preview.html  — un-minified v1 source (has drifted from SLOW.html; not deployed)
-index.html         — client-only html() resolver
+dapp/page.html      — the dapp, one self-contained file (source of truth)
+dapp/page.min.html  — what is deployed; scripts/minify.mjs output, same tests must pass
+manifest.json       — release pin: byte length, SHA-256, deployed addresses, bridge proofs
+admin/index.html    — standalone admin + recovery console (no build step, no dependencies)
 src/
-├─ SLOW.sol        — protocol contract (also defines SLOWGate)
-├─ SlowPage.sol    — ERC-8244 / ERC-5219 page contract, N chunks, CREATE3-deployable
-└─ SlowPermit.sol  — permit deposits for the next protocol version (see deploy doc)
-scripts/           — chunk / serve / verify / CREATE3 address, driven by the manifest
+├─ SLOW.sol              — protocol contract (also defines SLOWGate)
+├─ SlowPage.sol          — ERC-8244 / ERC-5219 page contract, N chunks, CREATE3
+├─ SlowOrigin.sol        — recovers who is behind a cross-chain call, no bridge table
+├─ SlowArrival.sol       — becomes the depositor so a bridged send keeps its reverse
+├─ SlowRelay.sol         — escrowed fast transfers, settled by a relayer
+├─ SlowLens.sol          — batched reads
+├─ SlowBridgeRegistry.sol — optional route/address book (written, not deployed)
+├─ SlowGuardianIndex.sol — guardian ward index
+├─ SlowPermit.sol        — permit deposits
+└─ SLOWv1.sol            — the previous protocol version
+relayer/            — live SlowRelay worker (index.mjs) + failover RPC pool (rpc.mjs)
+gateway/server.js   — self-hostable html() resolver; index.html is a client-only variant
+scripts/
+├─ watch.mjs        — re-check the live deployment on all three chains
+├─ pending.mjs      — what the bridges still owe, and whether it is collectable
+├─ opprove.mjs      — prove an OP withdrawal (storage proof vs the dispute game claim)
+├─ opfinalize.mjs   — finalise one, naming both clocks when it is not ready
+├─ arbexecute.mjs   — execute a Nitro L2→L1 message through the Outbox
+├─ relayer.mjs      — the fill DECISION, imported by relayer/index.mjs
+└─ chunk / minify / verify / address / serve — the page pipeline, driven by the manifest
 deploy/
-└─ SLOW-PAGE.md    — CREATE3 deployment plan for the page contract
-test/
-├─ SLOW.t.sol      — full test suite (mainnet fork)
-├─ page.test.mjs   — unit tests for dapp/page.html (vanilla Node)
-└─ slow_html.*.mjs — v1 dapp unit + e2e tests (vanilla Node)
-gateway/
-└─ server.js       — self-hostable web gateway (ERC-8244 html() resolver)
-sdk/               — integration SDK (zero-dep core + optional viem/wagmi + React)
-├─ src/            — codec, abi, client, names (ENS + WNS .wei), wallet, keeper, viem, react
-├─ skills/slow/    — agent skill: SKILL.md + reference.md + slow.mjs (JSON CLI)
-├─ .claude-plugin/ — plugin manifest (installable via /plugin)
-├─ examples/       — buildless browser, wagmi/React, keeper-bot
-└─ test/           — vanilla-Node SDK tests (node sdk/test/sdk.test.mjs)
-assets/
-├─ audit/          — independent security reviews with inline maintainer responses
-└─ render/         — on-chain uri() render sample (SVG source + PNG)
-.claude-plugin/    — plugin marketplace manifest (installable via /plugin, points at sdk/)
-deploy_artifacts/  — initcode + constructor calldata for the deployment
-docs/              — forge doc output for SLOW / SLOWGate
-lib/
-├─ solady          — https://github.com/vectorized/solady
-└─ forge-std       — https://github.com/foundry-rs/forge-std
-foundry.toml
+├─ OPERATING-RULES.md — eight rules that keep the deployed contracts safe
+├─ SLOW-BRIDGE.md     — bridge deployment plan
+├─ SLOW-PAGE.md       — CREATE3 deployment plan for the page
+└─ verify-4663/       — prepared bundle for the one manual attestation
+test/                 — forge suite + vanilla-Node tests (scripts/test.sh runs everything)
+sdk/                  — integration SDK (zero-dep core + optional viem/wagmi + React)
+├─ skills/slow/       — agent skill: SKILL.md + reference.md + slow.mjs (JSON CLI)
+└─ examples/          — buildless browser, wagmi/React, keeper-bot
+assets/audit/         — independent security reviews with inline maintainer responses
+SLOW.html             — frozen v1, as deployed inside the v1 contract's html()
+lib/                  — solady, forge-std
 ```
 
 ## Disclaimer
