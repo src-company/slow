@@ -320,6 +320,7 @@ ever cheap.
 | --- | --- | --- | --- |
 | 2026-09-04 | pashov-ai | 11 findings, all fixed with regressions | [report](./assets/audit/slow-bridge-pashov-ai-audit-report-20260904-120000.md) |
 | 2026-09-05 | Claude Opus 5 | 4 findings, all fixed; `PROOF_GRACE` closed by measurement | [report](./assets/audit/slow-bridge-claude-opus-5-audit-report-20260905-140000.md) |
+| 2026-09-06 | Claude Opus 5 (adversarial) | No theft path in core or relay against the LIVE contracts; deployed bytecode verified identical to source | [report](./assets/audit/slow-adversarial-review-20260906.md) |
 
 ## Build & test
 
