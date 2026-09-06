@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SLOW Admin</title>
+<style>
+:root{
+  --bg:#000;--fg:#fff;
+  --bg2:#0d0d0d;--bg3:#1c1c1c;--bd:#5c5c5c;--bd2:#8a8a8a;--dim:#9e9e9e;
+  --rule:#1e1e1e;
+  --ok:#3ddc84;--warn:#ffb020;--err:#ff6b6b;
+  --t:120ms linear;
+  --sans:'Helvetica Neue',Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media(prefers-color-scheme:light){:root{
+  --bg:#fff;--fg:#000;
+  --bg2:#f2f2f2;--bg3:#e4e4e4;--bd:#8e8e8e;--bd2:#5f5f5f;--dim:#585858;
+  --rule:#e6e6e6;
+  --ok:#0a7f3f;--warn:#9a5b00;--err:#c62828;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.5 var(--sans);padding:0 0 80px}
+a{color:inherit}
+header{border-bottom:1px solid var(--rule);padding:14px 18px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+h1{font:600 13px/1 var(--sans);letter-spacing:.16em;margin:0;text-transform:uppercase}
+main{max-width:940px;margin:0 auto;padding:0 18px}
+section{border-bottom:1px solid var(--rule);padding:26px 0}
+h2{font:600 11px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0 0 14px}
+p.note{color:var(--dim);margin:0 0 14px;max-width:66ch}
+button{font:500 12px var(--sans);background:var(--bg2);color:var(--fg);border:1px solid var(--bd);padding:7px 13px;cursor:pointer;transition:background var(--t),border-color var(--t)}
+button:hover:not(:disabled){background:var(--bg3);border-color:var(--bd2)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.go{border-color:var(--bd2)}
+input,textarea,select{font:12px var(--mono);background:var(--bg2);color:var(--fg);border:1px solid var(--bd);padding:7px 9px;width:100%}
+textarea{min-height:150px;resize:vertical;line-height:1.5}
+label{display:block;margin:0 0 4px;color:var(--dim);font:11px var(--sans);letter-spacing:.06em;text-transform:uppercase}
+.field{margin:0 0 12px}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+table{border-collapse:collapse;width:100%;font:12px var(--mono)}
+td{padding:6px 10px 6px 0;border-bottom:1px solid var(--rule);vertical-align:top;word-break:break-all}
+td:first-child{color:var(--dim);white-space:nowrap;width:1%;font-family:var(--sans);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.mono{font-family:var(--mono)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}.dim{color:var(--dim)}
+.pill{display:inline-block;border:1px solid var(--bd);padding:2px 8px;font:11px var(--mono);border-radius:999px}
+#log{font:11px/1.6 var(--mono);color:var(--dim);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;border:1px solid var(--rule);padding:11px;background:var(--bg2)}
+.spacer{flex:1}
+.hint{color:var(--dim);font-size:11px;margin-top:5px}
+</style>
+<body>
+<header>
+  <h1>SLOW Admin</h1>
+  <span id="chip" class="pill dim">not connected</span>
+  <span class="spacer"></span>
+  <select id="chainsel" style="width:auto">
+    <option value="1">Ethereum</option>
+    <option value="8453">Base</option>
+    <option value="4663">Robinhood</option>
+  </select>
+  <button id="connect" class="go">Connect</button>
+</header>
+
+<main>
+
+<section>
+  <h2>Deployment health</h2>
+  <p class="note">The same checks <span class="mono">scripts/watch.mjs</span> runs, against whichever chain your wallet is on. Every row must read OK. These are reads only.</p>
+  <div class="row"><button id="runhealth">Run checks</button></div>
+  <table id="health"></table>
+</section>
+
+<section>
+  <h2>Page stewardship</h2>
+  <p class="note">Stewardship governs only who may append the next <span class="mono">SlowPage</span> version. SLOW itself has no owner and no admin. Transfer is two-step: the recipient must accept.</p>
+  <table id="stew"></table>
+  <div class="grid" style="margin-top:14px">
+    <div>
+      <div class="field"><label>Offer stewardship to</label><input id="stewto" placeholder="0x…"></div>
+      <button id="btnoffer">Offer</button>
+    </div>
+    <div>
+      <div class="field"><label>If you are the pending steward</label><button id="btnaccept">Accept stewardship</button></div>
+      <div class="hint">Ends the handover and makes you steward.</div>
+    </div>
+    <div>
+      <div class="field"><label>Freeze the lineage forever</label><button id="btnrenounce">Renounce</button></div>
+      <div class="hint">Irreversible. No successor can ever be appended.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Bridge recovery &mdash; SlowArrival</h2>
+  <p class="note">When a bridged arrival cannot be deposited, the ETH is credited to <span class="mono">rescue[origin]</span> rather than reverted, because a revert on an OP withdrawal destroys the message permanently. This is the only interface that claims it &mdash; the on-chain page does not cover this path.</p>
+  <table id="resc"></table>
+  <div class="grid" style="margin-top:14px">
+    <div>
+      <div class="field"><label>Claim rescue to</label><input id="rescto" placeholder="0x… (not the zero address)"></div>
+      <button id="btnrescue">Claim rescue</button>
+    </div>
+    <div>
+      <div class="field"><label>Transfer id</label><input id="tid" placeholder="decimal or 0x…"></div>
+      <div class="row">
+        <button id="btnlookup">Look up</button>
+        <button id="btnreverse">Reverse</button>
+        <button id="btnclaw">Clawback</button>
+      </div>
+      <div class="hint">Reverse works during the timelock; clawback 30 days past expiry. Both send to the address above.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Relayer console &mdash; SlowRelay</h2>
+  <p class="note">Paste an intent and the console derives its id on chain, reads its escrow status, and offers only the actions that apply. Before filling anything, read <span class="mono">deploy/OPERATING-RULES.md</span>: fill from an EOA, recompute the id, and never trust the log over the source chain.</p>
+  <div class="field">
+    <label>Intent (JSON)</label>
+    <textarea id="intent" spellcheck="false"></textarea>
+    <div class="hint">Amounts in wei. <span class="mono">address(0)</span> means native ETH.</div>
+  </div>
+  <div class="row">
+    <button id="btnid">Derive id &amp; read status</button>
+    <button id="btnopen">Open (escrow)</button>
+    <button id="btnfill">Fill</button>
+    <button id="btnprove">Prove fill</button>
+    <button id="btnrelease">Release</button>
+    <button id="btncancel">Cancel</button>
+  </div>
+  <table id="rel" style="margin-top:14px"></table>
+</section>
+
+<section>
+  <h2>Log</h2>
+  <div id="log">ready.</div>
+</section>
+
+</main>
+
+<script>
+'use strict';
+
+const ADDR = {
+  SLOW:    '0x000000006513B7821171C8447ec7ECdfa3b956Fd',
+  Page:    '0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc',
+  Arrival: '0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f',
+  Relay:   '0xC58C217791E397550492c4F84a6995Db60aDE2da',
+  Lens:    '0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D',
+  Gate:    '0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34',
+};
+const SIZE = {SLOW:24466, Page:3827, Arrival:4916, Relay:10598, Lens:5918, Gate:1808};
+const CHAINS = {1:'Ethereum', 8453:'Base', 4663:'Robinhood Chain'};
+const EXPECTED_STEWARD = '0x1C0Aa8cCD568d90d61659F060D1bFb1e6f855A20';
+
+const SEL = {
+  steward:'0x637eea19', pendingSteward:'0x5f46c59d', successor:'0x6ff968c3',
+  succeededAt:'0x451aae60', generation:'0x17219522',
+  transferStewardship:'0x0f5734c0', acceptStewardship:'0x4cbb5b62', renounceStewardship:'0x55378942',
+  page:'0x0df813b9', slow:'0xb00d4d70',
+  rescue:'0x839006f2', originOf:'0x794b2a07', claimRescue:'0xb422b718',
+  reverse:'0x99c5ff88', clawback:'0xe3035405', pendingTransfers:'0x6577b86a',
+  statusOf:'0xc7df14e2', filledBy:'0xd70e3dfd', provenBy:'0x62cfad7e',
+  intentId:'0x63ef17e7', fill:'0x490c3668', proveFill:'0x6f10a53b',
+  release:'0x02f10da3', cancel:'0x47bfb904', open:'0x6a144013',
+};
+const STATUS = ['NONE','OPEN','RELEASED','CANCELLED'];
+
+let account = null, chainId = null;
+
+// ── plumbing ───────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function log(msg, cls){
+  const el = $('log');
+  const stamp = new Date().toISOString().slice(11,19);
+  el.textContent = stamp + '  ' + msg + '\n' + el.textContent;
+  if (cls) el.className = cls;
+}
+function rpc(method, params){
+  if (!window.ethereum) throw new Error('no injected wallet found');
+  return window.ethereum.request({method, params});
+}
+const call = (to, data) => rpc('eth_call', [{to, data}, 'latest']);
+async function send(to, data, value){
+  const tx = {from: account, to, data};
+  if (value && BigInt(value) > 0n) tx.value = '0x' + BigInt(value).toString(16);
+  const hash = await rpc('eth_sendTransaction', [tx]);
+  log('sent ' + hash);
+  return hash;
+}
+
+// ── abi ────────────────────────────────────────────────────────────────
+const strip = h => String(h).replace(/^0x/, '');
+const word  = h => strip(h).padStart(64, '0');
+const encAddr = a => word(String(a).toLowerCase());
+const encU    = v => word(BigInt(v).toString(16));
+const encB32  = b => word(b);
+const decAddr = h => '0x' + strip(h).slice(-40);
+const decU    = h => BigInt('0x' + (strip(h) || '0'));
+const at      = (h, i) => '0x' + strip(h).slice(i*64, (i+1)*64);
+
+const INTENT_FIELDS = ['sender','recipient','srcToken','dstToken','amount','fee','delay','srcChainId','dstChainId','fillDeadline','nonce'];
+function encIntent(i){
+  return encAddr(i.sender) + encAddr(i.recipient) + encAddr(i.srcToken) + encAddr(i.dstToken)
+       + encU(i.amount) + encU(i.fee) + encU(i.delay) + encU(i.srcChainId)
+       + encU(i.dstChainId) + encU(i.fillDeadline) + encU(i.nonce);
+}
+function readIntent(){
+  let raw;
+  try { raw = JSON.parse($('intent').value); }
+  catch (e) { throw new Error('intent is not valid JSON: ' + e.message); }
+  for (const f of INTENT_FIELDS){
+    if (raw[f] === undefined || raw[f] === null || raw[f] === '')
+      throw new Error('intent is missing "' + f + '"');
+  }
+  return raw;
+}
+
+// EIP-55, so a mistyped address is caught here rather than by a node.
+function eq(a, b){ return String(a).toLowerCase() === String(b).toLowerCase(); }
+function isAddr(a){ return /^0x[0-9a-fA-F]{40}$/.test(String(a)); }
+function requireAddr(a, what){
+  if (!isAddr(a)) throw new Error(what + ' must be a 20-byte hex address');
+  return a;
+}
+
+function table(el, rows){
+  el.innerHTML = rows.map(([k, v, cls]) =>
+    '<tr><td>' + k + '</td><td class="mono ' + (cls||'') + '">' + v + '</td></tr>').join('');
+}
+
+// ── connect ────────────────────────────────────────────────────────────
+async function refreshChip(){
+  try {
+    chainId = Number(await rpc('eth_chainId', []));
+    const accs = await rpc('eth_accounts', []);
+    account = accs[0] || null;
+  } catch { return; }
+  const name = CHAINS[chainId] || ('chain ' + chainId);
+  const known = !!CHAINS[chainId];
+  $('chip').textContent = account
+    ? (account.slice(0,6) + '…' + account.slice(-4) + ' · ' + name)
+    : ('not connected · ' + name);
+  $('chip').className = 'pill ' + (known ? '' : 'warn');
+  if (account && !$('rescto').value) $('rescto').value = account;
+  if (account) $('chainsel').value = String(chainId);
+}
+
+$('connect').onclick = guard(async () => {
+  await rpc('eth_requestAccounts', []);
+  await refreshChip();
+  log('connected ' + account + ' on ' + (CHAINS[chainId] || chainId));
+});
+
+$('chainsel').onchange = guard(async e => {
+  const want = Number(e.target.value);
+  if (want === chainId) return;
+  try {
+    await rpc('wallet_switchEthereumChain', [{chainId: '0x' + want.toString(16)}]);
+  } catch (err) {
+    // 4902 = the wallet does not know this chain. Nothing here can add it
+    // safely, so say so rather than guessing RPC parameters for the user.
+    if (err && err.code === 4902) throw new Error('your wallet does not have ' + (CHAINS[want]||want) + ' configured; add it there first');
+    throw err;
+  }
+  await refreshChip();
+});
+
+if (window.ethereum){
+  window.ethereum.on && window.ethereum.on('chainChanged', () => refreshChip());
+  window.ethereum.on && window.ethereum.on('accountsChanged', () => refreshChip());
+  refreshChip();
+} else {
+  log('no injected wallet found — reads and writes both need one', 'err');
+}
+
+// Wrap every handler so a rejection surfaces in the log instead of the console.
+function guard(fn){
+  return async (...a) => {
+    try { await fn(...a); }
+    catch (e) { log('ERROR  ' + (e && (e.data && e.data.message || e.message) || e), ''); }
+  };
+}
+function needAccount(){ if (!account) throw new Error('connect a wallet first'); }
+
+// ── health ─────────────────────────────────────────────────────────────
+$('runhealth').onclick = guard(async () => {
+  const rows = [];
+  const codeSize = async a => ((await rpc('eth_getCode', [a, 'latest'])).length - 2) / 2;
+  const mark = (label, actual, expect) => {
+    const good = eq(actual, expect);
+    rows.push([label, good ? String(actual) + '  OK' : String(actual) + '  — expected ' + expect,
+               good ? 'ok' : 'err']);
+  };
+
+  if (!CHAINS[chainId]) rows.push(['chain', chainId + ' is not a SLOW deployment', 'err']);
+  else rows.push(['chain', chainId + ' · ' + CHAINS[chainId], 'ok']);
+
+  for (const k of Object.keys(ADDR)) mark('size ' + k, await codeSize(ADDR[k]), SIZE[k]);
+
+  mark('SLOW.page()',        decAddr(await call(ADDR.SLOW,    SEL.page)), ADDR.Page.toLowerCase());
+  mark('SlowArrival.slow()', decAddr(await call(ADDR.Arrival, SEL.slow)), ADDR.SLOW.toLowerCase());
+  mark('SlowRelay.slow()',   decAddr(await call(ADDR.Relay,   SEL.slow)), ADDR.SLOW.toLowerCase());
+  mark('steward',            decAddr(await call(ADDR.Page,    SEL.steward)), EXPECTED_STEWARD.toLowerCase());
+  mark('pendingSteward',     decAddr(await call(ADDR.Page,    SEL.pendingSteward)), '0x' + '0'.repeat(40));
+  mark('successor',          decAddr(await call(ADDR.Page,    SEL.successor)),      '0x' + '0'.repeat(40));
+
+  // SlowRelay escrows per-intent and should never sit on a balance at rest.
+  const bal = decU(await rpc('eth_getBalance', [ADDR.Relay, 'latest']));
+  rows.push(['SlowRelay ETH', bal === 0n ? '0  OK' : bal + ' wei — expected 0', bal === 0n ? 'ok' : 'warn']);
+
+  table($('health'), rows);
+  const bad = rows.filter(r => r[2] === 'err').length;
+  log(bad ? bad + ' check(s) FAILED' : 'all checks OK on ' + (CHAINS[chainId]||chainId));
+});
+
+// ── stewardship ────────────────────────────────────────────────────────
+async function loadStew(){
+  const s = decAddr(await call(ADDR.Page, SEL.steward));
+  const p = decAddr(await call(ADDR.Page, SEL.pendingSteward));
+  const n = decAddr(await call(ADDR.Page, SEL.successor));
+  const g = decU(await call(ADDR.Page, SEL.generation));
+  const zero = '0x' + '0'.repeat(40);
+  table($('stew'), [
+    ['steward', s + (account && eq(s, account) ? '  (you)' : ''), account && eq(s, account) ? 'ok' : ''],
+    ['pending', eq(p, zero) ? 'none' : p + (account && eq(p, account) ? '  (you — you may accept)' : ''), eq(p, zero) ? 'dim' : 'warn'],
+    ['successor', eq(n, zero) ? 'none — this is the tip' : n, 'dim'],
+    ['generation', String(g), 'dim'],
+  ]);
+  return {s, p, n};
+}
+$('btnoffer').onclick = guard(async () => {
+  needAccount();
+  const to = requireAddr($('stewto').value.trim(), 'recipient');
+  await send(ADDR.Page, SEL.transferStewardship + encAddr(to));
+  log('offered stewardship to ' + to + ' — they must call accept');
+});
+$('btnaccept').onclick = guard(async () => {
+  needAccount();
+  await send(ADDR.Page, SEL.acceptStewardship);
+});
+$('btnrenounce').onclick = guard(async () => {
+  needAccount();
+  if (!confirm('Renounce stewardship on ' + (CHAINS[chainId]||chainId) + '?\n\nThis is irreversible. No successor page can ever be appended on this chain again.')) return;
+  await send(ADDR.Page, SEL.renounceStewardship);
+});
+
+// ── rescue / reverse / clawback ────────────────────────────────────────
+async function loadRescue(){
+  if (!account) return;
+  const amt = decU(await call(ADDR.Arrival, SEL.rescue + encAddr(account)));
+  table($('resc'), [
+    ['your rescue', amt === 0n ? 'nothing owed' : amt + ' wei', amt === 0n ? 'dim' : 'warn'],
+  ]);
+}
+$('btnrescue').onclick = guard(async () => {
+  needAccount();
+  const to = requireAddr($('rescto').value.trim(), 'recipient');
+  if (eq(to, ADDR.Arrival)) throw new Error('SlowArrival rejects itself as a recipient — the ETH would be unreachable');
+  await send(ADDR.Arrival, SEL.claimRescue + encAddr(to));
+});
+$('btnlookup').onclick = guard(async () => {
+  const id = BigInt($('tid').value.trim());
+  const origin = decAddr(await call(ADDR.Arrival, SEL.originOf + encU(id)));
+  const pt = await call(ADDR.SLOW, SEL.pendingTransfers + encU(id));
+  const ts = decU(at(pt, 0)), from = decAddr(at(pt, 1)), to = decAddr(at(pt, 2)), amt = decU(at(pt, 4));
+  const zero = '0x' + '0'.repeat(40);
+  table($('resc'), [
+    ['origin', eq(origin, zero) ? 'none — not a delayed arrival, or already settled' : origin + (account && eq(origin, account) ? '  (you)' : ''), eq(origin, zero) ? 'dim' : 'ok'],
+    ['pt.from', from, eq(from, ADDR.Arrival) ? 'ok' : 'warn'],
+    ['pt.to', to, ''],
+    ['amount', amt + ' wei', ''],
+    ['unlocks at', ts === 0n ? 'gone' : new Date(Number(ts)*1000).toISOString(), ts === 0n ? 'dim' : ''],
+  ]);
+});
+$('btnreverse').onclick = guard(async () => {
+  needAccount();
+  const id = BigInt($('tid').value.trim());
+  const to = requireAddr($('rescto').value.trim(), 'recipient');
+  await send(ADDR.Arrival, SEL.reverse + encU(id) + encAddr(to));
+});
+$('btnclaw').onclick = guard(async () => {
+  needAccount();
+  const id = BigInt($('tid').value.trim());
+  const to = requireAddr($('rescto').value.trim(), 'recipient');
+  await send(ADDR.Arrival, SEL.clawback + encU(id) + encAddr(to));
+});
+
+// ── relay ──────────────────────────────────────────────────────────────
+async function deriveId(i){
+  // Derived on chain rather than hashed here: the id is the only thing tying
+  // the fill on one chain to the escrow on the other, so it is read from the
+  // contract that will judge it.
+  return await call(ADDR.Relay, SEL.intentId + encIntent(i));
+}
+$('btnid').onclick = guard(async () => {
+  const i = readIntent();
+  const id = await deriveId(i);
+  const st = Number(decU(await call(ADDR.Relay, SEL.statusOf + encB32(id))));
+  const filled = decAddr(await call(ADDR.Relay, SEL.filledBy + encB32(id)));
+  const proven = decAddr(await call(ADDR.Relay, SEL.provenBy + encB32(id)));
+  const zero = '0x' + '0'.repeat(40);
+  const now = Math.floor(Date.now()/1000);
+  const past = Number(i.fillDeadline) < now;
+  table($('rel'), [
+    ['intent id', id, ''],
+    ['status', STATUS[st] || ('? ' + st), st === 1 ? 'ok' : 'dim'],
+    ['escrow on', i.srcChainId + (Number(i.srcChainId) === chainId ? '  (this chain)' : '  — status above is only meaningful read from there'), Number(i.srcChainId) === chainId ? 'ok' : 'warn'],
+    ['fill on', String(i.dstChainId), Number(i.dstChainId) === chainId ? 'ok' : 'dim'],
+    ['filledBy', eq(filled, zero) ? 'nobody' : filled, eq(filled, zero) ? 'dim' : 'ok'],
+    ['provenBy', eq(proven, zero) ? 'nobody' : proven, eq(proven, zero) ? 'dim' : 'ok'],
+    ['deadline', new Date(Number(i.fillDeadline)*1000).toISOString() + (past ? '  — PASSED, sender may cancel' : ''), past ? 'warn' : ''],
+  ]);
+  log('intent ' + id + ' is ' + (STATUS[st]||st));
+});
+function relayAction(sel, label, valueOf){
+  return guard(async () => {
+    needAccount();
+    const i = readIntent();
+    await send(ADDR.Relay, sel + encIntent(i), valueOf ? valueOf(i) : 0n);
+    log(label + ' submitted');
+  });
+}
+$('btnopen').onclick = relayAction(SEL.open, 'open',
+  // Native-ETH escrow carries amount + fee; a token intent carries no value
+  // and needs an allowance to SlowRelay instead (use openToken).
+  i => eq(i.srcToken, '0x' + '0'.repeat(40)) ? BigInt(i.amount) + BigInt(i.fee) : 0n);
+$('btnfill').onclick = relayAction(SEL.fill, 'fill',
+  i => eq(i.dstToken, '0x' + '0'.repeat(40)) ? BigInt(i.amount) : 0n);
+$('btnprove').onclick   = relayAction(SEL.proveFill, 'proveFill');
+$('btnrelease').onclick = relayAction(SEL.release, 'release');
+$('btncancel').onclick  = relayAction(SEL.cancel, 'cancel');
+
+// A template, so the shape is never guessed at.
+$('intent').value = JSON.stringify({
+  sender: '0x0000000000000000000000000000000000000000',
+  recipient: '0x0000000000000000000000000000000000000000',
+  srcToken: '0x0000000000000000000000000000000000000000',
+  dstToken: '0x0000000000000000000000000000000000000000',
+  amount: '0', fee: '0', delay: '86400',
+  srcChainId: '8453', dstChainId: '1',
+  fillDeadline: String(Math.floor(Date.now()/1000) + 3600),
+  nonce: '1'
+}, null, 2);
+
+// Refresh the two read-only panels whenever the wallet context changes.
+const softLoad = () => { loadStew().catch(()=>{}); loadRescue().catch(()=>{}); };
+if (window.ethereum){
+  window.ethereum.on && window.ethereum.on('chainChanged', softLoad);
+  window.ethereum.on && window.ethereum.on('accountsChanged', softLoad);
+  setTimeout(softLoad, 300);
+}
+</script>

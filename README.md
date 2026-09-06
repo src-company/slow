@@ -35,9 +35,12 @@ Base and Robinhood Chain — which `SlowRelay.receiveRelay` depends on, since it
 authenticates a cross-chain proof by checking the origin equals its own address.
 `SLOWGate` is not deployed by hand — `SLOW`'s constructor creates it at a fixed
 CREATE2 salt, so it lands at the same address wherever `SLOW` does, and it
-custodies relayer tips. All six are verified on Etherscan for Ethereum and Base;
-Robinhood Chain's explorer is a
-Blockscout instance behind a challenge that blocks automated submission.
+custodies relayer tips. All six are verified on Etherscan for Ethereum and Base,
+and on Sourcify for all three chains — 17 of 18 exact matches. The exception is
+`SlowArrival` on Robinhood Chain, where Sourcify reports a creation-bytecode
+length mismatch; its runtime is byte-identical across all three chains and the
+same source is an exact match on the other two, so what is missing there is the
+attestation, not the correspondence.
 
 `SlowPage`'s stewardship — the only privileged role anywhere in the system — was
 set in its constructor rather than transferred afterwards, so the deploying key
@@ -52,6 +55,35 @@ deployed contracts safe without changing them. Three matter to anyone
 integrating directly: an L2→L1 `arrive` message carries no bounty, relayers fill
 from an EOA, and relay senders are EOAs. Breaking one costs the integrator, not
 the protocol.
+
+**[Admin console](./admin/index.html)** — a single self-contained file, no build
+step and no dependencies, for the jobs the on-chain page does not cover:
+stewardship handover, the deployment health checks, the relayer intent
+lifecycle, and `SlowArrival.claimRescue`. That last one matters. When a bridged
+arrival cannot be deposited, the ETH is credited to `rescue[origin]` rather than
+reverted, because reverting inside an OP withdrawal destroys the message
+permanently — and nothing in the served dapp claims it back. Open the file in a
+browser holding the relevant key; it talks to whichever chain the wallet is on.
+Its hard-coded selectors, addresses and runtime sizes are checked against the
+compiled ABIs and the manifest by `test/admin.test.mjs`, so a renamed function
+fails a test rather than a steward's transaction.
+
+#### Proven on mainnet
+
+Ethereum → Robinhood Chain exercises `SlowOrigin.recover` branch 4: Nitro
+aliases every retryable sender, EOAs included, so the origin comes from the
+checked hint. Ethereum → Base exercises branch 5 instead — OP Stack aliases only
+contract senders, so an EOA arrives unaliased and is its own origin. On Base the
+round trip was completed: the arrival recorded `originOf[tid]` as the true L1
+sender, and that sender then called `SlowArrival.reverse` and got the ETH back.
+That is the whole point of the contract, demonstrated end to end on mainnet
+rather than on a fork.
+
+Still unproven, because each needs its own clock to run out: the two L2→L1 exits
+(`forward` through an OP withdrawal, ~7 days; `proveFill` through `ArbSys` on
+Orbit, ~6.4 days) and `SlowRelay` end to end, which needs a funded relayer
+holding inventory on both legs. Transaction hashes for what has run are in
+`manifest.json` under `bridge.proven`.
 
 The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
 `w4eth.io` resolves that over the web for convenience, but the dapp can be
