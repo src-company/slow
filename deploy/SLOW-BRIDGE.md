@@ -261,6 +261,36 @@ has to be re-pinned to change. Wire `SEL.allDeployments` and an
 `arrivalFor(chainId)` / `relayFor(chainId)` resolver in the same change that
 builds the relay front door, and keep the additive rule when you do.
 
+## The rule an integrator must follow
+
+**An L2→L1 `arrive` message must carry a bounty of zero.**
+
+`arrive`'s bounty branch calls `tx.origin`, and under EIP-7702 a finaliser can
+give that address a delegation, so it controls both who is called and how much
+gas resolving it costs. The delegation lookup plus the callee's own burn pushes
+the failure tail past the reserve, and the OP portal marks a withdrawal
+finalized *before* calling the target and never replays it — so the bridged ETH
+is destroyed rather than rescued. Measured against the deployed contract: a
+delegated finaliser reverted `arrive` across a **275,000–291,000 gas** band where
+a plain one succeeded.
+
+The lever is not the finaliser's. `pay` derives from `bounty`, which is a
+parameter in the calldata of the withdrawal message, fixed by whoever initiates
+it. With `bounty = 0` there is no divergence anywhere between 150,000 and
+450,000 gas — the branch is never entered.
+
+Nothing in this repo violates the rule: `SlowArrival._push` builds `arrive` with
+a bounty of zero, and the dapp builds no L2→L1 arrivals at all. It matters for
+anyone composing their own withdrawal against `SlowArrival` — which is a
+permissionless contract, so that is anyone.
+
+The source is fixed for the next deployment (`tx.origin` carrying code is paid
+through `rescue` rather than called, and the reserve is 100,000), but the
+contract at `0x9F8D89D2…097f` is immutable and carries the original behaviour.
+Both the defect and the rule are pinned by a gas sweep in
+`test/ArrivalFinaliser.t.sol`; a single gas value sits either side of a
+17,000-wide band and reports nothing.
+
 ## Known blockers
 
 **SLOW is not deployed on Base or Robinhood at an address the page accepts.**
