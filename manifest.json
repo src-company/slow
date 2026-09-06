@@ -183,8 +183,11 @@
           "target": "SlowArrival.arrive on chain 1",
           "value": "20000000000000",
           "l1GasLimit": 600000,
-          "remaining": "prove once the output root posts (~1-2h), then finalise after the 7 day challenge period",
-          "hazard": "finalizeWithdrawalTransaction marks the withdrawal finalized BEFORE calling the target and does not revert on failure, so a revert in arrive would strand the ETH permanently. Bounty is zero, which is what keeps the EIP-7702 finaliser defect out of reach."
+          "remaining": "finalise once the proof matures (24h) AND the dispute game resolves DEFENDER_WINS (~5 days). node scripts/opfinalize.mjs reports both clocks.",
+          "hazard": "finalizeWithdrawalTransaction marks the withdrawal finalized BEFORE calling the target and does not revert on failure, so a revert in arrive would strand the ETH permanently. Bounty is zero, which is what keeps the EIP-7702 finaliser defect out of reach.",
+          "provedTx": "0x58c7361731c0566485570b3ff18ae8c249874604d9da428b599526ad64154f6c",
+          "provedAgainstGame": "0x13B1117b40409ea59bdbB396fbf894E0A7143EFB",
+          "provedAt": 1788709535
         },
         "robinhood-to-ethereum": {
           "leg": "L2 -> L1, ArbSys.sendTxToL1",
@@ -194,8 +197,9 @@
           "outboxIndex": 2058,
           "target": "SlowArrival.arrive on chain 1",
           "value": "20000000000000",
-          "remaining": "execute through the Outbox with a merkle proof after the ~6.4 day challenge period",
-          "note": "Arbitrum reverts atomically on a failed execution, so unlike the OP leg this message stays replayable."
+          "remaining": "execute once the send root reaches Outbox.roots. node scripts/arbexecute.mjs builds the proof and refuses while UnknownRoot would revert.",
+          "note": "Arbitrum reverts atomically on a failed execution, so unlike the OP leg this message stays replayable.",
+          "outboxOnL1": "0xf0ce991ea4A0d2400A4AB49b20ae333f6Dce3DE9"
         }
       },
       "relay-open": {
@@ -216,6 +220,12 @@
         "remaining": "release on Base once provenBy is set, ~6.4 days from 2026-09-06",
         "note": "The relayer is scripts/relayer.mjs for the decision and relayer/index.mjs for the loop, running as a Render background worker. It found the intent unaided, recomputed the id, and fronted the destination leg."
       }
+    },
+    "tooling": {
+      "scripts/opprove.mjs": "Builds the storage proof for an OP withdrawal and proves it. Verifies the recomputed output root against the dispute game claim before sending.",
+      "scripts/opfinalize.mjs": "Finalises a proved OP withdrawal, reporting both clocks when it is not ready.",
+      "scripts/arbexecute.mjs": "Executes a Nitro L2->L1 message. Checks Outbox.roots rather than proof construction, because constructOutboxProof answers long before confirmation.",
+      "scripts/pending.mjs": "One read-only command for everything still owed across all three."
     }
   }
 }

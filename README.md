@@ -79,10 +79,25 @@ sender, and that sender then called `SlowArrival.reverse` and got the ETH back.
 That is the whole point of the contract, demonstrated end to end on mainnet
 rather than on a fork.
 
-Still unproven, because each needs its own clock to run out: the two L2→L1 exits
-(`forward` through an OP withdrawal, ~7 days; `proveFill` through `ArbSys` on
-Orbit, ~6.4 days) and `SlowRelay` end to end, which needs a funded relayer
-holding inventory on both legs. Transaction hashes for what has run are in
+`SlowRelay` has been exercised too: an intent opened on Base was found, priced
+and filled on Robinhood by the relayer in [`relayer/`](./relayer), which then
+pushed the proof — all without being told the intent existed.
+
+Three things remain in flight, each on its own multi-day clock and each needing
+one more transaction. The Base withdrawal is proved; the other two are waiting
+on challenge periods:
+
+```
+node scripts/pending.mjs     # what is owed, and whether it can be collected yet
+```
+
+That is the whole answer in one read-only command. Behind it,
+`scripts/opprove.mjs` builds the storage proof for an OP withdrawal and checks
+the recomputed output root against the dispute game's claim before sending;
+`scripts/opfinalize.mjs` reports both of the OP clocks when it is not ready; and
+`scripts/arbexecute.mjs` checks `Outbox.roots` rather than whether a proof can
+be built, because `constructOutboxProof` answers within seconds of a message
+being sent and says nothing about confirmation. Transaction hashes are in
 `manifest.json` under `bridge.proven`.
 
 The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
