@@ -22,8 +22,13 @@
       "SlowPage": "0x6e2ca0EbF103fb2a2A7EBE2Cb12f7DE3A88BDCbc",
       "SlowArrival": "0x9F8D89D298caBDC0D64cbA3888D0DA85Dc95097f",
       "SlowRelay": "0xC58C217791E397550492c4F84a6995Db60aDE2da",
-      "SlowLens": "0xC9C4a3d3dd3714B08b2138080F1d143585531d4D",
+      "SlowLens": "0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D",
       "SLOWGate": "0x76D1956b3BE7c0D09A16dE00DcE9B6f54ef28D34"
+    },
+    "verification": {
+      "etherscan": "All six on chains 1 and 8453. Robinhood Chain's explorer is a Blockscout instance behind a challenge that refuses automated submission.",
+      "sourcify": "17 of 18. Every contract is an exact_match on all three chains except SlowArrival on 4663, where Sourcify reports bytecode_length_mismatch against the creation bytecode. Its RUNTIME is byte-identical across all three (4,916 B, checked on chain), and the same source is an exact_match on 1 and 8453, so the code is the same code — it is the attestation that is missing on that one chain, not the match.",
+      "checksumNote": "SlowLens was first recorded here with a wrong EIP-55 checksum, which Sourcify rejected as an invalid address. The correct form is 0xC9c4a3d3Dd3714B08b2138080F1D143585531d4D."
     },
     "gateNote": "SLOWGate is not deployed by hand: SLOW's constructor CREATE2s it at a fixed salt, so it lands at the same address wherever SLOW does. It custodies relayer tips, which is why it is listed here and verified — deploying by address alone had missed it. Its runtime is 1,808 bytes on all three chains; `forge build --sizes` reports 1,805 for the standalone artifact, because the deployed one is created inline by SLOW's constructor. The chain is the number a watcher should pin. Its runtime is 1,808 bytes on all three chains, three more than `forge build --sizes` reports for the standalone artifact; the pinned number is the one the chain actually holds, since the point of pinning it is to notice a change.",
     "runtimeBytes": { "SLOW": 24466, "SlowPage": 3827, "SlowArrival": 4916, "SlowRelay": 10598, "SlowLens": 5918, "SLOWGate": 1808 },
