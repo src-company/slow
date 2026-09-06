@@ -11,3 +11,4 @@ tools/node_modules/
 
 # relayer service deps
 relayer/node_modules/
+relayer/filled.json

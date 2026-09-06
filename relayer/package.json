@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Watches SlowRelay for open intents and fronts the destination leg.",
-  "engines": { "node": ">=20" },
-  "scripts": { "start": "node index.mjs" },
-  "dependencies": { "viem": "2.21.55" }
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "viem": "2.56.3"
+  }
 }

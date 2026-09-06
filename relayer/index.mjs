@@ -19,6 +19,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet, base } from 'viem/chains';
 import { CHAINS, ASSETS, assess, intentIdOf, INTENT_FIELDS } from '../scripts/relayer.mjs';
 import { createPool } from './rpc.mjs';
+import fs from 'node:fs';
 
 const RELAY = '0xC58C217791E397550492c4F84a6995Db60aDE2da';
 
@@ -169,8 +170,44 @@ const read = (chainId, name, args) =>
 
 /** Intents this process has already acted on, so a poll does not repeat work. */
 const seen = new Map();      // id -> intent
-const filledHere = new Set(); // id, filled by THIS relayer in THIS process
+const filledHere = new Set(); // id, filled by this relayer and not yet released
 const cursor = {};            // chainId -> next block to scan
+
+/**
+ * The one thing that MUST outlive the process.
+ *
+ * A fill and its release are separated by the destination chain's challenge
+ * period — 6.4 days on Robinhood — and `release` needs the whole Intent, which
+ * only exists in an `Opened` log the cold-start window will have scrolled past
+ * long before then. So a relayer that keeps this in memory fills, restarts,
+ * and never collects: it has paid the recipient and abandoned its own escrow.
+ * That is the relayer losing its money to a redeploy, which is not an
+ * acceptable way to lose it.
+ *
+ * A JSON file is enough because the record is small and append-mostly. It lives
+ * on Render's disk, which survives a restart; mount a Render Disk at STATE_DIR
+ * to survive a redeploy too.
+ */
+const STATE_FILE = (process.env.STATE_DIR ?? '.') + '/filled.json';
+
+function loadState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    for (const [id, intent] of Object.entries(raw)) { seen.set(id, intent); filledHere.add(id); }
+    if (filledHere.size) log(`recovered ${filledHere.size} unreleased fill(s) from ${STATE_FILE}`);
+  } catch (e) {
+    if (e.code !== 'ENOENT') err(`could not read ${STATE_FILE}: ${e.message}`);
+  }
+}
+
+function saveState() {
+  const out = {};
+  for (const id of filledHere) out[id] = seen.get(id);
+  try {
+    fs.writeFileSync(STATE_FILE + '.tmp', JSON.stringify(out, null, 2));
+    fs.renameSync(STATE_FILE + '.tmp', STATE_FILE);   // atomic, so a crash mid-write cannot truncate it
+  } catch (e) { err(`could not write ${STATE_FILE}: ${e.message}`); }
+}
 
 // ─── the pass ──────────────────────────────────────────────────────────────
 
@@ -264,6 +301,20 @@ async function consider(srcChainId, { loggedId, intent, blockNumber }) {
     return;
   }
 
+  // An intent already filled BY THIS RELAYER is not a decision, it is an
+  // outstanding claim. `assess` correctly declines it — "already filled" — so
+  // without this the worker would rediscover its own unreleased fill after a
+  // restart, decline it, and walk away from the escrow. Picking it back up here
+  // makes recovery independent of the state file surviving.
+  if (LIVE && srcStatus === 'OPEN' && dstFilledBy.toLowerCase() === account.address.toLowerCase()) {
+    if (!filledHere.has(id)) {
+      filledHere.add(id);
+      saveState();
+      log(`${id.slice(0,10)} is our own unreleased fill — tracking it for release`);
+    }
+    return;
+  }
+
   const decision = assess(intent, { loggedId, srcStatus, dstFilledBy },
                           { minFeeBps: MIN_FEE_BPS, marginSeconds: MARGIN_SECONDS });
   const e = decision.economics;
@@ -308,6 +359,7 @@ async function tryFill(id, intent, srcChainId, dst) {
     log(`    FILLED ${CHAINS[dst].name} ${hash}`);
     await pub[dst].waitForTransactionReceipt({ hash });
     filledHere.add(id);
+    saveState();  // before the proof, not after: the fill is what creates the claim
   } catch (e) {
     err(`fill ${id.slice(0,10)}: ${e.shortMessage || e.message}`);
     return;
@@ -340,7 +392,9 @@ async function collect() {
     const intent = seen.get(id);
     const src = Number(intent.srcChainId);
     try {
-      if (STATUS[Number(await read(src, 'statusOf', [id]))] !== 'OPEN') { filledHere.delete(id); continue; }
+      if (STATUS[Number(await read(src, 'statusOf', [id]))] !== 'OPEN') {
+        filledHere.delete(id); saveState(); continue;
+      }
       const proven = await read(src, 'provenBy', [id]);
       if (proven.toLowerCase() !== account.address.toLowerCase()) continue;
       const hash = await wallet[src].writeContract({
@@ -348,6 +402,7 @@ async function collect() {
       });
       log(`${id.slice(0,10)} RELEASED on ${CHAINS[src].name} ${hash}`);
       filledHere.delete(id);
+      saveState();
     } catch (e) {
       err(`release ${id.slice(0,10)}: ${e.shortMessage || e.message}`);
     }
@@ -357,6 +412,7 @@ async function collect() {
 // ─── run ───────────────────────────────────────────────────────────────────
 
 log(LIVE ? `LIVE as ${account.address}` : 'DRY RUN — reads only, sends nothing');
+loadState();
 log(`relay ${RELAY}  max fill ${MAX_FILL_WEI} wei  min fee ${MIN_FEE_BPS}bps  poll ${POLL_MS}ms`);
 for (const [id, c] of Object.entries(CHAINS)) log(`  watching ${String(id).padEnd(5)} ${c.name.padEnd(10)} ${RPC[id]}`);
 

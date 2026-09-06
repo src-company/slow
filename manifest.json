@@ -205,6 +205,16 @@
         "route": "Base -> Robinhood, 100000000000000 wei at 100bps",
         "verified": "statusOf reads OPEN; the id in the Opened event equals the one derived from the fields independently. relayer/index.mjs found it on chain, recomputed the id, read the escrow from the source and the fill state from the destination, priced it at ~57% apr over the 6.4 day return leg and reported WOULD FILL.",
         "escrowUnlocks": "fillDeadline + PROOF_GRACE (8 days) — cancellable from 2026-09-14, recovering the dust"
+      },
+      "relay-fill": {
+        "leg": "SlowRelay fill + proveFill, Base -> Robinhood, by a live relayer",
+        "relayer": "0x070546f68a9a9f89F76480178395656A9566548d",
+        "intentId": "0x768630df2bc90e4cbc1fbbbbe4cdcaaf11c7434b2ec9b59a73f805bef4ce40e2",
+        "fillTx": "0xa57def1882584a9733ba33f265c6e3df46058bb7f3036002278e9538dc2d1083",
+        "proveTx": "0x8e9180ea9bec3c25e89312434ed88ddb1d0cb620d9cfc00b7c2bbdb8b3485c1e",
+        "verified": "filledBy[id] on Robinhood is the relayer; the recipient holds the delivered SLOW position; the relayer paid it out of its own inventory. Source still reads OPEN with provenBy zero, which is correct — the proof travels by ArbSys and needs the ~6.4 day challenge period before release can be called.",
+        "remaining": "release on Base once provenBy is set, ~6.4 days from 2026-09-06",
+        "note": "The relayer is scripts/relayer.mjs for the decision and relayer/index.mjs for the loop, running as a Render background worker. It found the intent unaided, recomputed the id, and fronted the destination leg."
       }
     }
   }
