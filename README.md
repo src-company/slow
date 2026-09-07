@@ -279,7 +279,33 @@ If you send to an address that never claims (compromised key, dead wallet), `cla
 
 ### Holding SLOW long-term: fuse vs. vault
 
-A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expires on a self-deposited position, anyone with the key can extract the underlying — in one tx via `claim`, or `unlock` then `withdrawFrom`. To hold SLOW long-term as a vault, pair the delay with a **guardian** — that's the durable second factor. With a guardian set, even a fully compromised hot wallet cannot extract the wrapped underlying.
+A pure timelock is a **one-shot fuse, not a perpetual lock.**
+
+The delay is encoded in the token id, so it governs *wrapper* moves: a
+`safeTransferFrom` of a delayed id re-locks at the destination and stays reversible
+for the whole delay. It does **not** govern leaving the wrapper. `withdrawFrom` burns
+an unlocked balance and pays the underlying out in the same transaction — no delay, no
+pending entry, nothing to `reverse`. So once `delay` expires on a self-deposited
+position, anyone holding the key extracts it: one tx via `claim`, or `unlock` then
+`withdrawFrom`. Re-wrapping on each expiry is a treadmill, not a vault. **A timelock
+alone buys detection time, not custody.**
+
+To hold SLOW long-term as a vault, pair the delay with a **guardian** — that is the
+durable second factor. With a guardian set every outflow needs the cosigner:
+`withdrawFrom` and `safeTransferFrom` are approval-gated, and `claim` reverts outright
+with `ClaimBlockedByGuardian`, so a guarded account has no one-step exit at all and must
+go `unlock` → `withdrawFrom` into the gate. A fully compromised hot wallet cannot
+extract the wrapped underlying.
+
+The gate keys on `from`, not `msg.sender`, so an operator granted `setApprovalForAll`
+cannot route around it — and neither can `SlowRelay`, which pulls user funds through
+`SLOW.safeTransferFrom`. What a guardian does *not* gate is `unlock`, `reverse` and
+`clawback`, and it does not need to: none of them move value out of the wrapper.
+
+Why pair the delay with the guardian, when the guardian gates zero-delay ids too? They
+catch different mistakes. `revokeApproval` retracts a mistaken approval *before* it
+lands; a delayed id means an approval that already landed is still reversible for the
+length of the delay.
 
 ## Functions
 
@@ -289,6 +315,12 @@ A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expir
 | --- | --- |
 | `depositTo(token, to, amount, delay, data)` | Wrap and create a pending transfer (or credit spendable balance immediately if `delay == 0`). |
 | `depositToWithTip(token, to, amount, delay, tip, data)` | Same, plus a relayer tip held by the gate. Requires `delay != 0`, `tip != 0`, `tip <= type(uint96).max`. |
+| `depositToWithPermit(token, to, amount, delay, data, deadline, v, r, s)` | EIP-2612 deposit — approval and wrap in one transaction. ERC-20 only. |
+| `depositToWithTipAndPermit(token, to, amount, delay, tip, data, deadline, v, r, s)` | Same, with a tip; `msg.value` is the tip. |
+| `permitSelf(token, amount, deadline, v, r, s)` | Raise this contract's allowance by signature and nothing else, for composing with `multicall`. |
+
+Deposits are never guardian-gated — a guardian vetoes outflows, and a deposit is money
+coming in.
 
 ### Settle / move
 
@@ -296,10 +328,12 @@ A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expir
 | --- | --- |
 | `unlock(transferId)` | Recipient or operator: park an expired pending into `unlockedBalances[to]`. |
 | `claim(transferId)` | Recipient or operator: one-step settle to underlying. Reverts when `to` has a guardian. |
-| `withdrawFrom(from, to, id, amount)` | Burn unlocked wrapper and pay underlying. Guardian-gated if `from` has one. |
+| `claimTipped(transferId)` | Gate only: the sponsored form of `claim`, used when a tip was posted. Same guardian block. |
+| `withdrawFrom(from, to, id, amount)` | Burn unlocked wrapper and pay underlying. **Undelayed and irreversible** — the id's delay does not apply to the raw exit. Guardian-gated if `from` has one. |
 | `safeTransferFrom(from, to, id, amount, data)` | Move unlocked wrapper. Re-locks if id has a delay; guardian-gated if `from` has one. |
 | `reverse(transferId)` | Sender or operator: cancel a pending transfer before expiry. |
 | `clawback(transferId)` | Sender or operator: recover a pending transfer 30 days past expiry. |
+| `forgetInbound(transferId)` | Drop a row from your own inbound index. Touches the index only — no value moves, and the transfer still settles by id. |
 
 ### Guardian
 
@@ -307,9 +341,19 @@ A pure timelock is a **one-shot fuse, not a perpetual lock.** Once `delay` expir
 | --- | --- |
 | `setGuardian(newGuardian)` | First-time set is immediate; rotating an active guardian stages a 1-day veto window. |
 | `cancelGuardianChange(user)` | User or active guardian: veto a pending rotation during the window. |
-| `commitGuardian(user)` | Permissionless: finalize a rotation after the window. |
+| `commitGuardian(user)` | User or the sitting guardian only: finalize a rotation after the window. Not permissionless — see below. |
 | `approveTransfer(from, transferId)` | Guardian only: approve a precomputed transfer or withdrawal id. |
 | `revokeApproval(from, transferId)` | Guardian only: retract a single approval. |
+| `wardsOf(guardian)` / `wardCount` / `wardsAt(guardian, start, count)` | Reverse index: the accounts a guardian guards, so a cosigner is shown its wards instead of typing them in. |
+| `guards(guardian, ward)` | O(1) membership check on that index. |
+| `forgetWard(ward)` | Guardian drops a row from its own ward index. Index-only; the guardianship itself is unaffected. |
+
+`commitGuardian` is deliberately **not** permissionless. A late abort works by proposing
+a different guardian and cancelling inside the new window; with an open commit, the
+guardian being installed could watch the mempool, front-run that abort, and become the
+sitting guardian with a legitimate veto over every later rotation. Restricting it to the
+two parties the change is between costs nothing — either can still land it once the
+window passes.
 
 ### Gate (sponsored delivery)
 
@@ -318,8 +362,17 @@ The gate is a CREATE2-deployed `claim`-only operator. Approve via `setApprovalFo
 | Function | Purpose |
 | --- | --- |
 | `gate.claim(transferId)` | Settle one transfer; pay tip if any. Without a tip, requires recipient operator approval on the gate. |
-| `gate.claimMany(ids[])` | Atomic batch settle. |
+| `gate.claimMany(ids[])` | Batch settle with **per-id isolation** — each id runs through a `try` capped at 250,000 gas, and a failing id is skipped rather than reverting the batch. |
 | `gate.refundTip(transferId)` | Depositor recovers the tip after the transfer cleared by a non-gate path. |
+
+> **Note — `claimMany` natspec.** The `@notice` on `claimMany` in the deployed source
+> still reads "Atomic batch settlement; the whole call reverts on the first failure."
+> That describes an earlier revision; the deployed body isolates each id behind a
+> gas-capped `try/catch`, exactly so an honest recipient front-running the batch with
+> their own `unlock` cannot destroy it. The comment cannot be corrected in place:
+> `bytecode_hash` is `ipfs`, so editing any comment in `src/SLOW.sol` moves the trailing
+> metadata hash and breaks the byte-exact verification of the live contract. Trust the
+> body and this table over that one comment.
 
 ### View helpers
 
@@ -327,13 +380,14 @@ The gate is a CREATE2-deployed `claim`-only operator. Approve via `setApprovalFo
 | --- | --- |
 | `predictTransferId(from, to, id, amount)` | Hash of the next outbound transfer / transfer-approval preimage. |
 | `predictWithdrawalId(from, to, id, amount)` | Hash of the next withdrawal-approval preimage (distinct op-type). |
+| `predictDepositId(from, to, id, amount)` | Hash of the pending entry the next delayed `depositTo` will create. Runs off `nonces`, not `guardianNonces`. |
 | `canReverseTransfer(transferId)` | `(canReverse, reason)` preflight. |
 | `isGuardianApprovalNeeded(user, to, id, amount)` | Does the next `safeTransferFrom` need cosign? |
 | `isWithdrawalApprovalNeeded(user, to, id, amount)` | Does the next `withdrawFrom` need cosign? |
 | `getOutboundTransfers(user)` / `getInboundTransfers(user)` | All pending transfer ids. |
 | `outboundTransferCount` / `outboundTransferAt` (and inbound equivalents) | Paginated access — preferred for on-chain consumers. |
 | `encodeId(token, delay)` / `decodeId(id)` | Token-id helpers. |
-| `html()` | Returns the dapp HTML reassembled from on-chain SSTORE2 chunks. |
+| `html()` | Returns the dapp document, served from the immutable `page` contract (`SlowPage`), which holds it in SSTORE2 chunks. |
 
 ## Technical details
 
@@ -342,11 +396,28 @@ The gate is a CREATE2-deployed `claim`-only operator. Approve via `setApprovalFo
 ```solidity
 keccak256(abi.encodePacked(
     from, to, id, amount,
-    nonces[from], lastGuardianChange[from], opType
+    counter[from], lastGuardianChange[from], opType
 ))
 ```
 
-`opType` is `0` for transfers/deposits and `1` for withdrawals — this prevents a guardian approval for one op being consumed as the other. `lastGuardianChange[from]` is mixed in so a guardian rotation invalidates every dangling approval at once.
+There are three op types and **two** counters:
+
+| op | `opType` | counter |
+| --- | --- | --- |
+| `safeTransferFrom` | `0` | `guardianNonces[from]` |
+| `withdrawFrom` | `1` | `guardianNonces[from]` |
+| delayed `depositTo` | `2` | `nonces[from]` |
+
+The op byte keeps the three id spaces disjoint, so a guardian approval for one op cannot
+be consumed as another. `lastGuardianChange[from]` is mixed in so a guardian rotation
+invalidates every dangling approval at once.
+
+**Why the counters are split.** Deposits are not guardian-gated. If approvals ran off the
+same counter a deposit advances, the compromised key a guardian exists to defend against
+could void every standing approval for 1 wei plus gas — and batch ten of them per
+transaction through `multicall`. The guardian would survive while the rescue it existed
+to authorise could never land. Only operations a guardian actually gates move
+`guardianNonces`.
 
 ### Op-type split
 
@@ -365,8 +436,12 @@ Approving one will not satisfy the other. Guardians must still verify intent off
 ## Security considerations
 
 - **No admin, no upgrades, no fees.** The contract has no owner, no pausable, and no upgrade path. Behavior is fixed at deployment.
-- **Guardian veto window.** Rotating an active guardian stages a 1-day delay. Either party can `cancelGuardianChange` during the window; only `commitGuardian` works after. The window is the decision period, not an indefinite veto.
-- **Reverse window.** Only before timelock expiry. A reverse from the compromised key credits `unlockedBalances` back to the same compromised account, so `reverse` alone is not a recovery primitive — it relies on the sender's key being safe.
+- **Guardian veto window.** Rotating an active guardian stages a 1-day delay, and removal (`setGuardian(address(0))`) takes the same path — a stolen key cannot quietly drop the guardian. Either party can `cancelGuardianChange` during the window; after it, only `commitGuardian`, and only by the user or the sitting guardian. The window is the decision period, not an indefinite veto.
+- **A guardian can freeze you, permanently.** The guardian is a pure veto with no timeout and no escape hatch. A lost or hostile guardian key refuses every approval *and* vetoes every rotation proposal, indefinitely, and the user cannot name themselves as a replacement (`InvalidGuardian`). Guardian key loss is unrecoverable loss of the position. Appoint a guardian only if you trust it and can still sign with it.
+- **A guardian must be in place before compromise.** The first set (or a set after removal) is immediate; every change after that is staged 1 day. Setting a guardian is not a response to a theft in progress.
+- **The reverse window is uncontested.** `reverse` requires `block.timestamp < ts + delay` and `unlock`/`claim` require `>=`, so the windows are strictly disjoint: a recipient cannot settle inside the sender's reverse window. The delay is guaranteed to the sender, not raced for.
+- **Reverse is not a recovery primitive.** It is only available before expiry, and a reverse from a compromised key credits `unlockedBalances` back to that same compromised account. It relies on the sender's key being safe. On a *self*-deposit it protects nothing at all: sender and recipient are the same key.
+- **The timelock does not gate the raw exit.** The delay lives in the token id and applies to `safeTransferFrom`. `withdrawFrom` is undelayed and irreversible. See *fuse vs. vault* above.
 - **Clawback grace.** 30 days post-expiry, and only if the transfer is still pending. Recipient or any operator can `unlock` or `claim` during the grace window to settle and disable clawback.
 - **Wallet display vs. spendability.** ERC-1155 wallets and marketplaces see the full wrapper balance, including amounts still in pending transfers. `unlockedBalances[user][id]` is the source of truth for what is actually spendable.
 - **Reentrancy.** Transient-storage guard on every external entry point.

@@ -14,6 +14,13 @@ SLOW wraps ETH or any ERC-20 into an ERC-1155 position that adds two opt-in safe
 
 Contract (Ethereum mainnet): `0x000000000000888741B254d37e1b27128AfEAaBC` — no owner, no upgrades, no fees.
 
+> [!IMPORTANT]
+> This is the **v1** deployment — still live, still holding funds, and what this
+> CLI drives. It is not the newer build at
+> `0x000000006513B7821171C8447ec7ECdfa3b956Fd` that the dapp and the root README
+> describe, which also runs on Base and Robinhood Chain. Value sent through this
+> skill lands in v1. See [`../../README.md`](../../README.md).
+
 ## The tool
 
 Everything is one zero-dependency CLI that speaks **JSON in, JSON out**. Run it with Node ≥18:

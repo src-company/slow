@@ -89,8 +89,12 @@ export async function scan(client, transferIds, opts = {}) {
 
 /**
  * Settle eligible transfers through the gate. Batches into `gate.claimMany`.
- * Because claimMany reverts atomically on the first bad id, keep batches to
- * ids you have already vetted with scan()/evaluate().
+ * The deployed `claimMany` isolates each id behind a `try` capped at 250,000
+ * gas, so one bad id is skipped rather than reverting the batch — a recipient
+ * front-running you with their own `unlock` costs you that id, not the call.
+ * (The `@notice` on `claimMany` in the deployed source still says "atomic";
+ * it describes an earlier revision. The body is authoritative.)
+ * Vetting with scan()/evaluate() is still worth it: skipped ids burn gas.
  *
  * @param {import('./client.js').SlowClient} client
  * @param {Array<bigint|string>} transferIds - already-vetted ids.

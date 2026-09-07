@@ -4,6 +4,23 @@ Integrate the [SLOW](../README.md) wrapper — timelock + guardian safety rails 
 
 **Contract (Ethereum mainnet):** [`0x000000000000888741B254d37e1b27128AfEAaBC`](https://contractscan.xyz/contract/0x000000000000888741B254d37e1b27128AfEAaBC)
 
+> [!IMPORTANT]
+> **This SDK targets the previous deployment.** `SLOW_ADDRESS` here is
+> `0x000000000000888741B254d37e1b27128AfEAaBC` — the v1 contract, which is still
+> live on Ethereum mainnet and still holds funds. Production as described in
+> [the root README](../README.md) is a *different*, newer build at
+> `0x000000006513B7821171C8447ec7ECdfa3b956Fd`, deployed to Ethereum, Base and
+> Robinhood Chain, with `depositToWithPermit`, `forgetInbound`, split
+> `guardianNonces`, a restricted `commitGuardian` and a non-atomic
+> `gate.claimMany`.
+>
+> Nothing here is broken — it drives v1 correctly — but a position opened through
+> this SDK lands in v1, not in the contract the dapp at https://slow.wei.limo/
+> uses. Pass an explicit address to `SlowClient` if you want the newer one, and
+> check the ABI against [`src/SLOW.sol`](../src/SLOW.sol) before doing so: the
+> newer build adds entrypoints this SDK does not know about.
+
+
 The SDK is two layers:
 
 | Layer | Import | Dependencies |

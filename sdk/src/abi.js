@@ -7,7 +7,16 @@
 // Deployment (Ethereum mainnet)
 // ---------------------------------------------------------------------------
 
-/** SLOW protocol contract. Same address on any chain it is deployed to (vanity CREATE2). */
+/**
+ * SLOW protocol contract — the **v1** deployment on Ethereum mainnet. Still live
+ * and still holding funds, and it is what this SDK's ABI matches.
+ *
+ * NOT the newer multichain build at 0x000000006513B7821171C8447ec7ECdfa3b956Fd
+ * (Ethereum, Base, Robinhood Chain), which the dapp and the root README describe.
+ * That build adds depositToWithPermit / forgetInbound / predictDepositId, splits
+ * guardianNonces from nonces, restricts commitGuardian, and makes gate.claimMany
+ * non-atomic. Point SlowClient at it explicitly only after checking those deltas.
+ */
 export const SLOW_ADDRESS = '0x000000000000888741B254d37e1b27128AfEAaBC';
 
 export const MAINNET_CHAIN_ID = 1;
