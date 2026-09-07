@@ -478,10 +478,28 @@ ever cheap.
 ```sh
 curl -L https://foundry.paradigm.xyz | bash && source ~/.bashrc && foundryup
 forge build
-forge test
+bash scripts/test.sh          # forge + the node suites + the docs check
 ```
 
-`forge snapshot` for gas. `forge fmt` to format.
+`forge test` alone works, but `scripts/test.sh` is the runner this repo relies
+on. It recompiles the test files that bake in `type(...).creationCode` before
+running — a stale artifact there fails on a change that could not have caused it,
+and that has very nearly reverted a correct change — then runs the Node suites,
+the page suite against the minified artifact that actually deploys, and the
+deployment rehearsal.
+
+`forge snapshot` for gas.
+
+`forge fmt` formats `test/` and `script/` only. `foundry.toml` excludes every
+deployed source, and the exclusion is load-bearing: solc hashes a contract's
+source *and its imports* into the CBOR metadata appended to the runtime, so
+reformatting one of those files moves the trailing hash and the bytecode on
+chain stops matching the repo. The code still compiles and the tests still pass;
+only Etherscan and Sourcify notice. Unignored, a single `forge fmt` would break
+the verification of five deployed contracts across three chains.
+
+`node scripts/syncdocs.mjs` regenerates `docs/src/README.md`, which is `forge
+doc`'s copy of this file. `--check` is what `scripts/test.sh` runs.
 
 Dapp tests run on vanilla Node — no NPM:
 

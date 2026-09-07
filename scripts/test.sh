@@ -30,6 +30,12 @@ if [ ${#BAKED[@]} -gt 0 ]; then
   touch "${BAKED[@]}"
 fi
 
+# The README is copied into docs/src/README.md as forge doc's home page, and
+# nothing regenerates it — so it drifted a whole deployment behind before anyone
+# noticed. Cheap to check, and the failure is a one-command fix.
+echo "── docs ──────────────────────────────────────────────"
+node scripts/syncdocs.mjs --check
+
 FORGE_ARGS=()
 [ "${1:-}" = "--fork" ] || FORGE_ARGS+=(--no-match-path 'test/*Fork*')
 

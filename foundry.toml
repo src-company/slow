@@ -17,5 +17,34 @@ fs_permissions = [{ access = "read-write", path = "./preview"}, { access = "read
 [fmt]
 line_length = 100
 
+# DO NOT FORMAT THE DEPLOYED SOURCES.
+#
+# solc hashes the source of a contract *and of everything it imports* into the
+# CBOR metadata it appends to the runtime. Reformatting any file below moves that
+# trailing hash, and the bytecode on chain stops matching the repo — while the
+# code still compiles and every test still passes. Only Etherscan and Sourcify
+# would notice, and only after the fact.
+#
+# Without this list a single `forge fmt` rewrites SLOW, SlowArrival, SlowLens,
+# SlowPage, SlowPermit and SlowRelay, breaking the verification of five deployed
+# contracts across three chains in one command.
+#
+# SlowPermit and SlowGuardianIndex are here because SLOW imports them; SlowOrigin
+# because SlowArrival and SlowRelay do. SLOWv1 reproduces the earlier mainnet
+# runtime and is frozen for the same reason. Add a file the day it is deployed.
+#
+# test/ and script/ are deliberately absent: nothing hashes them, so they format.
+ignore = [
+  "src/SLOW.sol",
+  "src/SLOWv1.sol",
+  "src/SlowArrival.sol",
+  "src/SlowGuardianIndex.sol",
+  "src/SlowLens.sol",
+  "src/SlowOrigin.sol",
+  "src/SlowPage.sol",
+  "src/SlowPermit.sol",
+  "src/SlowRelay.sol",
+]
+
 [rpc_endpoints]
 main = "https://ethereum-rpc.publicnode.com"

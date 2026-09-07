@@ -14,7 +14,7 @@ Wrap once, then send, hold, and reverse with safety rails. Any token, any delay,
 - **Use it:** https://slow.wei.limo/ — the document `SLOW.html()` returns, nothing else
 - **Contract:** [`0x000000006513B7821171C8447ec7ECdfa3b956Fd`](https://contractscan.xyz/contract/0x000000006513B7821171C8447ec7ECdfa3b956Fd) — the same address on Ethereum, Base and Robinhood Chain
 - **Read the dapp yourself:** one `eth_call` to `html()` on that address returns the whole thing. Or fetch it from the page contract directly at https://0x6e2ca0ebf103fb2a2a7ebe2cb12f7de3a88bdcbc.w4eth.io/
-- **Integrate it:** [`sdk/`](./sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](./sdk/skills/slow) (`SKILL.md` + JSON CLI).
+- **Integrate it:** [`sdk/`](../../sdk) — a zero-dependency SDK for web3 apps, wallets, and dapps (optional viem/wagmi + React layers), plus an [agent skill](../../sdk/skills/slow) (`SKILL.md` + JSON CLI).
 
 There is no build to trust and no server to compromise: the page is bytes in
 contract storage, `SLOW.page` is `immutable`, and `manifest.json` pins the
@@ -51,7 +51,7 @@ Verified on Etherscan for Ethereum and Base, and on Sourcify for all three —
 Sourcify cannot reconstruct creation bytecode for a CREATE3 deployment; the
 runtime is byte-identical on all three chains and the same source is an exact
 match on the other two, so the attestation is missing, not the correspondence.
-[`deploy/verify-4663/`](./deploy/verify-4663) has everything prepared for a
+[`deploy/verify-4663/`](../../deploy/verify-4663) has everything prepared for a
 manual submission.
 
 ```
@@ -85,23 +85,23 @@ attributing `originOf` to the true L1 sender, from both a plain EOA and a 7702
 smart account. On Base the round trip was completed: arrived, then the recovered
 sender called `SlowArrival.reverse` and the ETH came back. `SlowRelay` has been
 exercised too — an intent opened on Base was found, priced, filled on Robinhood
-and proved by the relayer in [`relayer/`](./relayer), unprompted. Hashes are in
+and proved by the relayer in [`relayer/`](../../relayer), unprompted. Hashes are in
 `manifest.json` under `bridge.proven`.
 
 L2→L1 exits are not in the dapp. They work, and
-[`scripts/opprove.mjs`](./scripts/opprove.mjs),
-[`opfinalize.mjs`](./scripts/opfinalize.mjs) and
-[`arbexecute.mjs`](./scripts/arbexecute.mjs) drive them, but each needs a second
+[`scripts/opprove.mjs`](../../scripts/opprove.mjs),
+[`opfinalize.mjs`](../../scripts/opfinalize.mjs) and
+[`arbexecute.mjs`](../../scripts/arbexecute.mjs) drive them, but each needs a second
 transaction days later — `scripts/pending.mjs` says when.
 
 ### Operating and recovery
 
-**[Operating rules](./deploy/OPERATING-RULES.md)** — eight rules that keep the
+**[Operating rules](../../deploy/OPERATING-RULES.md)** — eight rules that keep the
 deployed contracts safe without changing them. Three matter to anyone
 integrating directly: an L2→L1 `arrive` carries no bounty, relayers fill from an
 EOA, and relay senders are EOAs. Breaking one costs the integrator.
 
-**[Admin console](./admin/index.html)** — one self-contained file, no build step,
+**[Admin console](../../admin/index.html)** — one self-contained file, no build step,
 no dependencies, for what the on-chain page does not cover: stewardship
 handover, deployment health checks, the relayer intent lifecycle, and
 `SlowArrival.claimRescue`. That last one matters — a bridged arrival that cannot
@@ -111,16 +111,16 @@ served dapp claims it back. `test/admin.test.mjs` checks its hard-coded
 selectors against the compiled ABIs, so a renamed function fails a test rather
 than a steward's transaction.
 
-**[relayer/](./relayer)** — the live half of `SlowRelay`, a background worker
+**[relayer/](../../relayer)** — the live half of `SlowRelay`, a background worker
 that watches all three chains, fills from its own inventory and collects the
 escrow. Dry run unless `RELAYER_KEY` is set, and bounded by `MAX_FILL_WEI` even
 when live.
 
 The page lives in `SlowPage` as seven data contracts reassembled by `html()`;
 `w4eth.io` resolves that over the web for convenience, but the dapp can be
-reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](./erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
+reconstructed by anyone calling `html()` directly. This is the [contract-hosted-app](../../erc-draft_contract_hosted_app.md) pattern (draft ERC-8244): a single `html()` view returning a self-contained document, fetchable with one `eth_call`.
 
-This repo ships its own resolver in [`gateway/`](./gateway) so you can host it yourself. It's a zero-dependency Node server (`node gateway/server.js`) that reads the target contract from the leftmost DNS label of `<0xADDRESS>.<yourdomain>`, makes one `eth_call` to `html()`, and serves the decoded document. It round-robins a pool of keyless public mainnet RPCs and fails over on any transient error, so it boots with no configuration; set `RPC_URL` (comma-separated) to put your own endpoints first. `index.html` is a client-only variant of the same resolver.
+This repo ships its own resolver in [`gateway/`](../../gateway) so you can host it yourself. It's a zero-dependency Node server (`node gateway/server.js`) that reads the target contract from the leftmost DNS label of `<0xADDRESS>.<yourdomain>`, makes one `eth_call` to `html()`, and serves the decoded document. It round-robins a pool of keyless public mainnet RPCs and fails over on any transient error, so it boots with no configuration; set `RPC_URL` (comma-separated) to put your own endpoints first. `index.html` is a client-only variant of the same resolver.
 
 ## Networks
 
@@ -182,9 +182,9 @@ Each SLOW token is an ERC-1155 position whose id encodes both the underlying tok
 
 A `depositTo` mints the wrapper to the recipient but parks the credit in a `pendingTransfer` until the timelock expires. After expiry the recipient (or an operator) settles. Before expiry the sender can reverse. Long after expiry, if no one settled, the sender can clawback.
 
-![SLOW token render for a 1-day USDC position, generated on-chain by uri()](./assets/render/slow-usdc-1day.png)
+![SLOW token render for a 1-day USDC position, generated on-chain by uri()](../../assets/render/slow-usdc-1day.png)
 
-*Every position renders its own SVG via `uri(id)` — above is the exact output for a 1-day USDC lock. See [`assets/render/`](./assets/render) for the source SVG.*
+*Every position renders its own SVG via `uri(id)` — above is the exact output for a 1-day USDC lock. See [`assets/render/`](../../assets/render) for the source SVG.*
 
 ### Lifecycle
 
@@ -456,11 +456,11 @@ Independent reviews of `SLOW.sol`. None identified a critical/high fund-loss pat
 
 | Date | Reviewer | Result | Report |
 | --- | --- | --- | --- |
-| 2026-04-29 | pashov-ai | No findings above the confidence threshold | [report](./assets/audit/slow-pashov-ai-audit-report-20260429-163652.md) |
-| 2026-04-29 | Zellic V12 | 3 Low (unreviewed) — 1 false positive, 1 non-finding, 1 documented | [report](./assets/audit/slow-zellic-v12-audit-report-20260429-181500.md) |
-| 2026-07-22 | GPT-5.6 Pro | 1 High, 2 Medium, rest Low/Info — all accepted or dapp-mitigable | [report](./assets/audit/slow-gpt-5.6-pro-audit-report-20260722-172206.md) |
-| 2026-07-22 | OneDollarAudit | 8 findings, all Low/Info | [report](./assets/audit/slow-onedollaraudit-audit-report-20260722-192400.md) |
-| 2026-09-04 | pashov-ai | Protocol pass alongside the bridge review below | [report](./assets/audit/slow-pashov-ai-audit-report-20260904-095600.md) |
+| 2026-04-29 | pashov-ai | No findings above the confidence threshold | [report](../../assets/audit/slow-pashov-ai-audit-report-20260429-163652.md) |
+| 2026-04-29 | Zellic V12 | 3 Low (unreviewed) — 1 false positive, 1 non-finding, 1 documented | [report](../../assets/audit/slow-zellic-v12-audit-report-20260429-181500.md) |
+| 2026-07-22 | GPT-5.6 Pro | 1 High, 2 Medium, rest Low/Info — all accepted or dapp-mitigable | [report](../../assets/audit/slow-gpt-5.6-pro-audit-report-20260722-172206.md) |
+| 2026-07-22 | OneDollarAudit | 8 findings, all Low/Info | [report](../../assets/audit/slow-onedollaraudit-audit-report-20260722-192400.md) |
+| 2026-09-04 | pashov-ai | Protocol pass alongside the bridge review below | [report](../../assets/audit/slow-pashov-ai-audit-report-20260904-095600.md) |
 
 The bridge contracts — `SlowOrigin`, `SlowArrival`, `SlowRelay`,
 `SlowBridgeRegistry` — are newer and reviewed separately. Both passes ran before
@@ -469,19 +469,37 @@ ever cheap.
 
 | Date | Reviewer | Result | Report |
 | --- | --- | --- | --- |
-| 2026-09-04 | pashov-ai | 11 findings, all fixed with regressions | [report](./assets/audit/slow-bridge-pashov-ai-audit-report-20260904-120000.md) |
-| 2026-09-05 | Claude Opus 5 | 4 findings, all fixed; `PROOF_GRACE` closed by measurement | [report](./assets/audit/slow-bridge-claude-opus-5-audit-report-20260905-140000.md) |
-| 2026-09-06 | Claude Opus 5 (adversarial) | No theft path in core or relay against the LIVE contracts; deployed bytecode verified identical to source | [report](./assets/audit/slow-adversarial-review-20260906.md) |
+| 2026-09-04 | pashov-ai | 11 findings, all fixed with regressions | [report](../../assets/audit/slow-bridge-pashov-ai-audit-report-20260904-120000.md) |
+| 2026-09-05 | Claude Opus 5 | 4 findings, all fixed; `PROOF_GRACE` closed by measurement | [report](../../assets/audit/slow-bridge-claude-opus-5-audit-report-20260905-140000.md) |
+| 2026-09-06 | Claude Opus 5 (adversarial) | No theft path in core or relay against the LIVE contracts; deployed bytecode verified identical to source | [report](../../assets/audit/slow-adversarial-review-20260906.md) |
 
 ## Build & test
 
 ```sh
 curl -L https://foundry.paradigm.xyz | bash && source ~/.bashrc && foundryup
 forge build
-forge test
+bash scripts/test.sh          # forge + the node suites + the docs check
 ```
 
-`forge snapshot` for gas. `forge fmt` to format.
+`forge test` alone works, but `scripts/test.sh` is the runner this repo relies
+on. It recompiles the test files that bake in `type(...).creationCode` before
+running — a stale artifact there fails on a change that could not have caused it,
+and that has very nearly reverted a correct change — then runs the Node suites,
+the page suite against the minified artifact that actually deploys, and the
+deployment rehearsal.
+
+`forge snapshot` for gas.
+
+`forge fmt` formats `test/` and `script/` only. `foundry.toml` excludes every
+deployed source, and the exclusion is load-bearing: solc hashes a contract's
+source *and its imports* into the CBOR metadata appended to the runtime, so
+reformatting one of those files moves the trailing hash and the bytecode on
+chain stops matching the repo. The code still compiles and the tests still pass;
+only Etherscan and Sourcify notice. Unignored, a single `forge fmt` would break
+the verification of five deployed contracts across three chains.
+
+`node scripts/syncdocs.mjs` regenerates `docs/src/README.md`, which is `forge
+doc`'s copy of this file. `--check` is what `scripts/test.sh` runs.
 
 Dapp tests run on vanilla Node — no NPM:
 
@@ -507,7 +525,7 @@ node scripts/verify.mjs         # the deployment, against the chain
 without editing the manifest fails every command, deliberately: a chunk set built
 from a page nobody pinned is how a deploy stops matching its repo.
 
-See [`deploy/SLOW-PAGE.md`](./deploy/SLOW-PAGE.md) for the CREATE3 deployment.
+See [`deploy/SLOW-PAGE.md`](../../deploy/SLOW-PAGE.md) for the CREATE3 deployment.
 
 ## Layout
 
@@ -557,4 +575,4 @@ lib/                  — solady, forge-std
 
 ## License
 
-See [LICENSE](./LICENSE) for more details.
+See [LICENSE](../../LICENSE) for more details.
